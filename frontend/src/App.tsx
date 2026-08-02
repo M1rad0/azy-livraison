@@ -6,6 +6,7 @@ import {
   type AuthSession,
 } from './api/auth'
 import { getSystemStatus, type ServiceState, type SystemStatus } from './api/systemStatus'
+import { CsvImportWorkspace } from './components/CsvImportWorkspace'
 import './App.css'
 
 type LoadingState = 'loading' | 'ready' | 'error'
@@ -167,11 +168,13 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
 
       <section className="hero" aria-labelledby="page-title">
         <p className="eyebrow">Espace de planification</p>
-        <h1 id="page-title">La base est prête.</h1>
+        <h1 id="page-title">Préparez vos livraisons.</h1>
         <p className="hero__intro">
-          Votre espace privé accueillera bientôt les imports, les colis, les livreurs et les tournées optimisées.
+          Importez vos colis et vos livreurs, contrôlez chaque ligne puis préparez la prochaine tournée.
         </p>
       </section>
+
+      <CsvImportWorkspace accessToken={session.accessToken} />
 
       <section className="foundation" aria-labelledby="foundation-title">
         <div className="foundation__heading">

@@ -78,7 +78,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'secret-password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Se connecter' }))
 
-    await screen.findByRole('heading', { name: 'La base est prête.' })
+    await screen.findByRole('heading', { name: 'Préparez vos livraisons.' })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/auth/login',
@@ -86,6 +86,58 @@ describe('App', () => {
         method: 'POST',
         credentials: 'include',
         body: JSON.stringify({ username: 'admin', password: 'secret-password' }),
+      }),
+    )
+  })
+
+  it('imports a package file and displays its preview', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/refresh') return Promise.resolve(jsonResponse(session))
+      if (input === '/api/system/status') {
+        return Promise.resolve(jsonResponse({
+          service: 'UP',
+          database: 'UP',
+          checkedAt: '2026-08-02T12:00:00Z',
+        }))
+      }
+      if (input === '/api/import/packages/csv') {
+        return Promise.resolve(jsonResponse({
+          valid: true,
+          importType: 'PACKAGES',
+          filename: 'packages.csv',
+          delimiter: ';',
+          importedCount: 1,
+          items: [{
+            id: 'colis-001',
+            label: 'Client Analakely',
+            weightKg: 4.5,
+            destination: { destinationQuery: 'Analakely, Antananarivo' },
+          }],
+          errors: [],
+        }))
+      }
+      throw new Error(`Unexpected request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const input = await screen.findByLabelText('Fichier colis')
+    const file = new File([
+      'id;label;weight_kg;destination_query;latitude;longitude;phone\n',
+      'colis-001;Client Analakely;4.5;Analakely, Antananarivo;;;\n',
+    ], 'packages.csv', { type: 'text/csv' })
+
+    fireEvent.change(input, { target: { files: [file] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Importer les colis' }))
+
+    expect(await screen.findByText('Client Analakely')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('1 ligne prête')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/import/packages/csv',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+        body: expect.any(FormData),
       }),
     )
   })

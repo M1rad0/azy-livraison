@@ -17,6 +17,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: ${MAX_IMPORT_FILE_SIZE_MB:10}MB
+      max-request-size: ${MAX_IMPORT_FILE_SIZE_MB:10}MB
 
 management:
   endpoints:
@@ -49,6 +53,8 @@ app:
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
     initial-username: ${INITIAL_ADMIN_USERNAME:admin}
     initial-password: ${INITIAL_ADMIN_PASSWORD:CHANGE_ME_DUMMY_ADMIN_PASSWORD}
+  imports:
+    max-file-size: ${MAX_IMPORT_FILE_SIZE_MB:10}MB
   vehicle-presets:
     moto:
       max-weight-kg: ${VEHICLE_MOTO_DEFAULT_MAX_WEIGHT_KG:30}

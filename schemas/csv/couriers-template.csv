@@ -1,0 +1,3 @@
+id;name;vehicle_type;max_weight_kg;average_speed_kmh
+livreur-001;Exemple Livreur;MOTO;35;22
+livreur-002;Exemple Vélo;BICYCLE;;
