@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle, contrat de planification et authentification en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Le plan JSON `1.0` peut être validé et normalisé par l'API ; les imports, la géographie et l'optimisation restent à implémenter.
+> **État du projet : socle, authentification et imports CSV en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Le plan JSON `1.0` peut être validé et normalisé, et les listes de colis/livreurs peuvent être importées ; la géographie et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -360,9 +360,13 @@ Les arrêts contiendront les coordonnées, les colis, les distances et durées c
 
 ## Imports et exports CSV
 
-Les CSV sont encodés en UTF-8. Le séparateur recommandé est le point-virgule, pratique pour les tableurs configurés en français. Les en-têtes sont stables et en anglais afin de servir de contrat technique.
+Les CSV sont encodés en UTF-8, avec ou sans BOM. Le séparateur recommandé est le point-virgule, pratique pour les tableurs configurés en français, mais la virgule est également détectée automatiquement. Les nombres acceptent un point ou une virgule décimale lorsque le séparateur de colonnes le permet. Les en-têtes sont stables et en anglais afin de servir de contrat technique.
+
+L'import est atomique : toutes les lignes sont contrôlées avant utilisation et la réponse ne contient aucun élément si une erreur est trouvée. Chaque erreur indique la ligne logique, le champ, un code stable et un message. Les fichiers sont limités à 10 Mo par défaut, 2 000 colis ou 200 livreurs. Cette limite est configurable avec `MAX_IMPORT_FILE_SIZE_MB`.
 
 ### Colis
+
+Modèle prêt à remplir : [`schemas/csv/packages-template.csv`](schemas/csv/packages-template.csv).
 
 ```csv
 id;label;weight_kg;destination_query;latitude;longitude;phone
@@ -374,6 +378,8 @@ colis-002;Client coordonnees;2.0;;-18.9100;47.5250;
 
 ### Livreurs
 
+Modèle prêt à remplir : [`schemas/csv/couriers-template.csv`](schemas/csv/couriers-template.csv).
+
 ```csv
 id;name;vehicle_type;max_weight_kg;average_speed_kmh
 livreur-001;Exemple Livreur;MOTO;35;22
@@ -381,6 +387,32 @@ livreur-002;Exemple Vélo;BICYCLE;;
 ```
 
 Les cellules vides de capacité et de vitesse demandent l'utilisation du préréglage du véhicule.
+
+Une réponse valide contient les éléments normalisés directement compatibles avec le plan :
+
+```json
+{
+  "valid": true,
+  "importType": "PACKAGES",
+  "filename": "packages.csv",
+  "delimiter": ";",
+  "importedCount": 1,
+  "items": [
+    {
+      "id": "colis-001",
+      "label": "Client Analakely",
+      "weightKg": 4.5,
+      "phone": "+261000000000",
+      "destination": {
+        "destinationQuery": "Analakely, Antananarivo"
+      }
+    }
+  ],
+  "errors": []
+}
+```
+
+L'interface affiche un aperçu de ces éléments en mémoire. Elle ne les enregistre pas dans PostgreSQL et un rechargement de la page efface cet aperçu.
 
 ### Résultats
 
@@ -415,6 +447,8 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `POST` | `/api/plans/optimize` | Générer le résultat d'un plan |
 | `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers le modèle du plan |
 | `POST` | `/api/import/couriers/csv` | Convertir un CSV livreurs vers le modèle du plan |
+| `GET` | `/api/import/packages/template` | Télécharger le modèle CSV colis |
+| `GET` | `/api/import/couriers/template` | Télécharger le modèle CSV livreurs |
 | `POST` | `/api/exports/result/csv` | Produire l'export tabulaire |
 | `POST` | `/api/exports/result/pdf` | Produire les fiches imprimables |
 
@@ -456,6 +490,7 @@ Les réglages importants sont :
 - URLs internes OSRM et Nominatim ;
 - chemin et URL de l'extrait OSM ;
 - préréglages des véhicules ;
+- taille maximale des imports ;
 - fournisseur et attribution des tuiles ;
 - limite de temps de l'optimiseur.
 
@@ -466,7 +501,7 @@ azy-livraison/
 ├── backend/                 API Spring Boot, migrations et tests Java
 ├── frontend/                application React + TypeScript et tests Vitest
 ├── infrastructure/          à venir : configuration OSRM/Nominatim
-├── schemas/                 schéma JSON 1.0, exemples ; CSV à venir
+├── schemas/                 schéma JSON 1.0, exemples et modèles CSV
 ├── data/                    à venir : données locales non versionnées
 ├── compose.yaml             frontend, backend et PostgreSQL
 ├── .env.example
@@ -601,7 +636,7 @@ Chaque course possédera alors son propre point de récupération, son point de 
 - [x] Docker Compose, PostgreSQL, Flyway et health checks ;
 - [x] modèles métier, schéma JSON 1.0 et validation des plans ;
 - [x] compte initial, login, access token et refresh token ;
-- [ ] imports CSV colis et livreurs.
+- [x] imports CSV colis et livreurs.
 
 ### Phase 2 — Géographie
 
