@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "0.9",
+  "pattern": "SINGLE_PICKUP_MULTI_DELIVERY",
+  "planId": "plan invalide",
+  "name": "",
+  "departureAt": "2026-08-03T08:00:00+02:00",
+  "timezone": "Indian/Antananarivo",
+  "settings": {
+    "returnToDepot": false,
+    "routingPreset": "MAIN_ROADS"
+  },
+  "depot": {
+    "latitude": -18.8792
+  },
+  "couriers": [
+    {
+      "id": "livreur-001",
+      "name": "Livreur invalide",
+      "vehicleType": "MOTO",
+      "maxWeightKg": 0
+    }
+  ],
+  "packages": [
+    {
+      "id": "colis-001",
+      "label": "Colis invalide",
+      "weightKg": -2,
+      "destination": {}
+    }
+  ]
+}

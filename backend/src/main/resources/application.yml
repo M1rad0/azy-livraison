@@ -5,6 +5,8 @@ server:
 spring:
   application:
     name: azy-livraison-api
+  jackson:
+    default-property-inclusion: non_null
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:azy_livraison}
     username: ${POSTGRES_USER:azy_dummy_user}
@@ -38,4 +40,10 @@ info:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
-
+  vehicle-presets:
+    moto:
+      max-weight-kg: ${VEHICLE_MOTO_DEFAULT_MAX_WEIGHT_KG:30}
+      average-speed-kmh: ${VEHICLE_MOTO_DEFAULT_AVERAGE_SPEED_KMH:25}
+    bicycle:
+      max-weight-kg: ${VEHICLE_BICYCLE_DEFAULT_MAX_WEIGHT_KG:10}
+      average-speed-kmh: ${VEHICLE_BICYCLE_DEFAULT_AVERAGE_SPEED_KMH:12}

@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azy-livraison.local/schemas/delivery-plan/1.0/delivery-plan.schema.json",
+  "title": "Plan de livraison AZY 1.0",
+  "description": "Contrat du pattern un point de récupération vers plusieurs destinations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pattern",
+    "planId",
+    "name",
+    "departureAt",
+    "timezone",
+    "settings",
+    "depot",
+    "couriers",
+    "packages"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "pattern": {
+      "const": "SINGLE_PICKUP_MULTI_DELIVERY"
+    },
+    "planId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "departureAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timezone": {
+      "const": "Indian/Antananarivo"
+    },
+    "settings": {
+      "$ref": "#/$defs/settings"
+    },
+    "depot": {
+      "$ref": "#/$defs/location"
+    },
+    "couriers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/courier"
+      }
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/package"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "returnToDepot",
+        "routingPreset"
+      ],
+      "properties": {
+        "returnToDepot": {
+          "type": "boolean"
+        },
+        "routingPreset": {
+          "const": "MAIN_ROADS"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "destinationQuery": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        }
+      },
+      "dependentRequired": {
+        "latitude": [
+          "longitude"
+        ],
+        "longitude": [
+          "latitude"
+        ]
+      },
+      "anyOf": [
+        {
+          "required": [
+            "latitude",
+            "longitude"
+          ]
+        },
+        {
+          "required": [
+            "destinationQuery"
+          ]
+        }
+      ]
+    },
+    "courier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "vehicleType"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "vehicleType": {
+          "enum": [
+            "MOTO",
+            "BICYCLE"
+          ]
+        },
+        "maxWeightKg": {
+          "$ref": "#/$defs/positiveNumber"
+        },
+        "averageSpeedKmh": {
+          "$ref": "#/$defs/positiveNumber"
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "weightKg",
+        "destination"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "weightKg": {
+          "$ref": "#/$defs/positiveNumber"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "destination": {
+          "$ref": "#/$defs/location"
+        }
+      }
+    }
+  }
+}
+
