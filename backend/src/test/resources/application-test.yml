@@ -7,3 +7,13 @@ spring:
   flyway:
     enabled: true
 
+app:
+  auth:
+    issuer: azy-livraison-test
+    access-secret: TEST_ACCESS_SECRET_MUST_HAVE_AT_LEAST_32_CHARACTERS
+    access-ttl-minutes: 15
+    refresh-secret: TEST_REFRESH_SECRET_MUST_HAVE_AT_LEAST_32_CHARACTERS
+    refresh-ttl-days: 7
+    cookie-secure: false
+    initial-username: admin
+    initial-password: test-admin-password

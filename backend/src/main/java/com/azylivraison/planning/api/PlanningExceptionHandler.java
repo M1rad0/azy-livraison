@@ -14,7 +14,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice
+@RestControllerAdvice(basePackageClasses = PlanValidationController.class)
 public class PlanningExceptionHandler {
 
     @ExceptionHandler(PlanValidationException.class)
@@ -57,4 +57,3 @@ public class PlanningExceptionHandler {
                 .body(PlanValidationResponse.failure(List.of(error)));
     }
 }
-
