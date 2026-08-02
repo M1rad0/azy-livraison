@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : conception initiale.** Le dépôt ne contient pas encore l'implémentation. Ce document fixe le périmètre du MVP, les choix techniques et les contrats de données à respecter pendant le développement.
+> **État du projet : socle technique en cours.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont en place. Les fonctionnalités métier décrites ci-dessous restent à implémenter progressivement.
 
 ## Objectif
 
@@ -415,7 +415,7 @@ Copier `.env.example` vers `.env`, puis remplacer toutes les valeurs marquées c
 Copy-Item .env.example .env
 ```
 
-Le fichier `.env` ne doit jamais être versionné. Tant que l'implémentation et `compose.yaml` ne sont pas présents, cette commande prépare seulement la future configuration ; elle ne suffit pas encore à démarrer l'application.
+Le fichier `.env` ne doit jamais être versionné. Les valeurs factices permettent un lancement strictement local ; tous les mots de passe et secrets devront être remplacés avant de partager ou déployer l'environnement.
 
 Les réglages importants sont :
 
@@ -428,34 +428,104 @@ Les réglages importants sont :
 - fournisseur et attribution des tuiles ;
 - limite de temps de l'optimiseur.
 
-## Structure prévue du dépôt
+## Structure du dépôt
 
 ```text
 azy-livraison/
-├── backend/                 API Spring Boot
-├── frontend/                application React + TypeScript
-├── infrastructure/          configuration OSRM/Nominatim et scripts d'initialisation
-├── schemas/                 schémas JSON et exemples CSV
-├── data/                    données locales non versionnées
-│   └── osm/
-├── compose.yaml
+├── backend/                 API Spring Boot, migrations et tests Java
+├── frontend/                application React + TypeScript et tests Vitest
+├── infrastructure/          à venir : configuration OSRM/Nominatim
+├── schemas/                 à venir : schémas JSON et exemples CSV
+├── data/                    à venir : données locales non versionnées
+├── compose.yaml             frontend, backend et PostgreSQL
 ├── .env.example
 └── README.md
 ```
 
-## Développement local cible
+## Développement local
 
-Lorsque l'infrastructure aura été implémentée, le parcours normal sera :
+### Démarrage avec Docker Compose
 
-```text
-1. copier .env.example vers .env et renseigner les secrets
-2. télécharger une fois l'extrait OSM Madagascar
-3. lancer le profil d'initialisation géographique
-4. démarrer les services avec Docker Compose
-5. ouvrir le frontend puis se connecter avec le compte initial
+Prérequis : Docker Desktop avec Docker Compose.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build --detach
+docker compose ps
 ```
 
-Les commandes exactes seront ajoutées dès la création de `compose.yaml` et des scripts. Elles ne sont volontairement pas inventées dans ce README.
+Les points d'entrée sont ensuite :
+
+- interface : [http://localhost:3000](http://localhost:3000) ;
+- état applicatif : [http://localhost:8081/api/system/status](http://localhost:8081/api/system/status) ;
+- santé Spring Boot : [http://localhost:8081/actuator/health](http://localhost:8081/actuator/health).
+
+L'interface interroge réellement le backend, qui exécute lui-même `SELECT 1` sur PostgreSQL. Les trois indicateurs doivent apparaître comme opérationnels.
+
+Arrêter les services sans supprimer les données :
+
+```powershell
+docker compose down
+```
+
+`docker compose down --volumes` supprime également la base locale persistée ; ne l'utiliser que pour réinitialiser volontairement l'environnement.
+
+Les données OSM ne sont pas encore nécessaires. Leur téléchargement interviendra pendant la phase géographique, lorsque OSRM et Nominatim auront été ajoutés au fichier Compose.
+
+### Exécution native pendant le développement
+
+PostgreSQL peut rester dans Docker :
+
+```powershell
+docker compose up --detach postgres
+```
+
+Lancer ensuite le backend avec Java 21 et Maven :
+
+```powershell
+Set-Location backend
+$env:POSTGRES_PORT = "5433"
+$env:API_PORT = "8081"
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Dans un autre terminal, lancer le frontend avec Node.js 24 LTS :
+
+```powershell
+Set-Location frontend
+$env:VITE_DEV_API_TARGET = "http://localhost:8081"
+npm ci
+npm run dev
+```
+
+Le serveur Vite est alors disponible sur [http://localhost:5173](http://localhost:5173) et redirige `/api` vers le backend local.
+
+### Tests et vérifications
+
+Backend :
+
+```powershell
+Set-Location backend
+mvn test
+```
+
+Le test Testcontainers vérifie PostgreSQL et la migration Flyway lorsque Docker est disponible. Il est marqué comme ignoré, sans masquer les autres tests, lorsque Docker n'est pas démarré.
+
+Frontend :
+
+```powershell
+Set-Location frontend
+npm ci
+npm run check
+npm test
+npm run build
+```
+
+Validation de l'orchestration :
+
+```powershell
+docker compose config --quiet
+```
 
 ## Tests d'acceptation prioritaires
 
@@ -494,10 +564,10 @@ Chaque course possédera alors son propre point de récupération, son point de 
 
 ### Phase 1 — Socle
 
-- monorepo frontend/backend ;
-- Docker Compose et PostgreSQL ;
-- compte initial, login, access token et refresh token ;
-- modèles, schémas JSON et imports CSV.
+- [x] monorepo frontend/backend ;
+- [x] Docker Compose, PostgreSQL, Flyway et health checks ;
+- [ ] compte initial, login, access token et refresh token ;
+- [ ] modèles, schémas JSON et imports CSV.
 
 ### Phase 2 — Géographie
 
@@ -530,4 +600,3 @@ Chaque course possédera alors son propre point de récupération, son point de 
 - créneaux horaires ;
 - historique et comparaison de scénarios ;
 - mise à jour automatisée et contrôlée des données OSM.
-
