@@ -1,0 +1,26 @@
+# Configuration locale et secrets
+.env
+.env.*
+!.env.example
+
+# Données géographiques, bases et exports locaux
+data/
+*.osm.pbf
+*.osrm*
+
+# Java / Spring Boot
+backend/target/
+*.log
+
+# JavaScript / React
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE et système
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
