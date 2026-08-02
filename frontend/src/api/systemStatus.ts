@@ -8,9 +8,12 @@ export interface SystemStatus {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
-export async function getSystemStatus(signal?: AbortSignal): Promise<SystemStatus> {
+export async function getSystemStatus(accessToken: string, signal?: AbortSignal): Promise<SystemStatus> {
   const response = await fetch(`${API_BASE_URL}/system/status`, {
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
     signal,
   })
 
@@ -22,4 +25,3 @@ export async function getSystemStatus(signal?: AbortSignal): Promise<SystemStatu
 
   return payload
 }
-

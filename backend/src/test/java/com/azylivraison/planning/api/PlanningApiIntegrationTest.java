@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +28,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void validatesAndNormalizesAPlan() throws Exception {
-        mockMvc.perform(post("/api/plans/validate")
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(readResource("plans/valid-plan.json")))
                 .andExpect(status().isOk())
@@ -79,7 +80,7 @@ class PlanningApiIntegrationTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/plans/validate")
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidPlan))
                 .andExpect(status().isBadRequest())
@@ -101,7 +102,7 @@ class PlanningApiIntegrationTest {
         String invalidWeight = readResource("plans/valid-plan.json")
                 .replace("\"weightKg\": 4.5", "\"weightKg\": 0");
 
-        mockMvc.perform(post("/api/plans/validate")
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidWeight))
                 .andExpect(status().isBadRequest())
@@ -114,7 +115,7 @@ class PlanningApiIntegrationTest {
         String mismatchedOffset = readResource("plans/valid-plan.json")
                 .replace("2026-08-03T08:00:00+03:00", "2026-08-03T08:00:00+02:00");
 
-        mockMvc.perform(post("/api/plans/validate")
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mismatchedOffset))
                 .andExpect(status().isBadRequest())
@@ -126,7 +127,7 @@ class PlanningApiIntegrationTest {
         String unknownProperty = readResource("plans/valid-plan.json")
                 .replace("\"schemaVersion\": \"1.0\"", "\"unknown\": true, \"schemaVersion\": \"1.0\"");
 
-        mockMvc.perform(post("/api/plans/validate")
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(unknownProperty))
                 .andExpect(status().isBadRequest())
@@ -138,7 +139,7 @@ class PlanningApiIntegrationTest {
         String overweightPackage = readResource("plans/valid-plan.json")
                 .replace("\"weightKg\": 4.5", "\"weightKg\": 1000");
 
-        mockMvc.perform(post("/api/plans/validate")
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(overweightPackage))
                 .andExpect(status().isOk())
@@ -148,7 +149,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void listsVehiclePresets() throws Exception {
-        mockMvc.perform(get("/api/vehicle-presets"))
+        mockMvc.perform(get("/api/vehicle-presets").with(user("admin")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("MOTO"))
                 .andExpect(jsonPath("$[0].maxWeightKg").value(30))

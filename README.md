@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle technique et contrat de planification en cours.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont en place. Le plan JSON `1.0` peut être validé et normalisé par l'API ; l'authentification, les imports et l'optimisation restent à implémenter.
+> **État du projet : socle, contrat de planification et authentification en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Le plan JSON `1.0` peut être validé et normalisé par l'API ; les imports, la géographie et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -399,7 +399,7 @@ Le MVP ne propose ni inscription publique ni rôles.
 - Les limites de taille des fichiers, les types MIME, le contenu CSV/JSON et toutes les valeurs numériques sont validés côté backend.
 - Les secrets réels ne sont jamais committés. `.env.example` ne contient que des valeurs factices.
 
-## API REST envisagée
+## API REST
 
 Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 
@@ -408,6 +408,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `POST` | `/api/auth/login` | Obtenir un access token et ouvrir une session |
 | `POST` | `/api/auth/refresh` | Renouveler et faire tourner les jetons |
 | `POST` | `/api/auth/logout` | Révoquer la session |
+| `GET` | `/api/auth/me` | Lire le compte correspondant à l'access token |
 | `GET` | `/api/vehicle-presets` | Lire les valeurs par défaut |
 | `POST` | `/api/geocoding/search` | Rechercher et confirmer un lieu |
 | `POST` | `/api/plans/validate` | Valider et normaliser un plan sans le géocoder ni l'optimiser |
@@ -419,6 +420,22 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 
 Les opérations métier reçoivent le plan dans la requête et retournent le résultat sans exiger son enregistrement en base.
 
+Les routes d'authentification `login`, `refresh` et `logout`, ainsi que les health checks Docker, sont publiques. Toutes les autres routes exigent `Authorization: Bearer <accessToken>`. Le login et le renouvellement répondent avec :
+
+```json
+{
+  "tokenType": "Bearer",
+  "accessToken": "dummy.jwt.value",
+  "expiresIn": 900,
+  "account": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "username": "admin"
+  }
+}
+```
+
+Le refresh token n'est pas exposé dans ce JSON : il est envoyé dans le cookie `azy_refresh_token`, limité au chemin `/api/auth`. Chaque appel réussi à `/api/auth/refresh` remplace et révoque le précédent token. Sa réutilisation échoue en HTTP `401`.
+
 ## Configuration
 
 Copier `.env.example` vers `.env`, puis remplacer toutes les valeurs marquées comme factices :
@@ -428,6 +445,8 @@ Copy-Item .env.example .env
 ```
 
 Le fichier `.env` ne doit jamais être versionné. Les valeurs factices permettent un lancement strictement local ; tous les mots de passe et secrets devront être remplacés avant de partager ou déployer l'environnement.
+
+Le compte `INITIAL_ADMIN_USERNAME` est créé uniquement s'il n'existe pas encore. Modifier `INITIAL_ADMIN_PASSWORD` après ce premier démarrage ne réinitialise donc pas silencieusement son mot de passe en base. En local, pour repartir entièrement des valeurs du nouveau fichier `.env`, il faut supprimer volontairement le volume PostgreSQL puis relancer l'application.
 
 Les réglages importants sont :
 
@@ -473,6 +492,8 @@ Les points d'entrée sont ensuite :
 - santé Spring Boot : [http://localhost:8081/actuator/health](http://localhost:8081/actuator/health).
 
 L'interface interroge réellement le backend, qui exécute lui-même `SELECT 1` sur PostgreSQL. Les trois indicateurs doivent apparaître comme opérationnels.
+
+Au premier démarrage, se connecter avec `INITIAL_ADMIN_USERNAME` et `INITIAL_ADMIN_PASSWORD` définis dans `.env`. Les valeurs proposées dans `.env.example` sont volontairement factices et réservées au développement local.
 
 Arrêter les services sans supprimer les données :
 
@@ -579,7 +600,7 @@ Chaque course possédera alors son propre point de récupération, son point de 
 - [x] monorepo frontend/backend ;
 - [x] Docker Compose, PostgreSQL, Flyway et health checks ;
 - [x] modèles métier, schéma JSON 1.0 et validation des plans ;
-- [ ] compte initial, login, access token et refresh token ;
+- [x] compte initial, login, access token et refresh token ;
 - [ ] imports CSV colis et livreurs.
 
 ### Phase 2 — Géographie
