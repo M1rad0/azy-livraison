@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle technique en cours.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont en place. Les fonctionnalités métier décrites ci-dessous restent à implémenter progressivement.
+> **État du projet : socle technique et contrat de planification en cours.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont en place. Le plan JSON `1.0` peut être validé et normalisé par l'API ; l'authentification, les imports et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -284,9 +284,7 @@ Le JSON est le format canonique. Chaque fichier possède une version de schéma 
       "weightKg": 4.5,
       "phone": "+261000000000",
       "destination": {
-        "destinationQuery": "Analakely, Antananarivo",
-        "latitude": null,
-        "longitude": null
+        "destinationQuery": "Analakely, Antananarivo"
       }
     }
   ]
@@ -295,7 +293,21 @@ Le JSON est le format canonique. Chaque fichier possède une version de schéma 
 
 Les valeurs `maxWeightKg` et `averageSpeedKmh` absentes utilisent le préréglage du véhicule. Une valeur présente doit être positive et remplace le préréglage.
 
-Le fichier rechargé est validé par schéma. Une version inconnue n'est jamais interprétée silencieusement.
+Le contrat formel se trouve dans le [schéma JSON du plan 1.0](schemas/delivery-plan/1.0/delivery-plan.schema.json). Des fichiers [valide](schemas/examples/delivery-plan-1.0.valid.json) et [invalide](schemas/examples/delivery-plan-1.0.invalid.json) servent de références.
+
+La structure du fichier rechargé est contrôlée par l'API selon ce schéma, puis complétée par les règles métier. Une version inconnue n'est jamais interprétée silencieusement. Les coordonnées sont omises lorsqu'elles ne sont pas encore connues : des valeurs `null` ne font pas partie du contrat JSON.
+
+L'endpoint de validation retourne le plan normalisé avec les chaînes nettoyées et les valeurs véhicule par défaut matérialisées :
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8081/api/plans/validate `
+  -ContentType application/json `
+  -InFile .\schemas\examples\delivery-plan-1.0.valid.json
+```
+
+Une requête valide répond en HTTP `200` avec `valid: true`. Une requête incorrecte répond en HTTP `400` avec une liste stable d'erreurs contenant `path`, `code` et `message`. Le géocodage des destinations textuelles n'est pas exécuté à cette étape.
 
 ### Résultat JSON
 
@@ -398,7 +410,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `POST` | `/api/auth/logout` | Révoquer la session |
 | `GET` | `/api/vehicle-presets` | Lire les valeurs par défaut |
 | `POST` | `/api/geocoding/search` | Rechercher et confirmer un lieu |
-| `POST` | `/api/plans/validate` | Valider et résoudre un plan sans l'optimiser |
+| `POST` | `/api/plans/validate` | Valider et normaliser un plan sans le géocoder ni l'optimiser |
 | `POST` | `/api/plans/optimize` | Générer le résultat d'un plan |
 | `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers le modèle du plan |
 | `POST` | `/api/import/couriers/csv` | Convertir un CSV livreurs vers le modèle du plan |
@@ -435,7 +447,7 @@ azy-livraison/
 ├── backend/                 API Spring Boot, migrations et tests Java
 ├── frontend/                application React + TypeScript et tests Vitest
 ├── infrastructure/          à venir : configuration OSRM/Nominatim
-├── schemas/                 à venir : schémas JSON et exemples CSV
+├── schemas/                 schéma JSON 1.0, exemples ; CSV à venir
 ├── data/                    à venir : données locales non versionnées
 ├── compose.yaml             frontend, backend et PostgreSQL
 ├── .env.example
@@ -566,8 +578,9 @@ Chaque course possédera alors son propre point de récupération, son point de 
 
 - [x] monorepo frontend/backend ;
 - [x] Docker Compose, PostgreSQL, Flyway et health checks ;
+- [x] modèles métier, schéma JSON 1.0 et validation des plans ;
 - [ ] compte initial, login, access token et refresh token ;
-- [ ] modèles, schémas JSON et imports CSV.
+- [ ] imports CSV colis et livreurs.
 
 ### Phase 2 — Géographie
 

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0",
+  "pattern": "SINGLE_PICKUP_MULTI_DELIVERY",
+  "planId": "plan-2026-08-03-001",
+  "name": "Tournée Antananarivo matin",
+  "departureAt": "2026-08-03T08:00:00+03:00",
+  "timezone": "Indian/Antananarivo",
+  "settings": {
+    "returnToDepot": false,
+    "routingPreset": "MAIN_ROADS"
+  },
+  "depot": {
+    "label": "Dépôt principal",
+    "destinationQuery": "Antananarivo, Madagascar",
+    "latitude": -18.8792,
+    "longitude": 47.5079
+  },
+  "couriers": [
+    {
+      "id": "livreur-001",
+      "name": "Exemple Livreur",
+      "vehicleType": "MOTO",
+      "maxWeightKg": 35,
+      "averageSpeedKmh": 22
+    },
+    {
+      "id": "livreur-002",
+      "name": "Exemple Vélo",
+      "vehicleType": "BICYCLE"
+    }
+  ],
+  "packages": [
+    {
+      "id": "colis-001",
+      "label": "Client Analakely",
+      "weightKg": 4.5,
+      "phone": "+261000000000",
+      "destination": {
+        "destinationQuery": "Analakely, Antananarivo"
+      }
+    },
+    {
+      "id": "colis-002",
+      "label": "Client coordonnées",
+      "weightKg": 2,
+      "destination": {
+        "destinationQuery": "Libellé informatif conservé",
+        "latitude": -18.91,
+        "longitude": 47.525
+      }
+    }
+  ]
+}
