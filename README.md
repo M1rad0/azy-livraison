@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle, authentification et imports CSV en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Le plan JSON `1.0` peut être validé et normalisé, et les listes de colis/livreurs peuvent être importées ; la géographie et l'optimisation restent à implémenter.
+> **État du projet : socle, authentification, imports CSV et recherche géographique en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Les adresses peuvent être recherchées dans Madagascar via Nominatim et les réponses sont mises en cache ; la carte, le routage et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -189,7 +189,7 @@ Elles doivent être validées avec les conditions réelles d'AZY Livraison et re
 
 ### Quand télécharger les données ?
 
-**Il n'est pas nécessaire de les télécharger pendant la phase de rédaction ou de création des écrans.** Le premier téléchargement doit avoir lieu lorsque les services Docker OSRM et Nominatim ainsi que leurs scripts d'initialisation sont présents, juste avant le premier test de bout en bout du géocodage et de la génération de tournées.
+**Le téléchargement devient nécessaire à partir de cette phase géographique.** Le service Nominatim et son script d'initialisation sont maintenant présents. Le téléchargement reste une action explicite afin de ne jamais consommer plusieurs centaines de mégaoctets ni lancer un import long pendant un démarrage quotidien.
 
 Le fichier à utiliser est l'extrait Madagascar `madagascar-latest.osm.pbf`, disponible sur la page officielle [Geofabrik — Madagascar](https://download.geofabrik.de/africa/madagascar.html). Il sera placé localement dans :
 
@@ -201,6 +201,14 @@ Le répertoire `data/` ne doit pas être versionné dans Git. Le même extrait s
 
 - préparer le graphe OSRM ;
 - importer l'index de recherche Nominatim.
+
+Télécharger l'extrait et vérifier automatiquement son empreinte MD5 :
+
+```powershell
+.\infrastructure\osm\download-madagascar.ps1
+```
+
+Le fichier PBF courant fait environ 370 Mo. L'index Nominatim demande ensuite plusieurs gigaoctets supplémentaires et son premier import peut durer longtemps selon le disque, la mémoire et le nombre de cœurs disponibles.
 
 L'initialisation géographique sera une étape explicite, distincte du démarrage quotidien :
 
@@ -442,7 +450,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `POST` | `/api/auth/logout` | Révoquer la session |
 | `GET` | `/api/auth/me` | Lire le compte correspondant à l'access token |
 | `GET` | `/api/vehicle-presets` | Lire les valeurs par défaut |
-| `POST` | `/api/geocoding/search` | Rechercher et confirmer un lieu |
+| `GET` | `/api/geocoding/search?q=...` | Rechercher des candidats dans Madagascar |
 | `POST` | `/api/plans/validate` | Valider et normaliser un plan sans le géocoder ni l'optimiser |
 | `POST` | `/api/plans/optimize` | Générer le résultat d'un plan |
 | `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers le modèle du plan |
@@ -500,10 +508,11 @@ Les réglages importants sont :
 azy-livraison/
 ├── backend/                 API Spring Boot, migrations et tests Java
 ├── frontend/                application React + TypeScript et tests Vitest
-├── infrastructure/          à venir : configuration OSRM/Nominatim
+├── infrastructure/          scripts d'initialisation OSM ; OSRM à venir
 ├── schemas/                 schéma JSON 1.0, exemples et modèles CSV
-├── data/                    à venir : données locales non versionnées
+├── data/                    données OSM locales non versionnées
 ├── compose.yaml             frontend, backend et PostgreSQL
+├── compose.geography.yaml   profil Nominatim local
 ├── .env.example
 └── README.md
 ```
@@ -538,7 +547,22 @@ docker compose down
 
 `docker compose down --volumes` supprime également la base locale persistée ; ne l'utiliser que pour réinitialiser volontairement l'environnement.
 
-Les données OSM ne sont pas encore nécessaires. Leur téléchargement interviendra pendant la phase géographique, lorsque OSRM et Nominatim auront été ajoutés au fichier Compose.
+### Géocodage local avec Nominatim
+
+Le profil géographique est volontairement séparé du démarrage quotidien. Après avoir téléchargé le PBF :
+
+```powershell
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --detach nominatim
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography logs --follow nominatim
+```
+
+Le premier lancement importe Madagascar et peut prendre du temps. Le volume `nominatim-data` conserve ensuite l'index. Quand `/status` répond, reconstruire ou redémarrer le backend pour utiliser `http://nominatim:8080` dans le réseau Compose :
+
+```powershell
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --build --detach
+```
+
+La recherche applicative est disponible dans l'interface et via `GET /api/geocoding/search?q=Analakely`. Elle est limitée à `mg`, renvoie plusieurs candidats à confirmer et met les réponses en cache dans PostgreSQL pendant 30 jours par défaut.
 
 ### Exécution native pendant le développement
 
@@ -640,8 +664,8 @@ Chaque course possédera alors son propre point de récupération, son point de 
 
 ### Phase 2 — Géographie
 
-- téléchargement guidé de l'extrait Madagascar ;
-- Nominatim local, cache et confirmation des recherches ambiguës ;
+- [x] téléchargement guidé de l'extrait Madagascar ;
+- [x] Nominatim local, cache et confirmation des recherches ambiguës ;
 - OSRM local avec le préréglage `MAIN_ROADS` ;
 - carte Leaflet et sélection par clic.
 

@@ -55,6 +55,15 @@ app:
     initial-password: ${INITIAL_ADMIN_PASSWORD:CHANGE_ME_DUMMY_ADMIN_PASSWORD}
   imports:
     max-file-size: ${MAX_IMPORT_FILE_SIZE_MB:10}MB
+  geocoding:
+    base-url: ${NOMINATIM_BASE_URL:http://localhost:8082}
+    user-agent: ${NOMINATIM_USER_AGENT:AZY-Livraison/0.1 (contact@example.invalid)}
+    country-code: ${GEOCODING_COUNTRY_CODE:mg}
+    accept-language: ${GEOCODING_ACCEPT_LANGUAGE:fr,mg,en}
+    result-limit: ${GEOCODING_RESULT_LIMIT:5}
+    connect-timeout: ${GEOCODING_CONNECT_TIMEOUT:2s}
+    read-timeout: ${GEOCODING_READ_TIMEOUT:5s}
+    cache-ttl: ${GEOCODING_CACHE_TTL:30d}
   vehicle-presets:
     moto:
       max-weight-kg: ${VEHICLE_MOTO_DEFAULT_MAX_WEIGHT_KG:30}

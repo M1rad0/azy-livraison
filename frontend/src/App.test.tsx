@@ -141,4 +141,52 @@ describe('App', () => {
       }),
     )
   })
+
+  it('searches and selects a geocoding candidate', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/refresh') return Promise.resolve(jsonResponse(session))
+      if (input === '/api/system/status') {
+        return Promise.resolve(jsonResponse({
+          service: 'UP',
+          database: 'UP',
+          checkedAt: '2026-08-02T12:00:00Z',
+        }))
+      }
+      if (input === '/api/geocoding/search?q=Analakely%2C+Antananarivo') {
+        return Promise.resolve(jsonResponse({
+          query: 'Analakely, Antananarivo',
+          provider: 'NOMINATIM',
+          cached: false,
+          resultCount: 1,
+          candidates: [{
+            id: 'N12345',
+            osmType: 'NODE',
+            osmId: 12345,
+            displayName: 'Analakely, Antananarivo, Madagascar',
+            latitude: -18.9089,
+            longitude: 47.5212,
+          }],
+        }))
+      }
+      throw new Error(`Unexpected request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const addressInput = await screen.findByLabelText('Adresse, quartier ou point de repère')
+    fireEvent.change(addressInput, { target: { value: 'Analakely, Antananarivo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
+
+    const candidate = await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ })
+    fireEvent.click(candidate)
+
+    expect(screen.getByText('Destination sélectionnée').parentElement)
+      .toHaveTextContent('-18.908900, 47.521200')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/geocoding/search?q=Analakely%2C+Antananarivo',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+      }),
+    )
+  })
 })
