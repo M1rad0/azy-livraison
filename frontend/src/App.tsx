@@ -8,6 +8,7 @@ import {
 import { getSystemStatus, type ServiceState, type SystemStatus } from './api/systemStatus'
 import { AddressSearchWorkspace } from './components/AddressSearchWorkspace'
 import { CsvImportWorkspace } from './components/CsvImportWorkspace'
+import { RoutingMapSandbox } from './components/RoutingMapSandbox'
 import './App.css'
 
 type LoadingState = 'loading' | 'ready' | 'error'
@@ -174,6 +175,8 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
           Importez vos colis et vos livreurs, contrôlez chaque ligne puis préparez la prochaine tournée.
         </p>
       </section>
+
+      <RoutingMapSandbox accessToken={session.accessToken} />
 
       <AddressSearchWorkspace accessToken={session.accessToken} />
 

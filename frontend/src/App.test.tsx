@@ -1,5 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('react-leaflet', () => ({
+  CircleMarker: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  GeoJSON: () => <div data-testid="route-geometry" />,
+  MapContainer: ({ children }: { children?: ReactNode }) => <div data-testid="routing-map">{children}</div>,
+  Marker: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Popup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  TileLayer: () => null,
+  useMap: () => ({ fitBounds: vi.fn() }),
+  useMapEvents: () => undefined,
+}))
+
 import { App } from './App'
 
 const session = {
@@ -186,6 +199,80 @@ describe('App', () => {
       '/api/geocoding/search?q=Analakely%2C+Antananarivo',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+      }),
+    )
+  })
+
+  it('calculates and displays the sandbox route', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/refresh') return Promise.resolve(jsonResponse(session))
+      if (input === '/api/system/status') {
+        return Promise.resolve(jsonResponse({
+          service: 'UP', database: 'UP', checkedAt: '2026-08-02T12:00:00Z',
+        }))
+      }
+      if (input === '/api/routing/route') {
+        return Promise.resolve(jsonResponse({
+          provider: 'OSRM',
+          preset: 'MAIN_ROADS',
+          pointCount: 2,
+          distanceMeters: 3142.5,
+          durationSeconds: 482,
+          geometry: {
+            type: 'LineString',
+            coordinates: [[47.5262845, -18.9083181], [47.522924, -18.8859714]],
+          },
+          waypoints: [
+            {
+              id: 'start',
+              inputLatitude: -18.9083181,
+              inputLongitude: 47.5262845,
+              snappedLatitude: -18.9083,
+              snappedLongitude: 47.5263,
+              distanceToRoadMeters: 2.4,
+              roadName: 'Lalana Andrianampoinimerina',
+            },
+            {
+              id: 'end',
+              inputLatitude: -18.8859714,
+              inputLongitude: 47.522924,
+              snappedLatitude: -18.886,
+              snappedLongitude: 47.5229,
+              distanceToRoadMeters: 3.1,
+              roadName: 'Route des Hydrocarbures',
+            },
+          ],
+          legs: [{
+            fromIndex: 0,
+            toIndex: 1,
+            fromId: 'start',
+            toId: 'end',
+            distanceMeters: 3142.5,
+            durationSeconds: 482,
+          }],
+        }))
+      }
+      throw new Error(`Unexpected request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Calculer l’itinéraire' }))
+
+    expect(await screen.findByText('OSRM · MAIN_ROADS')).toBeInTheDocument()
+    expect(screen.getAllByText(/Lalana Andrianampoinimerina/)).toHaveLength(2)
+    expect(screen.getByTestId('route-geometry')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/routing/route',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+        body: JSON.stringify({
+          points: [
+            { id: 'start', latitude: -18.9083181, longitude: 47.5262845 },
+            { id: 'end', latitude: -18.8859714, longitude: 47.522924 },
+          ],
+        }),
       }),
     )
   })

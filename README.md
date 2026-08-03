@@ -601,6 +601,25 @@ Le corps commun contient au moins deux points identifiés :
 
 Les coordonnées d'entrée et celles recalées sur la route sont toutes deux conservées dans la réponse. Les limites de taille, délais réseau et ports sont configurables dans `.env.example`.
 
+### Bac à sable cartographique (branche expérimentale)
+
+La branche `sandbox/map-routing` ajoute volontairement un atelier visuel qui ne sera pas fusionné dans la version produit. Après connexion, il permet de :
+
+- rechercher indépendamment un départ et une arrivée avec Nominatim ;
+- placer le point actif en cliquant sur la carte ou déplacer les deux marqueurs ;
+- afficher le tracé renvoyé par OSRM, ainsi que ses points recalés sur le réseau routier ;
+- comparer la distance routière, la distance à vol d'oiseau, la durée OSRM et le pourcentage de détour.
+
+Les valeurs initiales sont Analakely et Ankorondrano. Pour éviter un éventuel service local déjà présent sur le port `3000`, lancer cette branche sur `3001` :
+
+```powershell
+$env:FRONTEND_PORT = "3001"
+$env:CORS_ALLOWED_ORIGINS = "http://localhost:3001,http://localhost:5173"
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --build --detach
+```
+
+Ouvrir ensuite [http://localhost:3001](http://localhost:3001). Le routage et la recherche restent locaux une fois les données préparées. Le fond de carte utilise par défaut les tuiles OpenStreetMap publiques et nécessite donc Internet ; son URL et son attribution peuvent être remplacées avec `VITE_MAP_TILE_URL` et `VITE_MAP_TILE_ATTRIBUTION` avant la construction du frontend.
+
 ### Exécution native pendant le développement
 
 PostgreSQL peut rester dans Docker :
