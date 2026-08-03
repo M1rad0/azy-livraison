@@ -10,6 +10,7 @@ import com.azylivraison.geography.domain.GeocodingCandidate;
 import com.azylivraison.geography.service.GeocodingUnavailableException;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -24,7 +25,7 @@ public class NominatimGeocodingProvider implements GeocodingProvider {
     private final GeocodingProperties properties;
 
     public NominatimGeocodingProvider(
-            RestClient nominatimRestClient,
+            @Qualifier("nominatimRestClient") RestClient nominatimRestClient,
             ObjectMapper objectMapper,
             GeocodingProperties properties) {
         this.restClient = nominatimRestClient;
