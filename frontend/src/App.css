@@ -13,6 +13,7 @@
 
 .topbar,
 .hero,
+.geocoding,
 .imports,
 .foundation,
 .app-shell footer {
@@ -246,6 +247,172 @@ h3 {
   border: 1px solid rgba(23, 63, 53, 0.09);
   border-radius: 1.5rem;
   box-shadow: 0 24px 60px rgba(39, 53, 48, 0.1);
+}
+
+.geocoding {
+  margin-bottom: 2rem;
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  background: #173f35;
+  border-radius: 1.5rem;
+  box-shadow: 0 24px 60px rgba(23, 63, 53, 0.18);
+}
+
+.geocoding h2 {
+  color: #fffdf7;
+}
+
+.geocoding .eyebrow {
+  color: #efaa7d;
+}
+
+.geocoding .section-heading {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.geocoding .section-heading > p {
+  color: #b8c8c1;
+}
+
+.address-search {
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 2rem;
+}
+
+.address-search label {
+  color: #e5eee9;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.address-search__controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.7rem;
+}
+
+.address-search input {
+  min-width: 0;
+  min-height: 3.2rem;
+  padding: 0.8rem 1rem;
+  color: #17322c;
+  background: #fffdf7;
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  outline: none;
+}
+
+.address-search input:focus {
+  border-color: #efaa7d;
+  box-shadow: 0 0 0 3px rgba(239, 170, 125, 0.2);
+}
+
+.geocoding .address-search .button {
+  color: #173f35;
+  background: #efaa7d;
+}
+
+.geocoding .address-search .button:hover:not(:disabled) {
+  background: #ffc49d;
+}
+
+.geocoding__message,
+.geocoding-empty,
+.geocoding-results,
+.selected-location {
+  margin-top: 1rem;
+}
+
+.geocoding-empty {
+  padding: 1rem;
+  color: #d5e0db;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.geocoding-results__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
+  color: #eaf0ed;
+  font-size: 0.8rem;
+}
+
+.geocoding-results__meta span {
+  color: #aebfb7;
+  font-size: 0.72rem;
+}
+
+.candidate-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.candidate {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.9rem;
+  color: #26473e;
+  background: #f7f4eb;
+  border: 1px solid transparent;
+  border-radius: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.candidate:hover,
+.candidate--selected {
+  background: #fffdf7;
+  border-color: #efaa7d;
+}
+
+.candidate__marker {
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  color: #fff;
+  background: #a84c2c;
+  border-radius: 999px 999px 999px 0.3rem;
+  font-weight: 800;
+}
+
+.candidate > span:last-child {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.candidate small {
+  color: #76827c;
+}
+
+.selected-location {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  color: #173f35;
+  background: #efaa7d;
+  border-radius: 0.8rem;
+}
+
+.selected-location span {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.selected-location code {
+  font-size: 0.76rem;
 }
 
 .section-heading,
@@ -559,6 +726,10 @@ tbody tr:last-child td {
   }
 
   .import-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .address-search__controls {
     grid-template-columns: 1fr;
   }
 }
