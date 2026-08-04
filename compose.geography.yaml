@@ -30,5 +30,45 @@ services:
       start_period: 30m
     restart: unless-stopped
 
+  osrm-prepare:
+    image: ghcr.io/project-osrm/osrm-backend:v26.8.0-debian
+    profiles: ["geography"]
+    environment:
+      OSRM_DATASET: ${OSRM_DATASET:-madagascar-latest}
+      OSRM_PREPARE_THREADS: ${OSRM_PREPARE_THREADS:-2}
+      OSRM_GRAPH_VERSION: main-roads-v1-osrm-26.8.0-debian
+    volumes:
+      - ./data/osm:/data
+      - ./infrastructure/osrm:/profiles:ro
+    entrypoint: ["/bin/bash", "/profiles/prepare.sh"]
+    restart: "no"
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v26.8.0-debian
+    profiles: ["geography"]
+    command:
+      - osrm-routed
+      - --algorithm
+      - mld
+      - --max-table-size
+      - "${OSRM_MAX_TABLE_SIZE:-100}"
+      - --max-viaroute-size
+      - "${OSRM_MAX_ROUTE_POINTS:-100}"
+      - "/data/${OSRM_DATASET:-madagascar-latest}.osrm"
+    depends_on:
+      osrm-prepare:
+        condition: service_completed_successfully
+    ports:
+      - "${OSRM_EXPOSED_PORT:-8083}:5000"
+    volumes:
+      - ./data/osm:/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/5000'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   nominatim-data:

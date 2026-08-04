@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle, authentification, imports CSV et recherche géographique en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Les adresses peuvent être recherchées dans Madagascar via Nominatim et les réponses sont mises en cache ; la carte, le routage et l'optimisation restent à implémenter.
+> **État du projet : socle, authentification, imports CSV, géocodage et routage local en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Nominatim résout les adresses de Madagascar et OSRM calcule matrices et tracés ; la carte et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -20,6 +20,18 @@ Le premier scénario pris en charge est :
 L'application doit fonctionner principalement en local, tout en restant déployable en ligne. Les plans et les résultats sont d'abord des fichiers partageables ; PostgreSQL ne remplace pas ces fichiers.
 
 ## Fonctionnalités du MVP
+
+### Parcours de l'utilisateur
+
+Après la connexion, l'utilisateur choisit un pattern de planification. Le MVP n'en propose qu'un : **un point de récupération vers plusieurs points de livraison**. Ce choix ouvre un espace de travail unique dans lequel :
+
+1. le formulaire constitue la source visible du plan en cours ;
+2. les imports CSV de colis et de livreurs alimentent ce même formulaire, sans créer un parcours séparé ;
+3. le plan peut être exporté en JSON à tout moment comme brouillon partageable ;
+4. un fichier JSON précédemment exporté peut être rouvert pour reprendre et modifier le travail ;
+5. le résultat n'est généré qu'après validation du formulaire complet.
+
+PostgreSQL reste réservé aux comptes, sessions et caches techniques. Le fichier de plan est la sauvegarde métier portable de référence.
 
 ### Préparer un plan
 
@@ -189,7 +201,7 @@ Elles doivent être validées avec les conditions réelles d'AZY Livraison et re
 
 ### Quand télécharger les données ?
 
-**Le téléchargement devient nécessaire à partir de cette phase géographique.** Le service Nominatim et son script d'initialisation sont maintenant présents. Le téléchargement reste une action explicite afin de ne jamais consommer plusieurs centaines de mégaoctets ni lancer un import long pendant un démarrage quotidien.
+**Le téléchargement devient nécessaire à partir de cette phase géographique.** Les services Nominatim et OSRM ainsi que leurs scripts d'initialisation sont maintenant présents. Le téléchargement reste une action explicite afin de ne jamais consommer plusieurs centaines de mégaoctets ni lancer un import long pendant un démarrage quotidien.
 
 Le fichier à utiliser est l'extrait Madagascar `madagascar-latest.osm.pbf`, disponible sur la page officielle [Geofabrik — Madagascar](https://download.geofabrik.de/africa/madagascar.html). Il sera placé localement dans :
 
@@ -208,7 +220,7 @@ Télécharger l'extrait et vérifier automatiquement son empreinte MD5 :
 .\infrastructure\osm\download-madagascar.ps1
 ```
 
-Le fichier PBF courant fait environ 370 Mo. L'index Nominatim demande ensuite plusieurs gigaoctets supplémentaires et son premier import peut durer longtemps selon le disque, la mémoire et le nombre de cœurs disponibles.
+Le fichier PBF courant fait environ 370 Mo. Les index Nominatim et OSRM demandent ensuite plusieurs gigaoctets supplémentaires et leur première préparation peut durer longtemps selon le disque, la mémoire et le nombre de cœurs disponibles.
 
 L'initialisation géographique sera une étape explicite, distincte du démarrage quotidien :
 
@@ -508,11 +520,11 @@ Les réglages importants sont :
 azy-livraison/
 ├── backend/                 API Spring Boot, migrations et tests Java
 ├── frontend/                application React + TypeScript et tests Vitest
-├── infrastructure/          scripts d'initialisation OSM ; OSRM à venir
+├── infrastructure/          téléchargement OSM et profil/préparation OSRM
 ├── schemas/                 schéma JSON 1.0, exemples et modèles CSV
 ├── data/                    données OSM locales non versionnées
 ├── compose.yaml             frontend, backend et PostgreSQL
-├── compose.geography.yaml   profil Nominatim local
+├── compose.geography.yaml   profil Nominatim et OSRM locaux
 ├── .env.example
 └── README.md
 ```
@@ -563,6 +575,43 @@ docker compose -f compose.yaml -f compose.geography.yaml --profile geography up 
 ```
 
 La recherche applicative est disponible dans l'interface et via `GET /api/geocoding/search?q=Analakely`. Elle est limitée à `mg`, renvoie plusieurs candidats à confirmer et met les réponses en cache dans PostgreSQL pendant 30 jours par défaut.
+
+### Routage local avec OSRM
+
+Préparer le graphe `MAIN_ROADS` à partir du même PBF Madagascar :
+
+```powershell
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography run --rm osrm-prepare
+```
+
+Le script recalcule automatiquement le graphe lorsque le PBF, le profil Lua ou sa version change. Sinon, il détecte l'empreinte existante et termine immédiatement. Les fichiers `madagascar-latest.osrm.*` sont produits dans `data/osm/` et ne sont pas versionnés.
+
+Démarrer ensuite OSRM et l'application :
+
+```powershell
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --detach osrm
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --build --detach
+```
+
+Le profil conserve les rues locales pour permettre le dernier kilomètre, mais pénalise les voies `unclassified`, `residential`, `living_street` et `service` afin de privilégier les axes principaux. Il active la conduite à gauche. Toute modification du profil nécessite une nouvelle préparation, car les profils OSRM sont appliqués à la construction du graphe et non au moment de la requête. Voir la [documentation officielle des profils OSRM](https://github.com/Project-OSRM/osrm-backend/blob/master/docs/profiles.md).
+
+Deux endpoints authentifiés sont disponibles :
+
+- `POST /api/routing/matrix` calcule les distances et durées entre toutes les paires, et liste explicitement les paires inaccessibles ;
+- `POST /api/routing/route` calcule un trajet ordonné, ses tronçons et sa géométrie GeoJSON `LineString`.
+
+Le corps commun contient au moins deux points identifiés :
+
+```json
+{
+  "points": [
+    {"id": "pickup", "latitude": -18.9089, "longitude": 47.5212},
+    {"id": "package-1", "latitude": -18.8859714, "longitude": 47.5229240}
+  ]
+}
+```
+
+Les coordonnées d'entrée et celles recalées sur la route sont toutes deux conservées dans la réponse. Les limites de taille, délais réseau et ports sont configurables dans `.env.example`.
 
 ### Exécution native pendant le développement
 
@@ -636,7 +685,7 @@ Le MVP est considéré conforme lorsque les scénarios suivants réussissent :
 11. les exports JSON, CSV et PDF correspondent au résultat affiché ;
 12. l'expiration, le renouvellement et la révocation des jetons fonctionnent.
 
-## Évolution vers plusieurs récupérations et destinations
+## Évolution vers plusieurs groupes de livraison
 
 Le modèle interne ne doit pas supposer qu'une tournée est définitivement composée d'un seul dépôt et de simples destinations. Le pattern du MVP est identifié explicitement par :
 
@@ -644,13 +693,13 @@ Le modèle interne ne doit pas supposer qu'une tournée est définitivement comp
 SINGLE_PICKUP_MULTI_DELIVERY
 ```
 
-Le domaine utilisera des concepts génériques tels que `Location`, `Shipment`, `RouteStop`, `Vehicle` et `DeliveryPlan`. Dans le MVP, le dépôt commun est le point de récupération implicite de tous les colis. Une version ultérieure pourra ajouter :
+Le domaine utilisera des concepts génériques tels que `Location`, `DeliveryGroup`, `Shipment`, `RouteStop`, `Vehicle` et `DeliveryPlan`. Dans le MVP, le dépôt commun est le point de récupération implicite de tous les colis. Une version ultérieure pourra ajouter :
 
 ```text
 MULTI_PICKUP_MULTI_DELIVERY
 ```
 
-Chaque course possédera alors son propre point de récupération, son point de destination et une contrainte imposant que la récupération précède la livraison. La version du schéma JSON permettra de migrer les fichiers existants sans casser le pattern principal.
+Ce second pattern ne représente pas une simple liste de courses point à point. Il regroupe plusieurs occurrences du pattern principal dans un même fichier : chaque groupe possède un point de récupération et plusieurs points de livraison. La version du schéma JSON permettra d'ajouter une collection `deliveryGroups`, de migrer les fichiers existants sans casser le pattern principal et d'imposer qu'une récupération précède toutes les livraisons de son groupe.
 
 ## Feuille de route
 
@@ -666,12 +715,12 @@ Chaque course possédera alors son propre point de récupération, son point de 
 
 - [x] téléchargement guidé de l'extrait Madagascar ;
 - [x] Nominatim local, cache et confirmation des recherches ambiguës ;
-- OSRM local avec le préréglage `MAIN_ROADS` ;
+- [x] OSRM local avec le préréglage `MAIN_ROADS` ;
 - carte Leaflet et sélection par clic.
 
 ### Phase 3 — Optimisation
 
-- matrice routière ;
+- [x] matrice routière ;
 - capacités et paramètres effectifs des véhicules ;
 - objectif orienté zones et coût total ;
 - colis non affectés expliqués ;

@@ -64,6 +64,14 @@ app:
     connect-timeout: ${GEOCODING_CONNECT_TIMEOUT:2s}
     read-timeout: ${GEOCODING_READ_TIMEOUT:5s}
     cache-ttl: ${GEOCODING_CACHE_TTL:30d}
+  routing:
+    base-url: ${OSRM_BASE_URL:http://localhost:8083}
+    provider-profile: ${OSRM_PROVIDER_PROFILE:driving}
+    preset: ${ROUTING_PRESET:MAIN_ROADS}
+    max-matrix-points: ${OSRM_MAX_TABLE_SIZE:100}
+    max-route-points: ${OSRM_MAX_ROUTE_POINTS:100}
+    connect-timeout: ${ROUTING_CONNECT_TIMEOUT:2s}
+    read-timeout: ${ROUTING_READ_TIMEOUT:30s}
   vehicle-presets:
     moto:
       max-weight-kg: ${VEHICLE_MOTO_DEFAULT_MAX_WEIGHT_KG:30}
