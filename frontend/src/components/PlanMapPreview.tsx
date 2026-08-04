@@ -19,7 +19,7 @@ const TILE_URL = import.meta.env.VITE_MAP_TILE_URL
   ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_ATTRIBUTION = import.meta.env.VITE_MAP_TILE_ATTRIBUTION
   ?? '&copy; OpenStreetMap contributors'
-const ROUTE_COLORS = ['#ff7657', '#4f8cff', '#a160e8', '#edaf30', '#27a979', '#e55b92', '#5f7bff', '#8b9c27']
+const ROUTE_COLORS = ['#f45b0b', '#0b3557', '#ff8a3d', '#2b648d', '#c94400', '#547f9e', '#f6a15e', '#7897ad']
 const MAX_PREVIEW_ROUTES = 20
 
 interface PreviewDestination {
@@ -158,7 +158,7 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
               <FitPreviewBounds depot={depotCoordinates} destinations={destinations} routes={routes} />
 
               {depotCoordinates && (
-                <CircleMarker center={depotCoordinates} radius={11} pathOptions={{ color: '#fff', fillColor: '#123c31', fillOpacity: 1, weight: 4 }}>
+                <CircleMarker center={depotCoordinates} radius={11} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
                   <Tooltip permanent direction="top">Retrait</Tooltip>
                   <Popup><strong>{plan.depot.label || 'Point de récupération'}</strong><br />{plan.depot.destinationQuery}</Popup>
                 </CircleMarker>

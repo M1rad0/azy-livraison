@@ -108,6 +108,38 @@ public class OptimizationService {
         }
 
         RoutingMatrixResult matrix = routingService.matrix(points);
+        List<Courier> couriersReachingDepot = new ArrayList<>();
+        List<Integer> reachableStartNodes = new ArrayList<>();
+        for (int index = 0; index < activeCouriers.size(); index++) {
+            Courier courier = activeCouriers.get(index);
+            int startNode = courierStartNodes[index];
+            if (startNode != 0 && matrix.distancesMeters().get(startNode).get(0) == null) {
+                warnings.add("Le livreur " + courier.name()
+                        + " ne peut pas rejoindre le point de récupération par la route ; il est exclu du calcul.");
+            } else {
+                couriersReachingDepot.add(courier);
+                reachableStartNodes.add(startNode);
+            }
+        }
+        activeCouriers = List.copyOf(couriersReachingDepot);
+        courierStartNodes = reachableStartNodes.stream().mapToInt(Integer::intValue).toArray();
+        if (activeCouriers.isEmpty()) {
+            for (DeliveryPackage deliveryPackage : eligiblePackages) {
+                preliminaryUnassigned.add(unassigned(
+                        deliveryPackage,
+                        UnassignedReason.NO_FEASIBLE_ASSIGNMENT,
+                        "Aucun livreur ne peut rejoindre le point de récupération.",
+                        null));
+            }
+            return resultWithoutSolver(plan, preliminaryUnassigned, warnings, "NO_COURIER_REACHES_DEPOT");
+        }
+        double[] courierApproachDistances = new double[courierStartNodes.length];
+        for (int index = 0; index < courierStartNodes.length; index++) {
+            int startNode = courierStartNodes[index];
+            courierApproachDistances[index] = startNode == 0
+                    ? 0
+                    : matrix.distancesMeters().get(startNode).get(0);
+        }
         OptimizationProblem problem = new OptimizationProblem(
                 plan.departureAt(),
                 plan.settings().returnToDepot(),
@@ -115,6 +147,7 @@ public class OptimizationService {
                 activeCouriers,
                 eligiblePackages,
                 courierStartNodes,
+                courierApproachDistances,
                 packageNodes,
                 matrix.distancesMeters());
         SolvedOptimization solved = optimizer.solve(problem);

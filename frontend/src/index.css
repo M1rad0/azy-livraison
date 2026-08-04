@@ -1,22 +1,25 @@
 :root {
-  color: #13231e;
-  background: #f2f6f3;
+  color: #0b2943;
+  background: #f4f7fa;
   font-family: Inter, "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --ink: #13231e;
-  --ink-soft: #5d6b66;
-  --forest: #123c31;
-  --forest-deep: #0a2921;
-  --mint: #dff8cb;
-  --lime: #b9f56a;
-  --coral: #ff7657;
+  --ink: #0b2943;
+  --ink-soft: #607181;
+  --forest: #0b3557;
+  --forest-deep: #061f35;
+  --mint: #fff0e6;
+  --lime: #f45b0b;
+  --coral: #f45b0b;
+  --orange-deep: #d84b00;
+  --orange-soft: #fff0e6;
+  --navy-soft: #eaf1f7;
   --paper: #ffffff;
-  --canvas: #f2f6f3;
-  --line: #dce5e0;
-  --shadow-sm: 0 8px 24px rgba(19, 35, 30, 0.06);
-  --shadow-lg: 0 28px 80px rgba(19, 35, 30, 0.13);
+  --canvas: #f4f7fa;
+  --line: #dbe4eb;
+  --shadow-sm: 0 8px 24px rgba(6, 31, 53, 0.07);
+  --shadow-lg: 0 28px 80px rgba(6, 31, 53, 0.15);
 }
 
 * {
@@ -57,7 +60,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
-  outline: 3px solid rgba(255, 118, 87, 0.42);
+  outline: 3px solid rgba(244, 91, 11, 0.4);
   outline-offset: 3px;
 }
 

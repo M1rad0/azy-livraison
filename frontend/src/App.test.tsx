@@ -420,8 +420,8 @@ describe('App', () => {
             maxWeightKg: 30,
             remainingCapacityKg: 27.5,
             capacityUtilizationPercent: 8.33,
-            departureLocation: { label: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
-            departureAt: '2026-08-05T08:00:00+03:00',
+            departureLocation: { label: 'Itaosy', latitude: -18.92, longitude: 47.5 },
+            departureAt: '2026-08-05T07:45:00+03:00',
             completedAt: '2026-08-05T08:06:58+03:00',
             distanceMeters: 2900,
             durationSeconds: 418,
@@ -454,18 +454,23 @@ describe('App', () => {
         return jsonResponse({
           provider: 'OSRM',
           preset: 'MAIN_ROADS',
-          pointCount: 2,
+          pointCount: 3,
           distanceMeters: 2900,
           durationSeconds: 418,
           geometry: {
             type: 'LineString',
-            coordinates: [[47.5212, -18.9089], [47.5207, -18.8792]],
+            coordinates: [[47.5, -18.92], [47.5212, -18.9089], [47.5207, -18.8792]],
           },
           waypoints: [],
         })
       }
     })
     vi.stubGlobal('fetch', fetchMock)
+    const createObjectUrl = vi.fn().mockReturnValue('blob:dispatch-export')
+    const revokeObjectUrl = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectUrl, revokeObjectURL: revokeObjectUrl })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined)
     const draft = {
       schemaVersion: '1.0',
       pattern: 'SINGLE_PICKUP_MULTI_DELIVERY',
@@ -475,7 +480,15 @@ describe('App', () => {
       timezone: 'Indian/Antananarivo',
       settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
       depot: { label: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
-      couriers: [{ id: 'livreur-001', name: 'Soa', vehicleType: 'MOTO', maxWeightKg: 30, averageSpeedKmh: 25 }],
+      couriers: [{
+        id: 'livreur-001',
+        name: 'Soa',
+        vehicleType: 'MOTO',
+        maxWeightKg: 30,
+        averageSpeedKmh: 25,
+        departureAt: '2026-08-05T07:45:00+03:00',
+        departureLocation: { label: 'Itaosy', latitude: -18.92, longitude: 47.5 },
+      }],
       packages: [
         { id: 'colis-001', label: 'Client Ankorondrano', weightKg: 2.5, destination: { label: 'Ankorondrano', latitude: -18.8792, longitude: 47.5207 } },
         { id: 'colis-lourd', label: 'Colis très lourd', weightKg: 50, destination: { label: 'Ivandry', latitude: -18.865, longitude: 47.52 } },
@@ -491,11 +504,28 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Générer les tournées' }))
 
     expect(await screen.findByRole('heading', { name: 'Les tournées sont prêtes.' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Carte des tournées' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Liste des livraisons/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'Colis par livreur' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Soa' })).toBeInTheDocument()
     expect(screen.getByText('Client Ankorondrano')).toBeInTheDocument()
+    expect(screen.getByText('Ankorondrano')).toBeInTheDocument()
+    expect(screen.getAllByText(/08.*06/).length).toBeGreaterThan(0)
     expect(screen.getByText('Colis très lourd')).toBeInTheDocument()
     expect(screen.getByText('Colis trop lourd')).toBeInTheDocument()
+    expect(screen.queryByText(/Le livreur s’organise/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Carte des tournées' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excel' }))
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob))
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:dispatch-export')
+    fireEvent.click(screen.getByRole('button', { name: 'PDF / Imprimer' }))
+    expect(print).toHaveBeenCalledOnce()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Détails' }))
+    expect(screen.getByRole('tab', { name: 'Détails' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'Carte des tournées' })).toBeInTheDocument()
+    expect(screen.queryByText('Distance totale')).not.toBeInTheDocument()
+    expect(screen.queryByText('Calcul')).not.toBeInTheDocument()
     expect(await screen.findByTestId('preview-route')).toBeInTheDocument()
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -507,7 +537,8 @@ describe('App', () => {
     )
     const routeCall = fetchMock.mock.calls.find(([input]) => input === '/api/routing/route')
     expect(JSON.parse(String(routeCall?.[1]?.body))).toEqual({ points: [
-      { id: 'start-livreur-001', latitude: -18.9089, longitude: 47.5212 },
+      { id: 'start-livreur-001', latitude: -18.92, longitude: 47.5 },
+      { id: 'pickup-livreur-001', latitude: -18.9089, longitude: 47.5212 },
       { id: 'livreur-001-colis-001', latitude: -18.8792, longitude: 47.5207 },
     ] })
 

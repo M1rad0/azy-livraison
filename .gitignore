@@ -16,6 +16,7 @@ backend/target/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+.tmp-ortools-tests/
 
 # IDE et système
 .idea/
@@ -23,4 +24,3 @@ frontend/.vite/
 *.iml
 .DS_Store
 Thumbs.db
-

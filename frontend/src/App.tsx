@@ -4,13 +4,10 @@ import {
   ArrowRight,
   CheckCircle2,
   Clock3,
-  Download,
   LogIn,
   LogOut,
   PackageCheck,
   Route,
-  Save,
-  Users,
 } from 'lucide-react'
 import {
   login,
@@ -68,13 +65,13 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessi
             Préparez les colis, organisez les livreurs et visualisez chaque itinéraire depuis un espace privé.
           </p>
         </div>
-        <span className="login-intro__caption">Une seule origine · Plusieurs destinations</span>
+        <span className="login-intro__caption">Des colis bien organisés · Des livreurs mieux guidés</span>
       </section>
 
       <section className="login-panel" aria-labelledby="form-title">
         <form className="login-form" onSubmit={(event) => void handleSubmit(event)}>
           <div>
-            <p className="eyebrow">Accès sécurisé</p>
+            <p className="eyebrow">Prêt à organiser ?</p>
             <h2 id="form-title">Bienvenue</h2>
             <p className="login-form__intro">Connectez-vous pour retrouver votre espace de préparation.</p>
           </div>
@@ -195,7 +192,6 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
                   <span className="section-badge"><CheckCircle2 aria-hidden="true" />Disponible</span>
                   <h3>Un retrait, plusieurs livraisons</h3>
                   <p>Un point de récupération commun, plusieurs colis, plusieurs livreurs et des destinations réparties.</p>
-                  <ul><li><Download aria-hidden="true" />Import de listes</li><li><Save aria-hidden="true" />Sauvegarde partageable</li><li><Users aria-hidden="true" />Capacités véhicules</li></ul>
                   <button className="button button--wide" type="button" onClick={() => setPatternSelected(true)}><Route aria-hidden="true" />Choisir ce mode <ArrowRight aria-hidden="true" /></button>
                 </div>
               </article>

@@ -115,6 +115,7 @@ class OrToolsRoutingOptimizerTest {
                 couriers,
                 packages,
                 new int[]{0},
+                new double[]{0},
                 new int[]{1},
                 matrix(row(0, 1_000), row(1_500, 0)));
 
@@ -123,6 +124,41 @@ class OrToolsRoutingOptimizerTest {
         assertThat(result.droppedPackageIndexes()).isEmpty();
         assertThat(result.routes()).singleElement()
                 .satisfies(route -> assertThat(route.distanceMeters()).isEqualTo(2_500));
+    }
+
+    @Test
+    void requiresACourierToReachTheDepotBeforeTheFirstDelivery() {
+        Courier courier = new Courier(
+                "courier-1",
+                "Soa",
+                VehicleType.MOTO,
+                new BigDecimal("10"),
+                new BigDecimal("36"),
+                DEPARTURE,
+                location("Départ livreur", -18.92, 47.50));
+        List<DeliveryPackage> packages = List.of(deliveryPackage("package-1", "Colis A", "2", null));
+
+        SolvedOptimization result = optimizer.solve(problem(
+                List.of(courier),
+                packages,
+                new int[]{1},
+                new int[]{2},
+                matrix(
+                        row(0, 3_000, 1_000),
+                        row(3_000, 0, 100),
+                        row(1_000, 100, 0))));
+
+        assertThat(result.droppedPackageIndexes()).isEmpty();
+        assertThat(result.routes()).singleElement().satisfies(route -> {
+            assertThat(route.departureOffsetSeconds()).isZero();
+            assertThat(route.completionOffsetSeconds()).isBetween(400L, 410L);
+            assertThat(route.distanceMeters()).isEqualTo(4_000);
+            assertThat(route.visits()).singleElement().satisfies(visit -> {
+                assertThat(visit.arrivalOffsetSeconds()).isBetween(400L, 410L);
+                assertThat(visit.distanceFromPreviousMeters()).isEqualTo(1_000);
+                assertThat(visit.cumulativeDistanceMeters()).isEqualTo(4_000);
+            });
+        });
     }
 
     private OptimizationProblem problem(
@@ -138,6 +174,11 @@ class OrToolsRoutingOptimizerTest {
                 couriers,
                 packages,
                 courierStartNodes,
+                java.util.stream.IntStream.range(0, courierStartNodes.length)
+                        .mapToDouble(index -> courierStartNodes[index] == 0
+                                ? 0
+                                : distances.get(courierStartNodes[index]).get(0))
+                        .toArray(),
                 packageNodes,
                 distances);
     }

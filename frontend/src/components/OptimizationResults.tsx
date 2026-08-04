@@ -2,15 +2,17 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { GeoJsonObject } from 'geojson'
 import {
   ArrowLeft,
+  FileSpreadsheet,
   Bike,
   CheckCircle2,
-  Clock3,
   Download,
-  Gauge,
+  BarChart3,
+  ListChecks,
   LoaderCircle,
   MapPin,
   PackageCheck,
   PackageX,
+  Printer,
   Route as RouteIcon,
   Scale,
   Smartphone,
@@ -19,7 +21,7 @@ import {
 } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { OptimizationResult, CourierRoute, UnassignedReason } from '../api/optimization'
+import type { OptimizationResult, CourierRoute, RouteStop, UnassignedReason } from '../api/optimization'
 import type { DeliveryPlan } from '../api/plans'
 import { calculateRoute, type RoutingRouteResponse } from '../api/routing'
 
@@ -27,7 +29,7 @@ const TILE_URL = import.meta.env.VITE_MAP_TILE_URL
   ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_ATTRIBUTION = import.meta.env.VITE_MAP_TILE_ATTRIBUTION
   ?? '&copy; OpenStreetMap contributors'
-const ROUTE_COLORS = ['#ff7657', '#4f8cff', '#a160e8', '#edaf30', '#27a979', '#e55b92', '#5f7bff', '#8b9c27']
+const ROUTE_COLORS = ['#f45b0b', '#0b3557', '#ff8a3d', '#2b648d', '#c94400', '#547f9e', '#f6a15e', '#7897ad']
 
 interface DrawnRoute {
   courierRoute: CourierRoute
@@ -40,10 +42,8 @@ function hasCoordinates(location: { latitude?: number; longitude?: number }) {
   return Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
 }
 
-function formatDistance(meters: number) {
-  return meters >= 1000
-    ? `${(meters / 1000).toLocaleString('fr-MG', { maximumFractionDigits: 2 })} km`
-    : `${Math.round(meters).toLocaleString('fr-MG')} m`
+function isDeliveryStop(_stop: RouteStop) {
+  return true
 }
 
 function formatDuration(seconds: number) {
@@ -61,6 +61,25 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('fr-MG', {
+    timeZone: 'Indian/Antananarivo',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatLocation(location: { label?: string; destinationQuery?: string; latitude?: number; longitude?: number }) {
+  if (location.label) return location.label
+  if (location.destinationQuery) return location.destinationQuery
+  if (hasCoordinates(location)) return `${location.latitude?.toFixed(5)}, ${location.longitude?.toFixed(5)}`
+  return 'Destination confirmée'
+}
+
+function csvCell(value: string | number | undefined) {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`
 }
 
 function unassignedTitle(reason: UnassignedReason) {
@@ -113,11 +132,18 @@ function ResultMap({ result, plan, accessToken }: {
     setLoading(true)
     void Promise.all(result.routes.map(async (courierRoute, index): Promise<DrawnRoute> => {
       const color = ROUTE_COLORS[index % ROUTE_COLORS.length]
+      const plannedCourier = plan.couriers.find((courier) => courier.id === courierRoute.courierId)
+      const customDeparture = plannedCourier?.departureLocation
       const points = [
-        ...(hasCoordinates(courierRoute.departureLocation) ? [{
+        ...(customDeparture && hasCoordinates(customDeparture) ? [{
           id: `start-${courierRoute.courierId}`,
-          latitude: courierRoute.departureLocation.latitude as number,
-          longitude: courierRoute.departureLocation.longitude as number,
+          latitude: customDeparture.latitude as number,
+          longitude: customDeparture.longitude as number,
+        }] : []),
+        ...(depot ? [{
+          id: `pickup-${courierRoute.courierId}`,
+          latitude: depot[0],
+          longitude: depot[1],
         }] : []),
         ...courierRoute.stops.flatMap((stop) => hasCoordinates(stop.destination) ? [{
           id: `${courierRoute.courierId}-${stop.packageId}`,
@@ -152,7 +178,7 @@ function ResultMap({ result, plan, accessToken }: {
       active = false
       controller.abort()
     }
-  }, [accessToken, depot?.[0], depot?.[1], plan.settings.returnToDepot, result])
+  }, [accessToken, depot?.[0], depot?.[1], plan.couriers, plan.settings.returnToDepot, result])
 
   return (
     <section className="result-map-card" aria-labelledby="result-map-title">
@@ -166,7 +192,7 @@ function ResultMap({ result, plan, accessToken }: {
             <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
             <FitResultBounds routes={drawnRoutes} depot={depot} />
             {depot && (
-              <CircleMarker center={depot} radius={11} pathOptions={{ color: '#fff', fillColor: '#123c31', fillOpacity: 1, weight: 4 }}>
+              <CircleMarker center={depot} radius={11} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
                 <Tooltip permanent direction="top">Retrait</Tooltip>
                 <Popup><strong>{plan.depot.label || 'Point de récupération'}</strong></Popup>
               </CircleMarker>
@@ -180,7 +206,7 @@ function ResultMap({ result, plan, accessToken }: {
             ))}
             {drawnRoutes.flatMap((route) => route.courierRoute.stops.map((stop) => hasCoordinates(stop.destination) && (
               <CircleMarker
-                key={`${route.courierRoute.courierId}-${stop.packageId}`}
+                key={`${route.courierRoute.courierId}-${stop.packageId}-${stop.order}`}
                 center={[stop.destination.latitude as number, stop.destination.longitude as number]}
                 radius={8}
                 pathOptions={{ color: '#fff', fillColor: route.color, fillOpacity: 1, weight: 3 }}
@@ -198,7 +224,7 @@ function ResultMap({ result, plan, accessToken }: {
               <i style={{ backgroundColor: route.color }} />
               <div>
                 <strong>{route.courierRoute.courierName}</strong>
-                <span>{route.courierRoute.stops.length} arrêt{route.courierRoute.stops.length > 1 ? 's' : ''} · {formatDistance(route.courierRoute.distanceMeters)}</span>
+                <span>{route.courierRoute.stops.filter(isDeliveryStop).length} livraison{route.courierRoute.stops.filter(isDeliveryStop).length > 1 ? 's' : ''}</span>
                 {route.error && <small>{route.error}</small>}
               </div>
             </article>
@@ -215,6 +241,7 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
   accessToken: string
   onBack: () => void
 }) {
+  const [activeTab, setActiveTab] = useState<'dispatch' | 'details'>('dispatch')
   const generatedLabel = formatDateTime(result.generatedAt)
   const routeColors = useMemo(() => new Map(
     result.routes.map((route, index) => [route.courierId, ROUTE_COLORS[index % ROUTE_COLORS.length]]),
@@ -226,6 +253,53 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
     const link = document.createElement('a')
     link.href = objectUrl
     link.download = `${result.sourcePlanId || 'resultat-azy'}-resultat.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(objectUrl)
+  }
+
+  function exportDispatchCsv() {
+    const rows: Array<Array<string | number | undefined>> = [[
+      'Livreur',
+      'Véhicule',
+      'Ordre',
+      'Colis',
+      'Destination',
+      'Téléphone',
+      'Heure prévue',
+      'Statut',
+    ]]
+
+    result.routes.forEach((route) => {
+      route.stops.filter(isDeliveryStop).forEach((stop) => rows.push([
+        route.courierName,
+        route.vehicleType === 'MOTO' ? 'Moto' : 'Bicyclette',
+        stop.order,
+        stop.packageLabel,
+        formatLocation(stop.destination),
+        stop.phone,
+        formatTime(stop.estimatedArrivalAt),
+        'Affecté',
+      ]))
+    })
+    result.unassignedPackages.forEach((item) => rows.push([
+      '',
+      '',
+      '',
+      item.packageLabel,
+      '',
+      '',
+      '',
+      `Non affecté — ${unassignedTitle(item.reason)}`,
+    ]))
+
+    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(';')).join('\r\n')}\r\n`
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `${result.sourcePlanId || 'resultat-azy'}-livraisons.csv`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -246,7 +320,7 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
           <div>
             <p className="eyebrow">Résultat · {plan.name}</p>
             <h1 id="result-title">Les tournées sont prêtes.</h1>
-            <p>Généré le {generatedLabel} avec {result.dataContext.optimizer} et les distances {result.dataContext.routingProvider}.</p>
+            <p>Plan préparé le {generatedLabel} pour {result.summary.assignedPackageCount} livraison{result.summary.assignedPackageCount > 1 ? 's' : ''}.</p>
           </div>
           <button className="button result-export" type="button" onClick={exportResult}><Download aria-hidden="true" />Télécharger le résultat</button>
         </div>
@@ -257,53 +331,122 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
         </div>
       </section>
 
-      <section className="result-metrics" aria-label="Résumé du résultat">
-        <article><PackageCheck aria-hidden="true" /><span>Colis affectés</span><strong>{result.summary.assignedPackageCount}<small> / {result.summary.packageCount}</small></strong></article>
-        <article><RouteIcon aria-hidden="true" /><span>Livreurs utilisés</span><strong>{result.summary.usedCourierCount}<small> / {result.summary.courierCount}</small></strong></article>
-        <article><Scale aria-hidden="true" /><span>Poids confié</span><strong>{result.summary.totalAssignedWeightKg.toLocaleString('fr-MG')}<small> kg</small></strong></article>
-        <article><Gauge aria-hidden="true" /><span>Distance totale</span><strong>{formatDistance(result.summary.totalDistanceMeters)}</strong></article>
-        <article><Clock3 aria-hidden="true" /><span>Calcul</span><strong>{(result.computationTimeMillis / 1000).toLocaleString('fr-MG', { maximumFractionDigits: 2 })}<small> s</small></strong></article>
-      </section>
+      <div className="result-tabs" role="tablist" aria-label="Vues du résultat">
+        <button
+          type="button"
+          role="tab"
+          aria-label="Liste des livraisons"
+          aria-selected={activeTab === 'dispatch'}
+          className={activeTab === 'dispatch' ? 'is-active' : ''}
+          onClick={() => setActiveTab('dispatch')}
+        >
+          <ListChecks aria-hidden="true" />Liste des livraisons
+          <small>Vue opérationnelle</small>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-label="Détails"
+          aria-selected={activeTab === 'details'}
+          className={activeTab === 'details' ? 'is-active' : ''}
+          onClick={() => setActiveTab('details')}
+        >
+          <BarChart3 aria-hidden="true" />Détails
+          <small>Carte et organisation des tournées</small>
+        </button>
+      </div>
 
-      {result.routes.length > 0 && <ResultMap result={result} plan={plan} accessToken={accessToken} />}
-
-      {(result.warnings.length > 0 || result.unassignedPackages.length > 0) && (
-        <section className="result-attention" aria-labelledby="attention-title">
+      {activeTab === 'dispatch' ? (
+        <section className="dispatch-board" role="tabpanel" aria-labelledby="dispatch-title">
           <div className="result-section-heading">
-            <div><span><TriangleAlert aria-hidden="true" /></span><div><p className="eyebrow">Action requise</p><h2 id="attention-title">Points à examiner</h2></div></div>
+            <div><span><ListChecks aria-hidden="true" /></span><div><p className="eyebrow">{plan.name} · {generatedLabel}</p><h2 id="dispatch-title">Colis par livreur</h2></div></div>
+            <div className="dispatch-heading-meta">
+              <small>{result.summary.assignedPackageCount} livraison{result.summary.assignedPackageCount > 1 ? 's' : ''}</small>
+              <div className="dispatch-actions" aria-label="Exporter la liste">
+                <button className="button button--secondary" type="button" onClick={exportDispatchCsv}><FileSpreadsheet aria-hidden="true" />Excel</button>
+                <button className="button button--secondary" type="button" onClick={() => window.print()}><Printer aria-hidden="true" />PDF / Imprimer</button>
+              </div>
+            </div>
           </div>
-          {result.warnings.map((warning, index) => <p className="result-warning" key={`${warning}-${index}`}>{warning}</p>)}
-          <div className="unassigned-grid">
-            {result.unassignedPackages.map((deliveryPackage) => (
-              <article key={deliveryPackage.packageId}>
-                <PackageX aria-hidden="true" />
-                <div><strong>{deliveryPackage.packageLabel}</strong><span>{unassignedTitle(deliveryPackage.reason)}</span><p>{deliveryPackage.message}</p></div>
-                <b>{deliveryPackage.weightKg.toLocaleString('fr-MG')} kg</b>
-              </article>
-            ))}
+          <div className="dispatch-groups">
+            {result.routes.map((route, routeIndex) => {
+              const color = routeColors.get(route.courierId) ?? ROUTE_COLORS[routeIndex % ROUTE_COLORS.length]
+              const deliveries = route.stops.filter(isDeliveryStop)
+              return (
+                <article className="dispatch-group" key={route.courierId} style={{ '--route-color': color } as CSSProperties}>
+                  <header>
+                    <span className="dispatch-group__avatar"><Bike aria-hidden="true" /></span>
+                    <div><small>{route.vehicleType === 'MOTO' ? 'Moto' : 'Bicyclette'}</small><h3>{route.courierName}</h3></div>
+                    <div className="dispatch-group__first"><span>Première livraison</span><strong>{deliveries[0] ? formatTime(deliveries[0].estimatedArrivalAt) : '—'}</strong></div>
+                  </header>
+                  <ol className="dispatch-list">
+                    {deliveries.map((stop, deliveryIndex) => (
+                      <li key={stop.packageId}>
+                        <time dateTime={stop.estimatedArrivalAt}>{formatTime(stop.estimatedArrivalAt)}</time>
+                        <span className="dispatch-list__order" style={{ backgroundColor: color }}>{deliveryIndex + 1}</span>
+                        <div className="dispatch-list__package"><strong>{stop.packageLabel}</strong>{stop.phone && <small><Smartphone aria-hidden="true" />{stop.phone}</small>}</div>
+                        <div className="dispatch-list__destination"><MapPin aria-hidden="true" /><span>{formatLocation(stop.destination)}</span></div>
+                      </li>
+                    ))}
+                  </ol>
+                </article>
+              )
+            })}
+            {result.routes.length === 0 && <p className="dispatch-empty">Aucune tournée exploitable n’a été générée.</p>}
           </div>
+          {result.unassignedPackages.length > 0 && (
+            <div className="dispatch-unassigned">
+              <div><PackageX aria-hidden="true" /><strong>{result.unassignedPackages.length} colis non affecté{result.unassignedPackages.length > 1 ? 's' : ''}</strong></div>
+              <ul>{result.unassignedPackages.map((item) => <li key={item.packageId}><span>{item.packageLabel}</span><small>{unassignedTitle(item.reason)}</small></li>)}</ul>
+            </div>
+          )}
         </section>
-      )}
+      ) : (
+        <div className="result-details" role="tabpanel">
+          <section className="result-metrics" aria-label="Résumé du résultat">
+            <article><PackageCheck aria-hidden="true" /><span>Colis affectés</span><strong>{result.summary.assignedPackageCount}<small> / {result.summary.packageCount}</small></strong></article>
+            <article><RouteIcon aria-hidden="true" /><span>Livreurs utilisés</span><strong>{result.summary.usedCourierCount}<small> / {result.summary.courierCount}</small></strong></article>
+            <article><Scale aria-hidden="true" /><span>Poids confié</span><strong>{result.summary.totalAssignedWeightKg.toLocaleString('fr-MG')}<small> kg</small></strong></article>
+          </section>
 
-      <section className="result-routes" aria-labelledby="routes-title">
-        <div className="result-section-heading">
-          <div><span><Sparkles aria-hidden="true" /></span><div><p className="eyebrow">Feuilles de route</p><h2 id="routes-title">Détail par livreur</h2></div></div>
-          <small>{result.routes.length} tournée{result.routes.length > 1 ? 's' : ''}</small>
-        </div>
-        <div className="route-result-grid">
-          {result.routes.map((route) => {
-            const color = routeColors.get(route.courierId) ?? ROUTE_COLORS[0]
-            return (
-              <article className="route-result-card" key={route.courierId} style={{ '--route-color': color } as CSSProperties}>
+          {result.routes.length > 0 && <ResultMap result={result} plan={plan} accessToken={accessToken} />}
+
+          {(result.warnings.length > 0 || result.unassignedPackages.length > 0) && (
+            <section className="result-attention" aria-labelledby="attention-title">
+              <div className="result-section-heading">
+                <div><span><TriangleAlert aria-hidden="true" /></span><div><p className="eyebrow">Action requise</p><h2 id="attention-title">Points à examiner</h2></div></div>
+              </div>
+              {result.warnings.map((warning, index) => <p className="result-warning" key={`${warning}-${index}`}>{warning}</p>)}
+              <div className="unassigned-grid">
+                {result.unassignedPackages.map((deliveryPackage) => (
+                  <article key={deliveryPackage.packageId}>
+                    <PackageX aria-hidden="true" />
+                    <div><strong>{deliveryPackage.packageLabel}</strong><span>{unassignedTitle(deliveryPackage.reason)}</span><p>{deliveryPackage.message}</p></div>
+                    <b>{deliveryPackage.weightKg.toLocaleString('fr-MG')} kg</b>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="result-routes" aria-labelledby="routes-title">
+            <div className="result-section-heading">
+              <div><span><Sparkles aria-hidden="true" /></span><div><p className="eyebrow">Feuilles de route</p><h2 id="routes-title">Détail par livreur</h2></div></div>
+              <small>{result.routes.length} tournée{result.routes.length > 1 ? 's' : ''}</small>
+            </div>
+            <div className="route-result-grid">
+              {result.routes.map((route) => {
+                const color = routeColors.get(route.courierId) ?? ROUTE_COLORS[0]
+                return (
+                  <article className="route-result-card" key={route.courierId} style={{ '--route-color': color } as CSSProperties}>
                 <header>
                   <span className="route-result-avatar"><Bike aria-hidden="true" /></span>
                   <div><small>{route.vehicleType === 'MOTO' ? 'Moto' : 'Bicyclette'}</small><h3>{route.courierName}</h3></div>
-                  <span className="route-result-count">{route.stops.length} arrêt{route.stops.length > 1 ? 's' : ''}</span>
+                  <span className="route-result-count">{route.stops.filter(isDeliveryStop).length} livraison{route.stops.filter(isDeliveryStop).length > 1 ? 's' : ''}</span>
                 </header>
                 <div className="route-result-stats">
                   <div><span>Départ</span><strong>{formatDateTime(route.departureAt)}</strong></div>
                   <div><span>Fin estimée</span><strong>{formatDateTime(route.completedAt)}</strong></div>
-                  <div><span>Distance</span><strong>{formatDistance(route.distanceMeters)}</strong></div>
                   <div><span>Durée</span><strong>{formatDuration(route.durationSeconds)}</strong></div>
                 </div>
                 <div className="capacity-meter">
@@ -313,22 +456,24 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
                 </div>
                 <ol className="route-stop-list">
                   {route.stops.map((stop) => (
-                    <li key={stop.packageId}>
+                    <li key={`${stop.packageId}-${stop.order}`}>
                       <span style={{ backgroundColor: color }}>{stop.order}</span>
                       <div>
                         <strong>{stop.packageLabel}</strong>
                         <p><MapPin aria-hidden="true" />{stop.destination.label || stop.destination.destinationQuery || 'Destination confirmée'}</p>
                         {stop.phone && <p><Smartphone aria-hidden="true" />{stop.phone}</p>}
                       </div>
-                      <div className="route-stop-meta"><strong>{formatDateTime(stop.estimatedArrivalAt)}</strong><small>{formatDistance(stop.distanceFromPreviousMeters)} · {stop.weightKg.toLocaleString('fr-MG')} kg</small></div>
+                      <div className="route-stop-meta"><strong>{formatDateTime(stop.estimatedArrivalAt)}</strong><small>{stop.weightKg.toLocaleString('fr-MG')} kg</small></div>
                     </li>
                   ))}
                 </ol>
-              </article>
-            )
-          })}
+                  </article>
+                )
+              })}
+            </div>
+          </section>
         </div>
-      </section>
+      )}
     </div>
   )
 }
