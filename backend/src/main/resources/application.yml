@@ -72,6 +72,9 @@ app:
     max-route-points: ${OSRM_MAX_ROUTE_POINTS:100}
     connect-timeout: ${ROUTING_CONNECT_TIMEOUT:2s}
     read-timeout: ${ROUTING_READ_TIMEOUT:30s}
+  optimization:
+    time-limit: ${OPTIMIZATION_TIME_LIMIT:5s}
+    vehicle-activation-penalty-meters: ${OPTIMIZATION_VEHICLE_ACTIVATION_PENALTY_METERS:1000}
   vehicle-presets:
     moto:
       max-weight-kg: ${VEHICLE_MOTO_DEFAULT_MAX_WEIGHT_KG:30}
