@@ -133,7 +133,8 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
-    expect(screen.getByRole('button', { name: 'Changer de mode' }).closest('header')).toHaveClass('topbar')
+    expect(screen.getByRole('button', { name: 'Changer de mode' }).closest('nav')).toHaveClass('workspace-context-bar')
+    expect(screen.getByRole('button', { name: 'Changer de mode' }).closest('header')).toBeNull()
     const file = new File(['id;label\ncolis-001;Client Analakely'], 'packages.csv', { type: 'text/csv' })
     fireEvent.change(screen.getByLabelText('Liste de colis à importer'), { target: { files: [file] } })
 
@@ -354,7 +355,7 @@ describe('App', () => {
       timezone: 'Indian/Antananarivo',
       settings: { returnToDepot: true, routingPreset: 'MAIN_ROADS' },
       depot: { label: 'Dépôt Analakely', destinationQuery: 'Analakely' },
-      couriers: [{ id: 'livreur-001', name: 'Soa', vehicleType: 'MOTO', maxWeightKg: 30, averageSpeedKmh: 25 }],
+      couriers: [{ id: 'livreur-001', name: 'Soa', vehicleType: 'MOTO' }],
       packages: [{ id: 'colis-001', label: 'Client A', weightKg: 2.5, destination: { destinationQuery: 'Ankorondrano' } }],
     }
     const file = new File([JSON.stringify(draft)], 'plan-reprise.json', { type: 'application/json' })
@@ -371,11 +372,146 @@ describe('App', () => {
     expect(await screen.findByDisplayValue('Plan repris depuis un fichier')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Soa')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Client A')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('30')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('25')).toBeInTheDocument()
     expect(screen.getByText(/plan-reprise.json chargé/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Télécharger la sauvegarde' }))
     expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob))
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:test-plan')
     expect(screen.getByText('Sauvegarde téléchargée.')).toBeInTheDocument()
+  })
+
+  it('generates and displays optimized courier routes', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    const fetchMock = authenticatedFetch((input, init) => {
+      if (input === '/api/plans/validate') {
+        return jsonResponse({ valid: true, plan: JSON.parse(String(init?.body)), errors: [] })
+      }
+      if (input === '/api/plans/optimize') {
+        return jsonResponse({
+          schemaVersion: '1.0',
+          sourcePlanId: 'plan-resultat-001',
+          generatedAt: '2026-08-05T08:00:03+03:00',
+          status: 'SUCCESS_WITH_WARNINGS',
+          solverStatus: 'ROUTING_SUCCESS',
+          computationTimeMillis: 321,
+          dataContext: {
+            routingProvider: 'OSRM',
+            routingPreset: 'MAIN_ROADS',
+            optimizer: 'OR_TOOLS',
+            optimizerVersion: '9.15.6755',
+          },
+          summary: {
+            packageCount: 2,
+            assignedPackageCount: 1,
+            unassignedPackageCount: 1,
+            courierCount: 1,
+            usedCourierCount: 1,
+            totalAssignedWeightKg: 2.5,
+            totalDistanceMeters: 2900,
+            totalDurationSeconds: 418,
+          },
+          routes: [{
+            courierId: 'livreur-001',
+            courierName: 'Soa',
+            vehicleType: 'MOTO',
+            loadedWeightKg: 2.5,
+            maxWeightKg: 30,
+            remainingCapacityKg: 27.5,
+            capacityUtilizationPercent: 8.33,
+            departureLocation: { label: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
+            departureAt: '2026-08-05T08:00:00+03:00',
+            completedAt: '2026-08-05T08:06:58+03:00',
+            distanceMeters: 2900,
+            durationSeconds: 418,
+            stops: [{
+              order: 1,
+              packageId: 'colis-001',
+              packageLabel: 'Client Ankorondrano',
+              phone: '+261340000000',
+              weightKg: 2.5,
+              destination: { label: 'Ankorondrano', latitude: -18.8792, longitude: 47.5207 },
+              estimatedArrivalAt: '2026-08-05T08:06:58+03:00',
+              distanceFromPreviousMeters: 2900,
+              durationFromPreviousSeconds: 418,
+              cumulativeDistanceMeters: 2900,
+              cumulativeDurationSeconds: 418,
+            }],
+          }],
+          unassignedPackages: [{
+            packageId: 'colis-lourd',
+            packageLabel: 'Colis très lourd',
+            weightKg: 50,
+            reason: 'OVERWEIGHT_FOR_ALL_COURIERS',
+            message: 'Aucun livreur disponible ne peut porter ce colis.',
+            minimumRequiredCapacityKg: 50,
+          }],
+          warnings: [],
+        })
+      }
+      if (input === '/api/routing/route') {
+        return jsonResponse({
+          provider: 'OSRM',
+          preset: 'MAIN_ROADS',
+          pointCount: 2,
+          distanceMeters: 2900,
+          durationSeconds: 418,
+          geometry: {
+            type: 'LineString',
+            coordinates: [[47.5212, -18.9089], [47.5207, -18.8792]],
+          },
+          waypoints: [],
+        })
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const draft = {
+      schemaVersion: '1.0',
+      pattern: 'SINGLE_PICKUP_MULTI_DELIVERY',
+      planId: 'plan-resultat-001',
+      name: 'Tournée résultat',
+      departureAt: '2026-08-05T08:00:00+03:00',
+      timezone: 'Indian/Antananarivo',
+      settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
+      depot: { label: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
+      couriers: [{ id: 'livreur-001', name: 'Soa', vehicleType: 'MOTO', maxWeightKg: 30, averageSpeedKmh: 25 }],
+      packages: [
+        { id: 'colis-001', label: 'Client Ankorondrano', weightKg: 2.5, destination: { label: 'Ankorondrano', latitude: -18.8792, longitude: 47.5207 } },
+        { id: 'colis-lourd', label: 'Colis très lourd', weightKg: 50, destination: { label: 'Ivandry', latitude: -18.865, longitude: 47.52 } },
+      ],
+    }
+    const file = new File([JSON.stringify(draft)], 'plan-resultat.json', { type: 'application/json' })
+    Object.defineProperty(file, 'text', { value: async () => JSON.stringify(draft) })
+
+    render(<App />)
+    await openWorkspace()
+    fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
+    await screen.findByDisplayValue('Tournée résultat')
+    fireEvent.click(screen.getByRole('button', { name: 'Générer les tournées' }))
+
+    expect(await screen.findByRole('heading', { name: 'Les tournées sont prêtes.' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Carte des tournées' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Soa' })).toBeInTheDocument()
+    expect(screen.getByText('Client Ankorondrano')).toBeInTheDocument()
+    expect(screen.getByText('Colis très lourd')).toBeInTheDocument()
+    expect(screen.getByText('Colis trop lourd')).toBeInTheDocument()
+    expect(await screen.findByTestId('preview-route')).toBeInTheDocument()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/plans/optimize',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+      }),
+    )
+    const routeCall = fetchMock.mock.calls.find(([input]) => input === '/api/routing/route')
+    expect(JSON.parse(String(routeCall?.[1]?.body))).toEqual({ points: [
+      { id: 'start-livreur-001', latitude: -18.9089, longitude: 47.5212 },
+      { id: 'livreur-001-colis-001', latitude: -18.8792, longitude: 47.5207 },
+    ] })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier le plan' }))
+    expect(await screen.findByRole('heading', { name: 'Construisez votre tournée.' })).toBeInTheDocument()
   })
 })

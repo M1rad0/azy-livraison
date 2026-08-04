@@ -130,20 +130,8 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
 
   return (
     <main className="app-shell">
-      <header className={`topbar${patternSelected ? ' topbar--workspace' : ''}`}>
+      <header className="topbar">
         <Brand />
-        {patternSelected && (
-          <div className="mode-context">
-            <span className="mode-context__icon" aria-hidden="true"><Route /></span>
-            <div>
-              <small>Mode actif</small>
-              <strong>Un retrait · plusieurs livraisons</strong>
-            </div>
-            <button type="button" onClick={() => setPatternSelected(false)}>
-              <ArrowLeft aria-hidden="true" />Changer de mode
-            </button>
-          </div>
-        )}
         <div className="account-menu">
           <div className="account-profile">
             <span className="account-avatar" aria-hidden="true">{accountInitials}</span>
@@ -157,6 +145,21 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
           </button>
         </div>
       </header>
+
+      {patternSelected && (
+        <nav className="workspace-context-bar" aria-label="Mode de planification actif">
+          <div className="mode-context">
+            <span className="mode-context__icon" aria-hidden="true"><Route /></span>
+            <div>
+              <small>Mode actif</small>
+              <strong>Un retrait · plusieurs livraisons</strong>
+            </div>
+            <button type="button" onClick={() => setPatternSelected(false)}>
+              <ArrowLeft aria-hidden="true" />Changer de mode
+            </button>
+          </div>
+        </nav>
+      )}
 
       {patternSelected ? (
         <PlanningWorkspace accessToken={session.accessToken} />

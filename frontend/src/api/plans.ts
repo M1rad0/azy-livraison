@@ -21,6 +21,13 @@ export interface DeliveryPlan {
   packages: DeliveryPackage[]
 }
 
+export type PortableDeliveryPlan = Omit<DeliveryPlan, 'couriers'> & {
+  couriers: Array<Omit<Courier, 'maxWeightKg' | 'averageSpeedKmh'> & {
+    maxWeightKg?: number
+    averageSpeedKmh?: number
+  }>
+}
+
 export interface PlanningValidationError {
   path: string
   code: string
@@ -92,7 +99,7 @@ function isLocation(value: unknown) {
     && isOptionalNumber(value.longitude)
 }
 
-export function isDeliveryPlan(value: unknown): value is DeliveryPlan {
+export function isDeliveryPlan(value: unknown): value is PortableDeliveryPlan {
   if (!isRecord(value)) return false
   const plan = value
   return plan.schemaVersion === '1.0'
@@ -110,8 +117,8 @@ export function isDeliveryPlan(value: unknown): value is DeliveryPlan {
       && typeof courier.id === 'string'
       && typeof courier.name === 'string'
       && (courier.vehicleType === 'MOTO' || courier.vehicleType === 'BICYCLE')
-      && typeof courier.maxWeightKg === 'number'
-      && typeof courier.averageSpeedKmh === 'number'
+      && (courier.maxWeightKg === undefined || typeof courier.maxWeightKg === 'number')
+      && (courier.averageSpeedKmh === undefined || typeof courier.averageSpeedKmh === 'number')
       && isOptionalString(courier.departureAt)
       && (courier.departureLocation === undefined || courier.departureLocation === null || isLocation(courier.departureLocation)))
     && Array.isArray(plan.packages)
@@ -126,4 +133,20 @@ export function isDeliveryPlan(value: unknown): value is DeliveryPlan {
         || (isRecord(deliveryPackage.deliveryWindow)
           && typeof deliveryPackage.deliveryWindow.startAt === 'string'
           && typeof deliveryPackage.deliveryWindow.endAt === 'string')))
+}
+
+export function materializeVehicleDefaults(plan: PortableDeliveryPlan): DeliveryPlan {
+  return {
+    ...plan,
+    couriers: plan.couriers.map((courier) => {
+      const defaults = courier.vehicleType === 'MOTO'
+        ? { maxWeightKg: 30, averageSpeedKmh: 25 }
+        : { maxWeightKg: 10, averageSpeedKmh: 12 }
+      return {
+        ...courier,
+        maxWeightKg: courier.maxWeightKg ?? defaults.maxWeightKg,
+        averageSpeedKmh: courier.averageSpeedKmh ?? defaults.averageSpeedKmh,
+      }
+    }),
+  }
 }

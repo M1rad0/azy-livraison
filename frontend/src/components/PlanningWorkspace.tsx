@@ -4,12 +4,14 @@ import {
   ClipboardList,
   Download,
   FolderOpen,
+  LoaderCircle,
   MapPin,
   MapPinned,
   PackagePlus,
   Plus,
   Save,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
   UserPlus,
@@ -26,13 +28,16 @@ import {
 } from '../api/csvImports'
 import {
   isDeliveryPlan,
+  materializeVehicleDefaults,
   PlanValidationFailure,
   validatePlan,
   type DeliveryPlan,
   type PlanningValidationError,
 } from '../api/plans'
+import { optimizePlan, type OptimizationResult } from '../api/optimization'
 import { PlanMapPreview } from './PlanMapPreview'
 import { LocationPicker } from './LocationPicker'
+import { OptimizationResults } from './OptimizationResults'
 
 interface PlanningWorkspaceProps {
   accessToken: string
@@ -181,6 +186,8 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   const [validationErrors, setValidationErrors] = useState<PlanningValidationError[]>([])
   const [validationMessage, setValidationMessage] = useState<string>()
   const [validating, setValidating] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
   const [fileMessage, setFileMessage] = useState<string>()
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
 
@@ -269,7 +276,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     try {
       const parsed: unknown = JSON.parse(await file.text())
       if (!isDeliveryPlan(parsed)) throw new Error('Ce fichier ne correspond pas à une sauvegarde AZY Livraison valide.')
-      replacePlan(parsed)
+      replacePlan(materializeVehicleDefaults(parsed))
       setFileMessage(`${file.name} chargé : ${parsed.packages.length} colis et ${parsed.couriers.length} livreurs.`)
     } catch (error) {
       setFileMessage(error instanceof Error ? error.message : 'Lecture du fichier impossible.')
@@ -296,7 +303,43 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     }
   }
 
+  async function handleGeneration() {
+    setGenerating(true)
+    setValidationErrors([])
+    setValidationMessage(undefined)
+    try {
+      const validation = await validatePlan(plan, accessToken)
+      const normalizedPlan = validation.plan ?? plan
+      setPlan(normalizedPlan)
+      setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      if (error instanceof PlanValidationFailure) {
+        setValidationErrors(error.errors)
+        setValidationMessage(error.message)
+      } else {
+        setValidationMessage(error instanceof Error ? error.message : 'Génération impossible.')
+      }
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   const totalWeight = plan.packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0)
+
+  if (optimizationResult) {
+    return (
+      <OptimizationResults
+        result={optimizationResult}
+        plan={plan}
+        accessToken={accessToken}
+        onBack={() => {
+          setOptimizationResult(undefined)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
+    )
+  }
 
   return (
     <div className="planning-workspace">
@@ -517,6 +560,10 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
             </button>
             <button className="button button--wide" type="button" disabled={validating} onClick={() => void handleValidation()}>
               <ShieldCheck aria-hidden="true" />{validating ? 'Validation…' : 'Valider le plan'}
+            </button>
+            <button className="button button--wide button--generate" type="button" disabled={generating || validating} onClick={() => void handleGeneration()}>
+              {generating ? <LoaderCircle className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+              {generating ? 'Optimisation en cours…' : 'Générer les tournées'}
             </button>
             {validationMessage && (
               <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>

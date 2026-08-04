@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : préparation complète des plans, services géographiques locaux et moteur d'optimisation backend en place.** Après connexion, le frontend permet de choisir le pattern MVP, remplir un brouillon unique, y injecter les imports CSV, l'importer ou l'exporter en JSON et le valider avec Spring Boot. Nominatim résout les adresses de Madagascar, OSRM calcule les distances routières et OR-Tools affecte puis ordonne les colis. L'écran cartographique du résultat et ses exports restent à implémenter.
+> **État du projet : le parcours principal est utilisable de bout en bout.** Après connexion, le frontend permet de préparer ou importer un plan, contrôler ses points sur la carte, lancer l'optimisation OR-Tools et examiner les tournées colorées avec leurs capacités, arrêts, horaires et colis non affectés. Les brouillons et résultats sont exportables en JSON ; les exports CSV et PDF restent à implémenter.
 
 ## Objectif
 
@@ -728,19 +728,21 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - [x] téléchargement guidé de l'extrait Madagascar ;
 - [x] Nominatim local, cache et confirmation des recherches ambiguës ;
 - [x] OSRM local avec le préréglage `MAIN_ROADS` ;
-- carte Leaflet et sélection par clic.
+- [x] carte Leaflet et sélection par clic.
 
 ### Phase 3 — Optimisation
 
 - [x] matrice routière ;
-- capacités et paramètres effectifs des véhicules ;
-- objectif orienté zones et coût total ;
-- colis non affectés expliqués ;
-- affichage comparatif des tournées.
+- [x] capacités et paramètres effectifs des véhicules ;
+- [x] objectif orienté zones et coût total ;
+- [x] colis non affectés expliqués ;
+- [x] affichage comparatif et carte colorée des tournées ;
+- [x] heures de départ et créneaux horaires facultatifs.
 
 ### Phase 4 — Résultats, partage et mise en ligne
 
-- exports JSON, CSV et PDF du résultat ;
+- [x] export JSON du résultat ;
+- exports CSV et PDF du résultat ;
 - durcissement de la sécurité ;
 - sauvegarde optionnelle de métadonnées ;
 - fournisseur de tuiles adapté au trafic réel ;
@@ -751,6 +753,5 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - plusieurs groupes possédant chacun une récupération et plusieurs destinations ;
 - profils routiers spécialisés ;
 - rôles et permissions ;
-- créneaux horaires ;
 - historique et comparaison de scénarios ;
 - mise à jour automatisée et contrôlée des données OSM.
