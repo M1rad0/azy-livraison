@@ -1,4 +1,20 @@
-import { useEffect, useId, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useId, useState, type ChangeEvent, type ReactNode } from 'react'
+import {
+  Clock3,
+  ClipboardList,
+  Download,
+  FolderOpen,
+  MapPin,
+  MapPinned,
+  PackagePlus,
+  Plus,
+  Save,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  UserPlus,
+  Users,
+} from 'lucide-react'
 import {
   CsvImportFailure,
   downloadCsvTemplate,
@@ -8,7 +24,6 @@ import {
   type ImportKind,
   type Location,
 } from '../api/csvImports'
-import { searchAddress, type GeocodingCandidate } from '../api/geocoding'
 import {
   isDeliveryPlan,
   PlanValidationFailure,
@@ -16,13 +31,14 @@ import {
   type DeliveryPlan,
   type PlanningValidationError,
 } from '../api/plans'
+import { PlanMapPreview } from './PlanMapPreview'
+import { LocationPicker } from './LocationPicker'
 
 interface PlanningWorkspaceProps {
   accessToken: string
-  onBack: () => void
 }
 
-function antananarivoDateTime() {
+function antananarivoDateTime(date = new Date()) {
   const parts = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Indian/Antananarivo',
     year: 'numeric',
@@ -31,8 +47,16 @@ function antananarivoDateTime() {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  }).format(new Date())
+  }).format(date)
   return parts.replace(' ', 'T')
+}
+
+function toOffsetDateTime(value: string) {
+  return value ? `${value}:00+03:00` : undefined
+}
+
+function defaultWindowEnd(departureAt: string) {
+  return `${antananarivoDateTime(new Date(new Date(departureAt).getTime() + 2 * 60 * 60 * 1000))}:00+03:00`
 }
 
 function defaultPlan(): DeliveryPlan {
@@ -64,10 +88,33 @@ function nextId(prefix: string, items: { id: string }[]) {
   return candidate
 }
 
-function numberOrUndefined(value: string) {
-  if (value.trim() === '') return undefined
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : undefined
+function validationFieldLabel(path: string) {
+  const packageMatch = path.match(/^packages\[(\d+)](?:\.(.+))?/)
+  if (packageMatch) {
+    const field = packageMatch[2]?.replace('destination.', '')
+    const labels: Record<string, string> = {
+      id: 'référence', label: 'libellé', weightKg: 'poids', phone: 'téléphone',
+      destination: 'destination', destinationQuery: 'destination', latitude: 'latitude', longitude: 'longitude',
+      deliveryWindow: 'créneau de livraison', 'deliveryWindow.startAt': 'début du créneau', 'deliveryWindow.endAt': 'fin du créneau',
+    }
+    return `Colis ${Number(packageMatch[1]) + 1}${field ? ` · ${labels[field] ?? field}` : ''}`
+  }
+  const courierMatch = path.match(/^couriers\[(\d+)](?:\.(.+))?/)
+  if (courierMatch) {
+    const labels: Record<string, string> = {
+      id: 'référence', name: 'nom', vehicleType: 'véhicule', maxWeightKg: 'capacité', averageSpeedKmh: 'vitesse',
+      departureAt: 'heure de départ', departureLocation: 'lieu de départ',
+    }
+    const field = courierMatch[2]
+    return `Livreur ${Number(courierMatch[1]) + 1}${field ? ` · ${labels[field] ?? field}` : ''}`
+  }
+  if (path.startsWith('depot')) return 'Point de récupération'
+  const labels: Record<string, string> = {
+    planId: 'Référence', name: 'Nom de la préparation', departureAt: 'Date et heure de départ',
+    couriers: 'Livreurs', packages: 'Colis', request: 'Fichier de sauvegarde',
+    schemaVersion: 'Fichier de sauvegarde', pattern: 'Mode de livraison', timezone: 'Heure de départ',
+  }
+  return labels[path] ?? 'Préparation'
 }
 
 function InputField({ label, children, wide = false }: {
@@ -76,77 +123,6 @@ function InputField({ label, children, wide = false }: {
   wide?: boolean
 }) {
   return <label className={`workspace-field${wide ? ' workspace-field--wide' : ''}`}><span>{label}</span>{children}</label>
-}
-
-function DepotSearch({ accessToken, depot, onSelect }: {
-  accessToken: string
-  depot: Location
-  onSelect: (candidate: GeocodingCandidate) => void
-}) {
-  const [query, setQuery] = useState(depot.destinationQuery ?? '')
-  const [candidates, setCandidates] = useState<GeocodingCandidate[]>([])
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState<string>()
-
-  useEffect(() => {
-    setQuery(depot.destinationQuery ?? '')
-  }, [depot.destinationQuery])
-
-  async function search() {
-    if (query.trim().length < 3) return
-    setBusy(true)
-    setMessage(undefined)
-    setCandidates([])
-    try {
-      const result = await searchAddress(query, accessToken)
-      setCandidates(result.candidates)
-      if (result.candidates.length === 0) setMessage('Aucun lieu trouvé à Madagascar.')
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Recherche impossible.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="depot-search">
-      <div className="depot-search__bar">
-        <input
-          aria-label="Rechercher le point de récupération"
-          value={query}
-          minLength={3}
-          placeholder="Rechercher une adresse ou un point de repère"
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              void search()
-            }
-          }}
-        />
-        <button className="button" type="button" disabled={busy || query.trim().length < 3} onClick={() => void search()}>
-          {busy ? 'Recherche…' : 'Rechercher'}
-        </button>
-      </div>
-      {message && <p className="inline-message inline-message--error" role="alert">{message}</p>}
-      {candidates.length > 0 && (
-        <ul className="workspace-candidates" aria-label="Résultats pour le point de récupération">
-          {candidates.map((candidate) => (
-            <li key={candidate.id}>
-              <button type="button" onClick={() => {
-                setQuery(candidate.displayName)
-                setCandidates([])
-                onSelect(candidate)
-              }}>
-                <strong>{candidate.displayName}</strong>
-                <small>{candidate.latitude.toFixed(6)}, {candidate.longitude.toFixed(6)}</small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
 }
 
 function CsvImportButton<T>({ accessToken, kind, onImported }: {
@@ -188,24 +164,25 @@ function CsvImportButton<T>({ accessToken, kind, onImported }: {
       <input
         id={inputId}
         type="file"
-        aria-label={kind === 'packages' ? 'Fichier CSV colis' : 'Fichier CSV livreurs'}
+        aria-label={kind === 'packages' ? 'Liste de colis à importer' : 'Liste de livreurs à importer'}
         accept=".csv,text/csv"
         onChange={(event) => void handleFile(event)}
       />
-      <label className="button button--secondary" htmlFor={inputId}>{busy ? 'Import…' : 'Importer CSV'}</label>
-      <button className="text-button" type="button" onClick={() => void handleTemplate()}>Modèle</button>
+      <label className="button button--secondary" htmlFor={inputId}><Upload aria-hidden="true" />{busy ? 'Import en cours…' : 'Importer une liste'}</label>
+      <button className="text-button" type="button" onClick={() => void handleTemplate()}><Download aria-hidden="true" />Télécharger le modèle</button>
       {message && <span role="alert">{message}</span>}
     </div>
   )
 }
 
-export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProps) {
+export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   const jsonInputId = useId()
   const [plan, setPlan] = useState<DeliveryPlan>(defaultPlan)
   const [validationErrors, setValidationErrors] = useState<PlanningValidationError[]>([])
   const [validationMessage, setValidationMessage] = useState<string>()
   const [validating, setValidating] = useState(false)
   const [fileMessage, setFileMessage] = useState<string>()
+  const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
 
   function replacePlan(nextPlan: DeliveryPlan) {
     setPlan(nextPlan)
@@ -281,7 +258,7 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
     link.click()
     link.remove()
     URL.revokeObjectURL(objectUrl)
-    setFileMessage('Brouillon JSON exporté.')
+    setFileMessage('Sauvegarde téléchargée.')
   }
 
   async function importJson(event: ChangeEvent<HTMLInputElement>) {
@@ -291,7 +268,7 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
     setFileMessage(undefined)
     try {
       const parsed: unknown = JSON.parse(await file.text())
-      if (!isDeliveryPlan(parsed)) throw new Error('Ce fichier ne respecte pas le format de plan AZY 1.0.')
+      if (!isDeliveryPlan(parsed)) throw new Error('Ce fichier ne correspond pas à une sauvegarde AZY Livraison valide.')
       replacePlan(parsed)
       setFileMessage(`${file.name} chargé : ${parsed.packages.length} colis et ${parsed.couriers.length} livreurs.`)
     } catch (error) {
@@ -324,14 +301,13 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
   return (
     <div className="planning-workspace">
       <section className="workspace-hero" aria-labelledby="workspace-title">
-        <button className="workspace-back" type="button" onClick={onBack}>← Changer de pattern</button>
         <div>
           <p className="eyebrow">Plan · Un retrait vers plusieurs livraisons</p>
           <h1 id="workspace-title">Construisez votre tournée.</h1>
           <p>Chaque saisie et chaque import enrichissent le même brouillon partageable.</p>
         </div>
         <div className="workspace-progress" aria-label="Étapes du plan">
-          <span className="is-complete">1 <small>Pattern</small></span>
+          <span className="is-complete">1 <small>Mode</small></span>
           <span className="is-active">2 <small>Préparation</small></span>
           <span>3 <small>Résultat</small></span>
         </div>
@@ -341,10 +317,10 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
         <div className="planning-form">
           <section className="workspace-section" aria-labelledby="plan-general-title">
             <div className="workspace-section__heading">
-              <div><span>01</span><div><p className="eyebrow">Brouillon</p><h2 id="plan-general-title">Informations générales</h2></div></div>
+              <div><span><ClipboardList aria-hidden="true" /></span><div><p className="eyebrow">Brouillon</p><h2 id="plan-general-title">Informations générales</h2></div></div>
             </div>
             <div className="workspace-fields">
-              <InputField label="Identifiant du plan">
+              <InputField label="Référence">
                 <input value={plan.planId} onChange={(event) => updatePlan((current) => ({ ...current, planId: event.target.value }))} />
               </InputField>
               <InputField label="Nom du plan">
@@ -362,45 +338,37 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
 
           <section className="workspace-section" aria-labelledby="depot-title">
             <div className="workspace-section__heading">
-              <div><span>02</span><div><p className="eyebrow">Origine commune</p><h2 id="depot-title">Point de récupération</h2></div></div>
+              <div><span><MapPin aria-hidden="true" /></span><div><p className="eyebrow">Origine commune</p><h2 id="depot-title">Point de récupération</h2></div></div>
               <span className="section-badge">1 point</span>
             </div>
-            <DepotSearch accessToken={accessToken} depot={plan.depot} onSelect={(candidate) => updateDepot({
-              label: candidate.displayName,
-              destinationQuery: candidate.displayName,
-              latitude: candidate.latitude,
-              longitude: candidate.longitude,
-            })} />
-            <div className="workspace-fields workspace-fields--location">
+            <div className="workspace-fields">
               <InputField label="Libellé">
                 <input value={plan.depot.label ?? ''} onChange={(event) => updateDepot({ label: event.target.value })} />
               </InputField>
-              <InputField label="Adresse ou description">
-                <input value={plan.depot.destinationQuery ?? ''} onChange={(event) => updateDepot({ destinationQuery: event.target.value })} />
-              </InputField>
-              <InputField label="Latitude">
-                <input type="number" step="any" value={plan.depot.latitude ?? ''} onChange={(event) => updateDepot({ latitude: numberOrUndefined(event.target.value) })} />
-              </InputField>
-              <InputField label="Longitude">
-                <input type="number" step="any" value={plan.depot.longitude ?? ''} onChange={(event) => updateDepot({ longitude: numberOrUndefined(event.target.value) })} />
-              </InputField>
             </div>
+            <LocationPicker
+              accessToken={accessToken}
+              value={plan.depot}
+              title="Point de récupération"
+              description="Recherchez le lieu commun de récupération, puis confirmez-le sur la carte."
+              onChange={(location) => updateDepot(location)}
+            />
           </section>
 
           <section className="workspace-section" aria-labelledby="packages-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
-              <div><span>03</span><div><p className="eyebrow">Destinations</p><h2 id="packages-title">Colis</h2></div></div>
+              <div><span><PackagePlus aria-hidden="true" /></span><div><p className="eyebrow">Destinations</p><h2 id="packages-title">Colis</h2></div></div>
               <div className="workspace-section__actions">
                 <CsvImportButton<DeliveryPackage> accessToken={accessToken} kind="packages" onImported={(items, filename) => {
                   updatePlan((current) => ({ ...current, packages: items }))
                   setFileMessage(`${filename} a remplacé la liste des colis.`)
                 }} />
-                <button className="button" type="button" onClick={addPackage}>+ Ajouter</button>
+                <button className="button" type="button" onClick={addPackage}><Plus aria-hidden="true" />Ajouter</button>
               </div>
             </div>
             {plan.packages.length === 0 ? (
               <button className="workspace-empty" type="button" onClick={addPackage}>
-                <span>＋</span><strong>Ajouter votre premier colis</strong><small>ou utilisez l’import CSV pour remplir cette section</small>
+                <span><PackagePlus aria-hidden="true" /></span><strong>Ajouter votre premier colis</strong><small>ou importez une liste déjà préparée</small>
               </button>
             ) : (
               <div className="editable-list">
@@ -408,16 +376,41 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
                   <article className="editable-card" key={`${item.id}-${index}`}>
                     <div className="editable-card__topline">
                       <strong>Colis {String(index + 1).padStart(2, '0')}</strong>
-                      <button type="button" onClick={() => updatePlan((current) => ({ ...current, packages: current.packages.filter((_, itemIndex) => itemIndex !== index) }))}>Supprimer</button>
+                      <button type="button" onClick={() => updatePlan((current) => ({ ...current, packages: current.packages.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 aria-hidden="true" />Supprimer</button>
                     </div>
                     <div className="editable-card__grid editable-card__grid--package">
                       <InputField label="Identifiant"><input value={item.id} onChange={(event) => updatePackage(index, { id: event.target.value })} /></InputField>
                       <InputField label="Libellé"><input value={item.label} onChange={(event) => updatePackage(index, { label: event.target.value })} /></InputField>
                       <InputField label="Poids (kg)"><input type="number" min="0.01" step="0.01" value={item.weightKg} onChange={(event) => updatePackage(index, { weightKg: Number(event.target.value) })} /></InputField>
                       <InputField label="Téléphone"><input value={item.phone ?? ''} onChange={(event) => updatePackage(index, { phone: event.target.value })} /></InputField>
-                      <InputField label="Destination" wide><input value={item.destination.destinationQuery ?? ''} placeholder="Adresse, quartier ou point de repère" onChange={(event) => updatePackageDestination(index, { destinationQuery: event.target.value })} /></InputField>
-                      <InputField label="Latitude"><input type="number" step="any" value={item.destination.latitude ?? ''} onChange={(event) => updatePackageDestination(index, { latitude: numberOrUndefined(event.target.value) })} /></InputField>
-                      <InputField label="Longitude"><input type="number" step="any" value={item.destination.longitude ?? ''} onChange={(event) => updatePackageDestination(index, { longitude: numberOrUndefined(event.target.value) })} /></InputField>
+                      <div className="editable-card__full-field">
+                        <span>Destination</span>
+                        <LocationPicker
+                          accessToken={accessToken}
+                          value={item.destination}
+                          title={`Destination du colis ${index + 1}`}
+                          description="Recherchez l’adresse du destinataire ou placez approximativement le point sur la carte."
+                          onChange={(location) => updatePackageDestination(index, location)}
+                        />
+                      </div>
+                      <div className="editable-card__optional">
+                        <div className="editable-card__optional-heading">
+                          <div><Clock3 aria-hidden="true" /><span><strong>Créneau de livraison</strong><small>Facultatif · utilisé pour optimiser l’ordre des arrêts</small></span></div>
+                          {item.deliveryWindow ? (
+                            <button type="button" onClick={() => updatePackage(index, { deliveryWindow: undefined })}><Trash2 aria-hidden="true" />Retirer</button>
+                          ) : (
+                            <button type="button" onClick={() => updatePackage(index, {
+                              deliveryWindow: { startAt: plan.departureAt, endAt: defaultWindowEnd(plan.departureAt) },
+                            })}><Plus aria-hidden="true" />Ajouter un créneau</button>
+                          )}
+                        </div>
+                        {item.deliveryWindow && (
+                          <div className="optional-fields">
+                            <InputField label="Livrer à partir de"><input type="datetime-local" value={item.deliveryWindow.startAt.slice(0, 16)} onChange={(event) => updatePackage(index, { deliveryWindow: { ...item.deliveryWindow!, startAt: toOffsetDateTime(event.target.value) ?? '' } })} /></InputField>
+                            <InputField label="Livrer avant"><input type="datetime-local" value={item.deliveryWindow.endAt.slice(0, 16)} onChange={(event) => updatePackage(index, { deliveryWindow: { ...item.deliveryWindow!, endAt: toOffsetDateTime(event.target.value) ?? '' } })} /></InputField>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -427,18 +420,18 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
 
           <section className="workspace-section" aria-labelledby="couriers-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
-              <div><span>04</span><div><p className="eyebrow">Équipe</p><h2 id="couriers-title">Livreurs</h2></div></div>
+              <div><span><Users aria-hidden="true" /></span><div><p className="eyebrow">Équipe</p><h2 id="couriers-title">Livreurs</h2></div></div>
               <div className="workspace-section__actions">
                 <CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => {
                   updatePlan((current) => ({ ...current, couriers: items }))
                   setFileMessage(`${filename} a remplacé la liste des livreurs.`)
                 }} />
-                <button className="button" type="button" onClick={addCourier}>+ Ajouter</button>
+                <button className="button" type="button" onClick={addCourier}><UserPlus aria-hidden="true" />Ajouter</button>
               </div>
             </div>
             {plan.couriers.length === 0 ? (
               <button className="workspace-empty" type="button" onClick={addCourier}>
-                <span>＋</span><strong>Ajouter votre premier livreur</strong><small>les préréglages véhicule restent modifiables</small>
+                <span><UserPlus aria-hidden="true" /></span><strong>Ajouter votre premier livreur</strong><small>les valeurs recommandées restent modifiables</small>
               </button>
             ) : (
               <div className="editable-list">
@@ -446,7 +439,7 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
                   <article className="editable-card" key={`${item.id}-${index}`}>
                     <div className="editable-card__topline">
                       <strong>Livreur {String(index + 1).padStart(2, '0')}</strong>
-                      <button type="button" onClick={() => updatePlan((current) => ({ ...current, couriers: current.couriers.filter((_, itemIndex) => itemIndex !== index) }))}>Supprimer</button>
+                      <button type="button" onClick={() => updatePlan((current) => ({ ...current, couriers: current.couriers.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 aria-hidden="true" />Supprimer</button>
                     </div>
                     <div className="editable-card__grid">
                       <InputField label="Identifiant"><input value={item.id} onChange={(event) => updateCourier(index, { id: event.target.value })} /></InputField>
@@ -461,6 +454,31 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
                       </InputField>
                       <InputField label="Capacité (kg)"><input type="number" min="0.01" step="0.01" value={item.maxWeightKg} onChange={(event) => updateCourier(index, { maxWeightKg: Number(event.target.value) })} /></InputField>
                       <InputField label="Vitesse (km/h)"><input type="number" min="0.01" step="0.01" value={item.averageSpeedKmh} onChange={(event) => updateCourier(index, { averageSpeedKmh: Number(event.target.value) })} /></InputField>
+                      <div className="editable-card__optional">
+                        <div className="editable-card__optional-heading">
+                          <div><MapPin aria-hidden="true" /><span><strong>Départ personnalisé</strong><small>Facultatif · sinon le livreur part du retrait à l’heure du plan</small></span></div>
+                          {item.departureAt || item.departureLocation ? (
+                            <button type="button" onClick={() => updateCourier(index, { departureAt: undefined, departureLocation: undefined })}><Trash2 aria-hidden="true" />Retirer</button>
+                          ) : (
+                            <button type="button" onClick={() => updateCourier(index, { departureAt: plan.departureAt, departureLocation: { ...plan.depot } })}><Plus aria-hidden="true" />Personnaliser</button>
+                          )}
+                        </div>
+                        {(item.departureAt || item.departureLocation) && (
+                          <div className="courier-departure-fields">
+                            <InputField label="Heure de départ"><input type="datetime-local" value={item.departureAt?.slice(0, 16) ?? ''} onChange={(event) => updateCourier(index, { departureAt: toOffsetDateTime(event.target.value) })} /></InputField>
+                            <div className="editable-card__full-field">
+                              <span>Lieu de départ</span>
+                              <LocationPicker
+                                accessToken={accessToken}
+                                value={item.departureLocation ?? {}}
+                                title={`Départ de ${item.name || `livreur ${index + 1}`}`}
+                                description="Choisissez son point de départ réel. Sans personnalisation, le point de récupération commun sera utilisé."
+                                onChange={(departureLocation) => updateCourier(index, { departureLocation })}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -482,20 +500,23 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
           </div>
 
           <div className="plan-sidebar__card plan-files">
-            <div><p className="eyebrow">Sauvegarde portable</p><h3>Brouillon JSON</h3></div>
-            <p>Exportez maintenant et reprenez ce plan plus tard, sur une autre installation si nécessaire.</p>
+            <div><p className="eyebrow">Reprendre plus tard</p><h3>Sauvegarde du brouillon</h3></div>
+            <p>Téléchargez votre préparation pour la partager ou la reprendre plus tard, même sur un autre ordinateur.</p>
             <input id={jsonInputId} type="file" accept=".json,application/json" onChange={(event) => void importJson(event)} />
-            <label className="button button--secondary" htmlFor={jsonInputId}>Ouvrir un brouillon</label>
-            <button className="button button--secondary" type="button" onClick={exportJson}>Exporter le brouillon</button>
+            <label className="button button--secondary" htmlFor={jsonInputId}><FolderOpen aria-hidden="true" />Ouvrir une sauvegarde</label>
+            <button className="button button--secondary" type="button" onClick={exportJson}><Save aria-hidden="true" />Télécharger la sauvegarde</button>
             {fileMessage && <span className="inline-message" role="status">{fileMessage}</span>}
           </div>
 
           <div className="plan-sidebar__card plan-validation">
             <p className="eyebrow">Contrôle métier</p>
             <h3>Prêt à continuer ?</h3>
-            <p>Le backend vérifie le format, les identifiants, les coordonnées et applique les préréglages.</p>
+            <p>Nous vérifions les informations, les destinations et les capacités avant de préparer les tournées.</p>
+            <button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}>
+              <MapPinned aria-hidden="true" />Visualiser les trajets
+            </button>
             <button className="button button--wide" type="button" disabled={validating} onClick={() => void handleValidation()}>
-              {validating ? 'Validation…' : 'Valider le plan'}
+              <ShieldCheck aria-hidden="true" />{validating ? 'Validation…' : 'Valider le plan'}
             </button>
             {validationMessage && (
               <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>
@@ -504,12 +525,13 @@ export function PlanningWorkspace({ accessToken, onBack }: PlanningWorkspaceProp
             )}
             {validationErrors.length > 0 && (
               <ul className="validation-errors">
-                {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{error.path}</strong>{error.message}</li>)}
+                {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}
               </ul>
             )}
           </div>
         </aside>
       </div>
+      {mapPreviewOpen && <PlanMapPreview plan={plan} accessToken={accessToken} onClose={() => setMapPreviewOpen(false)} />}
     </div>
   )
 }

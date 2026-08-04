@@ -1,6 +1,21 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+
+vi.mock('react-leaflet', () => {
+  const map = { fitBounds: vi.fn(), setView: vi.fn() }
+  return {
+    MapContainer: ({ children }: { children: ReactNode }) => <div data-testid="plan-preview-map">{children}</div>,
+    TileLayer: () => null,
+    CircleMarker: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    GeoJSON: () => <div data-testid="preview-route" />,
+    Popup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    Tooltip: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    useMap: () => map,
+    useMapEvents: () => map,
+  }
+})
 
 const session = {
   tokenType: 'Bearer',
@@ -34,7 +49,7 @@ function authenticatedFetch(handler?: (input: string, init?: RequestInit) => unk
 }
 
 async function openWorkspace() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Choisir ce pattern →' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Choisir ce mode' }))
   await screen.findByRole('heading', { name: 'Construisez votre tournée.' })
 }
 
@@ -54,8 +69,8 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Un retrait, plusieurs livraisons' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Plusieurs groupes de livraison' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getAllByText('Opérationnel')).toHaveLength(3))
-    expect(screen.getByText(/Connecté/)).toHaveTextContent('admin')
+    await waitFor(() => expect(screen.getByText('Session active')).toBeInTheDocument())
+    expect(screen.getByText('admin')).toBeInTheDocument()
   })
 
   it('shows the login form when no refresh session exists', async () => {
@@ -118,8 +133,9 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
+    expect(screen.getByRole('button', { name: 'Changer de mode' }).closest('header')).toHaveClass('topbar')
     const file = new File(['id;label\ncolis-001;Client Analakely'], 'packages.csv', { type: 'text/csv' })
-    fireEvent.change(screen.getByLabelText('Fichier CSV colis'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('Liste de colis à importer'), { target: { files: [file] } })
 
     expect(await screen.findByDisplayValue('Client Analakely')).toBeInTheDocument()
     expect(screen.getByText('packages.csv a remplacé la liste des colis.')).toBeInTheDocument()
@@ -156,12 +172,106 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
+    fireEvent.click(screen.getByRole('button', { name: 'Choisir sur la carte' }))
     fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
     fireEvent.click(await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer ce lieu' }))
 
-    expect(screen.getByLabelText('Latitude')).toHaveValue(-18.9089)
-    expect(screen.getByLabelText('Longitude')).toHaveValue(47.5212)
-    expect(screen.getAllByDisplayValue('Analakely, Antananarivo, Madagascar')).toHaveLength(3)
+    expect(screen.getByText('-18.908900, 47.521200')).toBeInTheDocument()
+    expect(screen.getByText('Analakely, Antananarivo, Madagascar')).toBeInTheDocument()
+  })
+
+  it('searches and selects a destination from a package card', async () => {
+    const fetchMock = authenticatedFetch((input) => {
+      if (input === '/api/geocoding/search?q=Ankorondrano%2C+Antananarivo') {
+        return jsonResponse({
+          query: 'Ankorondrano, Antananarivo',
+          provider: 'NOMINATIM',
+          cached: false,
+          resultCount: 1,
+          candidates: [{
+            id: 'W67890',
+            osmType: 'WAY',
+            osmId: 67890,
+            displayName: 'Ankorondrano, Antananarivo, Madagascar',
+            latitude: -18.8792,
+            longitude: 47.5207,
+          }],
+        })
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    await openWorkspace()
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter votre premier colis/ }))
+
+    fireEvent.click(within(screen.getByRole('region', { name: 'Colis' })).getByRole('button', { name: 'Choisir sur la carte' }))
+    const destinationInput = screen.getByLabelText('Rechercher un lieu à Madagascar')
+    fireEvent.change(destinationInput, { target: { value: 'Ankorondrano, Antananarivo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Ankorondrano, Antananarivo, Madagascar/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer ce lieu' }))
+
+    expect(screen.getByText('-18.879200, 47.520700')).toBeInTheDocument()
+    expect(screen.getByText('Ankorondrano, Antananarivo, Madagascar')).toBeInTheDocument()
+  })
+
+  it('previews the road route on a map before validation', async () => {
+    const fetchMock = authenticatedFetch((input) => {
+      if (input === '/api/routing/route') {
+        return jsonResponse({
+          provider: 'OSRM',
+          preset: 'MAIN_ROADS',
+          pointCount: 2,
+          distanceMeters: 2900,
+          durationSeconds: 540,
+          geometry: {
+            type: 'LineString',
+            coordinates: [[47.5212, -18.9089], [47.5207, -18.8792]],
+          },
+          waypoints: [],
+        })
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const draft = {
+      schemaVersion: '1.0',
+      pattern: 'SINGLE_PICKUP_MULTI_DELIVERY',
+      planId: 'plan-carte-001',
+      name: 'Contrôle des trajets',
+      departureAt: '2026-08-05T08:00:00+03:00',
+      timezone: 'Indian/Antananarivo',
+      settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
+      depot: { label: 'Analakely', destinationQuery: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
+      couriers: [],
+      packages: [{
+        id: 'colis-001',
+        label: 'Client Ankorondrano',
+        weightKg: 2.5,
+        destination: { destinationQuery: 'Ankorondrano', latitude: -18.8792, longitude: 47.5207 },
+      }],
+    }
+    const file = new File([JSON.stringify(draft)], 'plan-carte.json', { type: 'application/json' })
+    Object.defineProperty(file, 'text', { value: async () => JSON.stringify(draft) })
+
+    render(<App />)
+    await openWorkspace()
+    fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
+    await screen.findByDisplayValue('Contrôle des trajets')
+    fireEvent.click(screen.getByRole('button', { name: 'Visualiser les trajets' }))
+
+    expect(await screen.findByRole('heading', { name: 'Aperçu des trajets' })).toBeInTheDocument()
+    expect(screen.getByTestId('plan-preview-map')).toBeInTheDocument()
+    expect(await screen.findByTestId('preview-route')).toBeInTheDocument()
+    expect(screen.getByText('2,9 km')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/routing/route',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+      }),
+    )
   })
 
   it('validates the unified plan after both CSV imports', async () => {
@@ -195,14 +305,19 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
-    fireEvent.change(screen.getByLabelText('Fichier CSV colis'), {
+    fireEvent.change(screen.getByLabelText('Liste de colis à importer'), {
       target: { files: [new File(['packages'], 'packages.csv', { type: 'text/csv' })] },
     })
-    fireEvent.change(screen.getByLabelText('Fichier CSV livreurs'), {
+    fireEvent.change(screen.getByLabelText('Liste de livreurs à importer'), {
       target: { files: [new File(['couriers'], 'couriers.csv', { type: 'text/csv' })] },
     })
     await screen.findByDisplayValue('Client A')
     await screen.findByDisplayValue('Soa')
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un créneau' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Personnaliser' }))
+    fireEvent.change(screen.getByLabelText('Livrer à partir de'), { target: { value: '2026-08-05T09:00' } })
+    fireEvent.change(screen.getByLabelText('Livrer avant'), { target: { value: '2026-08-05T11:00' } })
+    fireEvent.change(screen.getByLabelText('Heure de départ'), { target: { value: '2026-08-05T07:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Valider le plan' }))
 
     expect(await screen.findByText('Le plan est valide et prêt pour la génération du résultat.')).toBeInTheDocument()
@@ -213,8 +328,18 @@ describe('App', () => {
       pattern: 'SINGLE_PICKUP_MULTI_DELIVERY',
       timezone: 'Indian/Antananarivo',
       depot: { destinationQuery: 'Analakely, Antananarivo' },
-      packages: [{ id: 'colis-001' }],
-      couriers: [{ id: 'livreur-001' }],
+      packages: [{
+        id: 'colis-001',
+        deliveryWindow: {
+          startAt: '2026-08-05T09:00:00+03:00',
+          endAt: '2026-08-05T11:00:00+03:00',
+        },
+      }],
+      couriers: [{
+        id: 'livreur-001',
+        departureAt: '2026-08-05T07:30:00+03:00',
+        departureLocation: { destinationQuery: 'Analakely, Antananarivo' },
+      }],
     })
   })
 
@@ -241,16 +366,16 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
-    fireEvent.change(screen.getByLabelText('Ouvrir un brouillon'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
 
     expect(await screen.findByDisplayValue('Plan repris depuis un fichier')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Soa')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Client A')).toBeInTheDocument()
     expect(screen.getByText(/plan-reprise.json chargé/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Exporter le brouillon' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Télécharger la sauvegarde' }))
     expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob))
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:test-plan')
-    expect(screen.getByText('Brouillon JSON exporté.')).toBeInTheDocument()
+    expect(screen.getByText('Sauvegarde téléchargée.')).toBeInTheDocument()
   })
 })

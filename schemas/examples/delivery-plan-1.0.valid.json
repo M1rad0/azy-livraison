@@ -21,7 +21,13 @@
       "name": "Exemple Livreur",
       "vehicleType": "MOTO",
       "maxWeightKg": 35,
-      "averageSpeedKmh": 22
+      "averageSpeedKmh": 22,
+      "departureAt": "2026-08-03T07:30:00+03:00",
+      "departureLocation": {
+        "destinationQuery": "Isoraka, Antananarivo",
+        "latitude": -18.915,
+        "longitude": 47.518
+      }
     },
     {
       "id": "livreur-002",
@@ -37,6 +43,10 @@
       "phone": "+261000000000",
       "destination": {
         "destinationQuery": "Analakely, Antananarivo"
+      },
+      "deliveryWindow": {
+        "startAt": "2026-08-03T09:00:00+03:00",
+        "endAt": "2026-08-03T11:00:00+03:00"
       }
     },
     {

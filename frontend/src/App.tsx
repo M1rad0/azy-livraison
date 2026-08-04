@@ -1,22 +1,33 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Download,
+  LogIn,
+  LogOut,
+  PackageCheck,
+  Route,
+  Save,
+  Users,
+} from 'lucide-react'
+import {
   login,
   logout,
   refreshSession,
   type AuthSession,
 } from './api/auth'
-import { getSystemStatus, type ServiceState, type SystemStatus } from './api/systemStatus'
 import { PlanningWorkspace } from './components/PlanningWorkspace'
 import './App.css'
 
-type LoadingState = 'loading' | 'ready' | 'error'
 type SessionState = 'restoring' | 'guest' | 'authenticated'
 
 function Brand() {
   return (
     <div className="brand-lockup">
       <div className="brand-mark" aria-hidden="true">
-        <span>A</span>
+        <PackageCheck />
       </div>
       <div>
         <strong>AZY Livraison</strong>
@@ -65,7 +76,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessi
           <div>
             <p className="eyebrow">Accès sécurisé</p>
             <h2 id="form-title">Bienvenue</h2>
-            <p className="login-form__intro">Connectez-vous avec le compte configuré pour cette installation.</p>
+            <p className="login-form__intro">Connectez-vous pour retrouver votre espace de préparation.</p>
           </div>
 
           <label>
@@ -95,7 +106,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessi
           {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
 
           <button className="button button--wide" type="submit" disabled={submitting}>
-            {submitting ? 'Connexion…' : 'Se connecter'}
+            <LogIn aria-hidden="true" />{submitting ? 'Connexion…' : 'Se connecter'}
           </button>
         </form>
       </section>
@@ -103,48 +114,10 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessi
   )
 }
 
-function StatusCard({ label, state }: { label: string; state?: ServiceState }) {
-  const stateLabel = state === 'UP' ? 'Opérationnel' : state === 'DOWN' ? 'Indisponible' : 'Vérification'
-
-  return (
-    <article className={`status-card status-card--${state?.toLowerCase() ?? 'loading'}`}>
-      <span className="status-card__dot" aria-hidden="true" />
-      <div>
-        <p>{label}</p>
-        <strong>{stateLabel}</strong>
-      </div>
-    </article>
-  )
-}
-
 function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () => Promise<void> }) {
-  const [status, setStatus] = useState<SystemStatus>()
-  const [loadingState, setLoadingState] = useState<LoadingState>('loading')
-  const [errorMessage, setErrorMessage] = useState<string>()
   const [loggingOut, setLoggingOut] = useState(false)
   const [patternSelected, setPatternSelected] = useState(false)
-
-  const refreshStatus = useCallback(async (signal?: AbortSignal) => {
-    setLoadingState('loading')
-    setErrorMessage(undefined)
-
-    try {
-      const nextStatus = await getSystemStatus(session.accessToken, signal)
-      setStatus(nextStatus)
-      setLoadingState('ready')
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      setStatus(undefined)
-      setLoadingState('error')
-      setErrorMessage(error instanceof Error ? error.message : 'Connexion impossible.')
-    }
-  }, [session.accessToken])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void refreshStatus(controller.signal)
-    return () => controller.abort()
-  }, [refreshStatus])
+  const accountInitials = session.account.username.trim().slice(0, 2).toUpperCase() || 'AZ'
 
   async function handleLogout() {
     setLoggingOut(true)
@@ -157,35 +130,53 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
 
   return (
     <main className="app-shell">
-      <header className="topbar">
+      <header className={`topbar${patternSelected ? ' topbar--workspace' : ''}`}>
         <Brand />
+        {patternSelected && (
+          <div className="mode-context">
+            <span className="mode-context__icon" aria-hidden="true"><Route /></span>
+            <div>
+              <small>Mode actif</small>
+              <strong>Un retrait · plusieurs livraisons</strong>
+            </div>
+            <button type="button" onClick={() => setPatternSelected(false)}>
+              <ArrowLeft aria-hidden="true" />Changer de mode
+            </button>
+          </div>
+        )}
         <div className="account-menu">
-          <span>Connecté : <strong>{session.account.username}</strong></span>
-          <button className="button button--secondary" type="button" onClick={() => void handleLogout()} disabled={loggingOut}>
-            {loggingOut ? 'Déconnexion…' : 'Se déconnecter'}
+          <div className="account-profile">
+            <span className="account-avatar" aria-hidden="true">{accountInitials}</span>
+            <span className="account-profile__details">
+              <small><i aria-hidden="true" />Session active</small>
+              <strong>{session.account.username}</strong>
+            </span>
+          </div>
+          <button className="button button--secondary account-logout" type="button" onClick={() => void handleLogout()} disabled={loggingOut}>
+            <LogOut aria-hidden="true" />{loggingOut ? 'Déconnexion…' : 'Se déconnecter'}
           </button>
         </div>
       </header>
 
       {patternSelected ? (
-        <PlanningWorkspace accessToken={session.accessToken} onBack={() => setPatternSelected(false)} />
+        <PlanningWorkspace accessToken={session.accessToken} />
       ) : (
         <>
           <section className="hero pattern-hero" aria-labelledby="page-title">
             <p className="eyebrow">Nouvelle planification</p>
             <h1 id="page-title">Quel trajet préparez-vous ?</h1>
             <p className="hero__intro">
-              Choisissez une structure de livraison. Le formulaire, les imports et le brouillon s’adapteront à ce choix.
+              Choisissez votre façon d’organiser les livraisons. L’espace de préparation s’adaptera à ce choix.
             </p>
           </section>
 
           <section className="pattern-picker" aria-labelledby="pattern-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Patterns disponibles</p>
-                <h2 id="pattern-title">Commencer un plan</h2>
+                <p className="eyebrow">Modes disponibles</p>
+                <h2 id="pattern-title">Commencer une préparation</h2>
               </div>
-              <p>Un pattern définit la relation entre les points de récupération, les colis et les destinations.</p>
+              <p>Choisissez le mode qui correspond à la manière dont vos colis seront récupérés et livrés.</p>
             </div>
 
             <div className="pattern-grid">
@@ -198,11 +189,11 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
                   <span className="pattern-node">3</span>
                 </div>
                 <div className="pattern-card__content">
-                  <span className="section-badge">Disponible</span>
+                  <span className="section-badge"><CheckCircle2 aria-hidden="true" />Disponible</span>
                   <h3>Un retrait, plusieurs livraisons</h3>
                   <p>Un point de récupération commun, plusieurs colis, plusieurs livreurs et des destinations réparties.</p>
-                  <ul><li>Imports CSV</li><li>Brouillon JSON</li><li>Capacités véhicules</li></ul>
-                  <button className="button button--wide" type="button" onClick={() => setPatternSelected(true)}>Choisir ce pattern →</button>
+                  <ul><li><Download aria-hidden="true" />Import de listes</li><li><Save aria-hidden="true" />Sauvegarde partageable</li><li><Users aria-hidden="true" />Capacités véhicules</li></ul>
+                  <button className="button button--wide" type="button" onClick={() => setPatternSelected(true)}><Route aria-hidden="true" />Choisir ce mode <ArrowRight aria-hidden="true" /></button>
                 </div>
               </article>
 
@@ -212,45 +203,20 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
                   <span className="pattern-node pattern-node--pickup">B</span><i /><span className="pattern-node">2</span>
                 </div>
                 <div className="pattern-card__content">
-                  <span className="section-badge section-badge--muted">Prochainement</span>
+                  <span className="section-badge section-badge--muted"><Clock3 aria-hidden="true" />Prochainement</span>
                   <h3>Plusieurs groupes de livraison</h3>
-                  <p>Plusieurs occurrences du pattern principal, chacune avec son retrait et ses destinations.</p>
-                  <button className="button button--secondary button--wide" type="button" disabled>Indisponible dans le MVP</button>
+                  <p>Plusieurs groupes indépendants, chacun avec son point de récupération et ses destinations.</p>
+                  <button className="button button--secondary button--wide" type="button" disabled><Clock3 aria-hidden="true" />Bientôt disponible</button>
                 </div>
               </article>
             </div>
-          </section>
-
-          <section className="foundation foundation--compact" aria-labelledby="foundation-title">
-            <div className="foundation__heading">
-              <div>
-                <p className="eyebrow">Installation locale</p>
-                <h2 id="foundation-title">Services disponibles</h2>
-              </div>
-              <button className="button button--secondary" type="button" onClick={() => void refreshStatus()} disabled={loadingState === 'loading'}>
-                {loadingState === 'loading' ? 'Vérification…' : 'Actualiser'}
-              </button>
-            </div>
-
-            <div className="status-grid" aria-live="polite">
-              <StatusCard label="Interface web" state="UP" />
-              <StatusCard label="API Spring Boot" state={status?.service} />
-              <StatusCard label="Base PostgreSQL" state={status?.database} />
-            </div>
-
-            {loadingState === 'error' && <p className="message message--error" role="alert">L'API n'est pas joignable. {errorMessage}</p>}
-            {loadingState === 'ready' && status && (
-              <p className="message">Dernière vérification : <time dateTime={status.checkedAt}>{new Intl.DateTimeFormat('fr-MG', {
-                dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Indian/Antananarivo',
-              }).format(new Date(status.checkedAt))}</time></p>
-            )}
           </section>
         </>
       )}
 
       <footer>
         <span>Espace privé</span>
-        <span>Spring Boot · React · PostgreSQL</span>
+        <span>Vos préparations restent sous votre contrôle</span>
       </footer>
     </main>
   )

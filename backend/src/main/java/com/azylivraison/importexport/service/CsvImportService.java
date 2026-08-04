@@ -7,6 +7,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -21,6 +23,7 @@ import com.azylivraison.importexport.api.CsvImportType;
 import com.azylivraison.importexport.config.ImportProperties;
 import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
+import com.azylivraison.planning.domain.DeliveryTimeWindow;
 import com.azylivraison.planning.domain.Location;
 import com.azylivraison.planning.domain.VehiclePreset;
 import com.azylivraison.planning.domain.VehicleType;
@@ -36,9 +39,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class CsvImportService {
 
     private static final Set<String> PACKAGE_HEADERS = Set.of(
-            "id", "label", "weight_kg", "destination_query", "latitude", "longitude", "phone");
+            "id", "label", "weight_kg", "destination_query", "latitude", "longitude", "phone",
+            "window_start_at", "window_end_at");
     private static final Set<String> COURIER_HEADERS = Set.of(
-            "id", "name", "vehicle_type", "max_weight_kg", "average_speed_kmh");
+            "id", "name", "vehicle_type", "max_weight_kg", "average_speed_kmh", "departure_at",
+            "departure_query", "departure_latitude", "departure_longitude");
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "text/csv",
             "application/csv",
@@ -83,6 +88,16 @@ public class CsvImportService {
             Double latitude = coordinate(record, line, "latitude", -90, 90, errors);
             Double longitude = coordinate(record, line, "longitude", -180, 180, errors);
             String phone = optionalText(record, line, "phone", 50, errors);
+            OffsetDateTime windowStart = offsetDateTime(record, line, "window_start_at", errors);
+            OffsetDateTime windowEnd = offsetDateTime(record, line, "window_end_at", errors);
+
+            if ((windowStart == null) != (windowEnd == null)) {
+                errors.add(error(line, "window_start_at,window_end_at", "INCOMPLETE_TIME_WINDOW",
+                        "Le début et la fin du créneau doivent être fournis ensemble."));
+            } else if (windowStart != null && !windowEnd.isAfter(windowStart)) {
+                errors.add(error(line, "window_end_at", "INVALID_TIME_WINDOW",
+                        "La fin du créneau doit être postérieure à son début."));
+            }
 
             boolean latitudeProvided = !value(record, "latitude").isBlank();
             boolean longitudeProvided = !value(record, "longitude").isBlank();
@@ -100,7 +115,8 @@ public class CsvImportService {
                         label,
                         weight,
                         phone,
-                        new Location(null, destinationQuery, latitude, longitude)));
+                        new Location(null, destinationQuery, latitude, longitude),
+                        windowStart == null ? null : new DeliveryTimeWindow(windowStart, windowEnd)));
             }
         }
 
@@ -133,6 +149,17 @@ public class CsvImportService {
             BigDecimal averageSpeed = decimal(record, line, "average_speed_kmh", true, errors);
             requirePositive(maxWeight, line, "max_weight_kg", errors);
             requirePositive(averageSpeed, line, "average_speed_kmh", errors);
+            OffsetDateTime departureAt = offsetDateTime(record, line, "departure_at", errors);
+            String departureQuery = optionalText(record, line, "departure_query", 500, errors);
+            Double departureLatitude = coordinate(record, line, "departure_latitude", -90, 90, errors);
+            Double departureLongitude = coordinate(record, line, "departure_longitude", -180, 180, errors);
+            boolean departureLatitudeProvided = !value(record, "departure_latitude").isBlank();
+            boolean departureLongitudeProvided = !value(record, "departure_longitude").isBlank();
+
+            if (departureLatitudeProvided != departureLongitudeProvided) {
+                errors.add(error(line, "departure_latitude,departure_longitude", "INCOMPLETE_COORDINATES",
+                        "La latitude et la longitude de départ doivent être fournies ensemble."));
+            }
 
             if (errors.size() == errorsBeforeRow) {
                 VehiclePreset preset = vehiclePresetService.get(vehicleType);
@@ -141,7 +168,11 @@ public class CsvImportService {
                         name,
                         vehicleType,
                         maxWeight == null ? preset.maxWeightKg() : maxWeight,
-                        averageSpeed == null ? preset.averageSpeedKmh() : averageSpeed));
+                        averageSpeed == null ? preset.averageSpeedKmh() : averageSpeed,
+                        departureAt,
+                        departureQuery == null && !departureLatitudeProvided
+                                ? null
+                                : new Location(null, departureQuery, departureLatitude, departureLongitude)));
             }
         }
 
@@ -347,6 +378,29 @@ public class CsvImportService {
             return number;
         } catch (NumberFormatException exception) {
             errors.add(error(line, field, "INVALID_NUMBER", "Utilisez un nombre décimal valide."));
+            return null;
+        }
+    }
+
+    private OffsetDateTime offsetDateTime(
+            CSVRecord record,
+            int line,
+            String field,
+            List<CsvImportError> errors) {
+        String text = value(record, field);
+        if (text.isBlank()) {
+            return null;
+        }
+        try {
+            OffsetDateTime value = OffsetDateTime.parse(text);
+            if (!value.getOffset().equals(java.time.ZoneOffset.ofHours(3))) {
+                errors.add(error(line, field, "TIMEZONE_OFFSET_MISMATCH",
+                        "Utilisez une date ISO avec le décalage +03:00 d'Antananarivo."));
+            }
+            return value;
+        } catch (DateTimeParseException exception) {
+            errors.add(error(line, field, "INVALID_DATE_TIME",
+                    "Utilisez une date ISO, par exemple 2026-08-05T09:00:00+03:00."));
             return null;
         }
     }

@@ -161,6 +161,13 @@
         },
         "averageSpeedKmh": {
           "$ref": "#/$defs/positiveNumber"
+        },
+        "departureAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "departureLocation": {
+          "$ref": "#/$defs/location"
         }
       }
     },
@@ -191,9 +198,29 @@
         },
         "destination": {
           "$ref": "#/$defs/location"
+        },
+        "deliveryWindow": {
+          "$ref": "#/$defs/deliveryTimeWindow"
+        }
+      }
+    },
+    "deliveryTimeWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startAt",
+        "endAt"
+      ],
+      "properties": {
+        "startAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     }
   }
 }
-

@@ -111,12 +111,19 @@ export function isDeliveryPlan(value: unknown): value is DeliveryPlan {
       && typeof courier.name === 'string'
       && (courier.vehicleType === 'MOTO' || courier.vehicleType === 'BICYCLE')
       && typeof courier.maxWeightKg === 'number'
-      && typeof courier.averageSpeedKmh === 'number')
+      && typeof courier.averageSpeedKmh === 'number'
+      && isOptionalString(courier.departureAt)
+      && (courier.departureLocation === undefined || courier.departureLocation === null || isLocation(courier.departureLocation)))
     && Array.isArray(plan.packages)
     && plan.packages.every((deliveryPackage) => isRecord(deliveryPackage)
       && typeof deliveryPackage.id === 'string'
       && typeof deliveryPackage.label === 'string'
       && typeof deliveryPackage.weightKg === 'number'
       && isOptionalString(deliveryPackage.phone)
-      && isLocation(deliveryPackage.destination))
+      && isLocation(deliveryPackage.destination)
+      && (deliveryPackage.deliveryWindow === undefined
+        || deliveryPackage.deliveryWindow === null
+        || (isRecord(deliveryPackage.deliveryWindow)
+          && typeof deliveryPackage.deliveryWindow.startAt === 'string'
+          && typeof deliveryPackage.deliveryWindow.endAt === 'string')))
 }
