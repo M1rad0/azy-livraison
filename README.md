@@ -21,6 +21,18 @@ L'application doit fonctionner principalement en local, tout en restant déploya
 
 ## Fonctionnalités du MVP
 
+### Parcours de l'utilisateur
+
+Après la connexion, l'utilisateur choisit un pattern de planification. Le MVP n'en propose qu'un : **un point de récupération vers plusieurs points de livraison**. Ce choix ouvre un espace de travail unique dans lequel :
+
+1. le formulaire constitue la source visible du plan en cours ;
+2. les imports CSV de colis et de livreurs alimentent ce même formulaire, sans créer un parcours séparé ;
+3. le plan peut être exporté en JSON à tout moment comme brouillon partageable ;
+4. un fichier JSON précédemment exporté peut être rouvert pour reprendre et modifier le travail ;
+5. le résultat n'est généré qu'après validation du formulaire complet.
+
+PostgreSQL reste réservé aux comptes, sessions et caches techniques. Le fichier de plan est la sauvegarde métier portable de référence.
+
 ### Préparer un plan
 
 L'utilisateur peut :
@@ -673,7 +685,7 @@ Le MVP est considéré conforme lorsque les scénarios suivants réussissent :
 11. les exports JSON, CSV et PDF correspondent au résultat affiché ;
 12. l'expiration, le renouvellement et la révocation des jetons fonctionnent.
 
-## Évolution vers plusieurs récupérations et destinations
+## Évolution vers plusieurs groupes de livraison
 
 Le modèle interne ne doit pas supposer qu'une tournée est définitivement composée d'un seul dépôt et de simples destinations. Le pattern du MVP est identifié explicitement par :
 
@@ -681,13 +693,13 @@ Le modèle interne ne doit pas supposer qu'une tournée est définitivement comp
 SINGLE_PICKUP_MULTI_DELIVERY
 ```
 
-Le domaine utilisera des concepts génériques tels que `Location`, `Shipment`, `RouteStop`, `Vehicle` et `DeliveryPlan`. Dans le MVP, le dépôt commun est le point de récupération implicite de tous les colis. Une version ultérieure pourra ajouter :
+Le domaine utilisera des concepts génériques tels que `Location`, `DeliveryGroup`, `Shipment`, `RouteStop`, `Vehicle` et `DeliveryPlan`. Dans le MVP, le dépôt commun est le point de récupération implicite de tous les colis. Une version ultérieure pourra ajouter :
 
 ```text
 MULTI_PICKUP_MULTI_DELIVERY
 ```
 
-Chaque course possédera alors son propre point de récupération, son point de destination et une contrainte imposant que la récupération précède la livraison. La version du schéma JSON permettra de migrer les fichiers existants sans casser le pattern principal.
+Ce second pattern ne représente pas une simple liste de courses point à point. Il regroupe plusieurs occurrences du pattern principal dans un même fichier : chaque groupe possède un point de récupération et plusieurs points de livraison. La version du schéma JSON permettra d'ajouter une collection `deliveryGroups`, de migrer les fichiers existants sans casser le pattern principal et d'imposer qu'une récupération précède toutes les livraisons de son groupe.
 
 ## Feuille de route
 
