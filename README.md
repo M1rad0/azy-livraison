@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : préparation complète des plans et services géographiques locaux en place.** Après connexion, le frontend permet de choisir le pattern MVP, remplir un brouillon unique, y injecter les imports CSV, l'importer ou l'exporter en JSON et le valider avec Spring Boot. Nominatim résout les adresses de Madagascar et OSRM calcule matrices et tracés ; la carte de résultat et l'optimisation restent à implémenter.
+> **État du projet : préparation complète des plans, services géographiques locaux et moteur d'optimisation backend en place.** Après connexion, le frontend permet de choisir le pattern MVP, remplir un brouillon unique, y injecter les imports CSV, l'importer ou l'exporter en JSON et le valider avec Spring Boot. Nominatim résout les adresses de Madagascar, OSRM calcule les distances routières et OR-Tools affecte puis ordonne les colis. L'écran cartographique du résultat et ses exports restent à implémenter.
 
 ## Objectif
 
@@ -474,7 +474,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `GET` | `/api/vehicle-presets` | Lire les valeurs par défaut |
 | `GET` | `/api/geocoding/search?q=...` | Rechercher des candidats dans Madagascar |
 | `POST` | `/api/plans/validate` | Valider et normaliser un plan sans le géocoder ni l'optimiser |
-| `POST` | `/api/plans/optimize` | Générer le résultat d'un plan |
+| `POST` | `/api/plans/optimize` | Affecter et ordonner les colis d'un plan validé avec OSRM et OR-Tools |
 | `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers le modèle du plan |
 | `POST` | `/api/import/couriers/csv` | Convertir un CSV livreurs vers le modèle du plan |
 | `GET` | `/api/import/packages/template` | Télécharger le modèle CSV colis |
@@ -482,7 +482,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `POST` | `/api/exports/result/csv` | Produire l'export tabulaire |
 | `POST` | `/api/exports/result/pdf` | Produire les fiches imprimables |
 
-Les opérations métier reçoivent le plan dans la requête et retournent le résultat sans exiger son enregistrement en base.
+Les opérations métier reçoivent le plan dans la requête et retournent le résultat sans exiger son enregistrement en base. L'optimisation exige des coordonnées confirmées pour le dépôt ; une destination de colis non résolue est conservée dans `unassignedPackages` avec sa raison. Le résultat contient les tournées, l'ordre des arrêts, les heures estimées, les capacités, les totaux et le contexte de calcul.
 
 Les routes d'authentification `login`, `refresh` et `logout`, ainsi que les health checks Docker, sont publiques. Toutes les autres routes exigent `Authorization: Bearer <accessToken>`. Le login et le renouvellement répondent avec :
 
