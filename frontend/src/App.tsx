@@ -6,8 +6,7 @@ import {
   type AuthSession,
 } from './api/auth'
 import { getSystemStatus, type ServiceState, type SystemStatus } from './api/systemStatus'
-import { AddressSearchWorkspace } from './components/AddressSearchWorkspace'
-import { CsvImportWorkspace } from './components/CsvImportWorkspace'
+import { PlanningWorkspace } from './components/PlanningWorkspace'
 import './App.css'
 
 type LoadingState = 'loading' | 'ready' | 'error'
@@ -123,6 +122,7 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
   const [loadingState, setLoadingState] = useState<LoadingState>('loading')
   const [errorMessage, setErrorMessage] = useState<string>()
   const [loggingOut, setLoggingOut] = useState(false)
+  const [patternSelected, setPatternSelected] = useState(false)
 
   const refreshStatus = useCallback(async (signal?: AbortSignal) => {
     setLoadingState('loading')
@@ -167,54 +167,86 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
         </div>
       </header>
 
-      <section className="hero" aria-labelledby="page-title">
-        <p className="eyebrow">Espace de planification</p>
-        <h1 id="page-title">Préparez vos livraisons.</h1>
-        <p className="hero__intro">
-          Importez vos colis et vos livreurs, contrôlez chaque ligne puis préparez la prochaine tournée.
-        </p>
-      </section>
+      {patternSelected ? (
+        <PlanningWorkspace accessToken={session.accessToken} onBack={() => setPatternSelected(false)} />
+      ) : (
+        <>
+          <section className="hero pattern-hero" aria-labelledby="page-title">
+            <p className="eyebrow">Nouvelle planification</p>
+            <h1 id="page-title">Quel trajet préparez-vous ?</h1>
+            <p className="hero__intro">
+              Choisissez une structure de livraison. Le formulaire, les imports et le brouillon s’adapteront à ce choix.
+            </p>
+          </section>
 
-      <AddressSearchWorkspace accessToken={session.accessToken} />
+          <section className="pattern-picker" aria-labelledby="pattern-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Patterns disponibles</p>
+                <h2 id="pattern-title">Commencer un plan</h2>
+              </div>
+              <p>Un pattern définit la relation entre les points de récupération, les colis et les destinations.</p>
+            </div>
 
-      <CsvImportWorkspace accessToken={session.accessToken} />
+            <div className="pattern-grid">
+              <article className="pattern-card pattern-card--active">
+                <div className="pattern-card__visual" aria-hidden="true">
+                  <span className="pattern-node pattern-node--pickup">A</span>
+                  <i /><i /><i />
+                  <span className="pattern-node">1</span>
+                  <span className="pattern-node">2</span>
+                  <span className="pattern-node">3</span>
+                </div>
+                <div className="pattern-card__content">
+                  <span className="section-badge">Disponible</span>
+                  <h3>Un retrait, plusieurs livraisons</h3>
+                  <p>Un point de récupération commun, plusieurs colis, plusieurs livreurs et des destinations réparties.</p>
+                  <ul><li>Imports CSV</li><li>Brouillon JSON</li><li>Capacités véhicules</li></ul>
+                  <button className="button button--wide" type="button" onClick={() => setPatternSelected(true)}>Choisir ce pattern →</button>
+                </div>
+              </article>
 
-      <section className="foundation" aria-labelledby="foundation-title">
-        <div className="foundation__heading">
-          <div>
-            <p className="eyebrow">Jalon 02</p>
-            <h2 id="foundation-title">État de la plateforme</h2>
-          </div>
-          <button className="button" type="button" onClick={() => void refreshStatus()} disabled={loadingState === 'loading'}>
-            {loadingState === 'loading' ? 'Vérification…' : 'Actualiser'}
-          </button>
-        </div>
+              <article className="pattern-card pattern-card--soon" aria-disabled="true">
+                <div className="pattern-card__visual pattern-card__visual--multi" aria-hidden="true">
+                  <span className="pattern-node pattern-node--pickup">A</span><i /><span className="pattern-node">1</span>
+                  <span className="pattern-node pattern-node--pickup">B</span><i /><span className="pattern-node">2</span>
+                </div>
+                <div className="pattern-card__content">
+                  <span className="section-badge section-badge--muted">Prochainement</span>
+                  <h3>Plusieurs groupes de livraison</h3>
+                  <p>Plusieurs occurrences du pattern principal, chacune avec son retrait et ses destinations.</p>
+                  <button className="button button--secondary button--wide" type="button" disabled>Indisponible dans le MVP</button>
+                </div>
+              </article>
+            </div>
+          </section>
 
-        <div className="status-grid" aria-live="polite">
-          <StatusCard label="Interface web" state="UP" />
-          <StatusCard label="API Spring Boot" state={status?.service} />
-          <StatusCard label="Base PostgreSQL" state={status?.database} />
-        </div>
+          <section className="foundation foundation--compact" aria-labelledby="foundation-title">
+            <div className="foundation__heading">
+              <div>
+                <p className="eyebrow">Installation locale</p>
+                <h2 id="foundation-title">Services disponibles</h2>
+              </div>
+              <button className="button button--secondary" type="button" onClick={() => void refreshStatus()} disabled={loadingState === 'loading'}>
+                {loadingState === 'loading' ? 'Vérification…' : 'Actualiser'}
+              </button>
+            </div>
 
-        {loadingState === 'error' && (
-          <p className="message message--error" role="alert">
-            L'interface fonctionne, mais l'API n'est pas joignable. {errorMessage}
-          </p>
-        )}
+            <div className="status-grid" aria-live="polite">
+              <StatusCard label="Interface web" state="UP" />
+              <StatusCard label="API Spring Boot" state={status?.service} />
+              <StatusCard label="Base PostgreSQL" state={status?.database} />
+            </div>
 
-        {loadingState === 'ready' && status && (
-          <p className="message">
-            Dernière vérification :{' '}
-            <time dateTime={status.checkedAt}>
-              {new Intl.DateTimeFormat('fr-MG', {
-                dateStyle: 'medium',
-                timeStyle: 'medium',
-                timeZone: 'Indian/Antananarivo',
-              }).format(new Date(status.checkedAt))}
-            </time>
-          </p>
-        )}
-      </section>
+            {loadingState === 'error' && <p className="message message--error" role="alert">L'API n'est pas joignable. {errorMessage}</p>}
+            {loadingState === 'ready' && status && (
+              <p className="message">Dernière vérification : <time dateTime={status.checkedAt}>{new Intl.DateTimeFormat('fr-MG', {
+                dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Indian/Antananarivo',
+              }).format(new Date(status.checkedAt))}</time></p>
+            )}
+          </section>
+        </>
+      )}
 
       <footer>
         <span>Espace privé</span>

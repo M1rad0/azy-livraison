@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle, authentification, imports CSV, géocodage et routage local en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Nominatim résout les adresses de Madagascar et OSRM calcule matrices et tracés ; la carte et l'optimisation restent à implémenter.
+> **État du projet : préparation complète des plans et services géographiques locaux en place.** Après connexion, le frontend permet de choisir le pattern MVP, remplir un brouillon unique, y injecter les imports CSV, l'importer ou l'exporter en JSON et le valider avec Spring Boot. Nominatim résout les adresses de Madagascar et OSRM calcule matrices et tracés ; la carte de résultat et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -709,7 +709,9 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - [x] Docker Compose, PostgreSQL, Flyway et health checks ;
 - [x] modèles métier, schéma JSON 1.0 et validation des plans ;
 - [x] compte initial, login, access token et refresh token ;
-- [x] imports CSV colis et livreurs.
+- [x] imports CSV colis et livreurs ;
+- [x] choix du pattern et workspace de formulaire unifié ;
+- [x] import/export JSON des brouillons de plan.
 
 ### Phase 2 — Géographie
 
@@ -726,9 +728,9 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - colis non affectés expliqués ;
 - affichage comparatif des tournées.
 
-### Phase 4 — Partage et mise en ligne
+### Phase 4 — Résultats, partage et mise en ligne
 
-- exports JSON, CSV et PDF ;
+- exports JSON, CSV et PDF du résultat ;
 - durcissement de la sécurité ;
 - sauvegarde optionnelle de métadonnées ;
 - fournisseur de tuiles adapté au trafic réel ;
@@ -736,7 +738,7 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 
 ### Plus tard
 
-- plusieurs points de récupération et de destination ;
+- plusieurs groupes possédant chacun une récupération et plusieurs destinations ;
 - profils routiers spécialisés ;
 - rôles et permissions ;
 - créneaux horaires ;
