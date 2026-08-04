@@ -11,11 +11,15 @@ import java.util.Map;
 import com.azylivraison.planning.api.DeliveryPlanRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.CourierRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.DeliveryPackageRequest;
+import com.azylivraison.planning.api.DeliveryPlanRequest.DeliveryClientRequest;
+import com.azylivraison.planning.api.DeliveryPlanRequest.DeliveryGroupRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.DeliveryTimeWindowRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.LocationRequest;
 import com.azylivraison.planning.api.PlanningValidationError;
 import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
+import com.azylivraison.planning.domain.DeliveryClient;
+import com.azylivraison.planning.domain.DeliveryGroup;
 import com.azylivraison.planning.domain.DeliveryPlan;
 import com.azylivraison.planning.domain.DeliveryTimeWindow;
 import com.azylivraison.planning.domain.Location;
@@ -43,18 +47,22 @@ public class PlanValidationService {
         validateVersionAndPattern(request, errors);
         validateTimezoneAndOffset(request, errors);
         validateUniqueIds(request.couriers(), "couriers", errors);
-        validateUniquePackageIds(request.packages(), errors);
+        List<DeliveryPackageRequest> packageRequests = request.packages() == null ? List.of() : request.packages();
+        List<DeliveryClientRequest> clientRequests = request.clients() == null ? List.of() : request.clients();
+        validatePatternShape(request, packageRequests, clientRequests, errors);
+        validateUniquePackageIds(packageRequests, clientRequests, errors);
 
-        Location depot = normalizeLocation(request.depot(), "depot", errors);
+        Location depot = request.depot() == null ? null : normalizeLocation(request.depot(), "depot", errors);
         List<Courier> couriers = normalizeCouriers(request.couriers(), errors);
-        List<DeliveryPackage> packages = normalizePackages(request.packages(), errors);
+        List<DeliveryPackage> packages = normalizePackages(packageRequests, "packages", errors);
+        List<DeliveryClient> clients = normalizeClients(clientRequests, errors);
 
         if (!errors.isEmpty()) {
             throw new PlanValidationException(errors);
         }
 
         return new DeliveryPlan(
-                CURRENT_SCHEMA_VERSION,
+                request.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY ? "2.0" : CURRENT_SCHEMA_VERSION,
                 request.pattern(),
                 request.planId().trim(),
                 request.name().trim(),
@@ -65,24 +73,56 @@ public class PlanValidationService {
                         request.settings().routingPreset()),
                 depot,
                 couriers,
-                packages);
+                packages,
+                clients);
     }
 
     private void validateVersionAndPattern(
             DeliveryPlanRequest request,
             List<PlanningValidationError> errors) {
-        if (!CURRENT_SCHEMA_VERSION.equals(request.schemaVersion().trim())) {
+        String expectedVersion = request.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY
+                ? "2.0"
+                : CURRENT_SCHEMA_VERSION;
+        if (!expectedVersion.equals(request.schemaVersion().trim())) {
             errors.add(error(
                     "schemaVersion",
                     "UNSUPPORTED_SCHEMA_VERSION",
-                    "La seule version de schéma prise en charge est 1.0."));
+                    "Ce mode utilise la version de fichier " + expectedVersion + "."));
+        }
+    }
+
+    private void validatePatternShape(
+            DeliveryPlanRequest request,
+            List<DeliveryPackageRequest> packages,
+            List<DeliveryClientRequest> clients,
+            List<PlanningValidationError> errors) {
+        if (request.pattern() == PlanningPattern.SINGLE_PICKUP_MULTI_DELIVERY) {
+            if (request.depot() == null) {
+                errors.add(error("depot", "PICKUP_REQUIRED", "Le point de récupération est obligatoire."));
+            }
+            if (packages.isEmpty()) {
+                errors.add(error("packages", "PACKAGE_REQUIRED", "Ajoutez au moins un colis."));
+            }
+            if (!clients.isEmpty()) {
+                errors.add(error("clients", "FIELD_NOT_ALLOWED", "Les clients appartiennent au mode multi-clients."));
+            }
+            return;
         }
 
-        if (request.pattern() != PlanningPattern.SINGLE_PICKUP_MULTI_DELIVERY) {
+        if (request.depot() != null || !packages.isEmpty()) {
             errors.add(error(
                     "pattern",
-                    "UNSUPPORTED_PATTERN",
-                    "Le MVP prend uniquement en charge un dépôt et plusieurs livraisons."));
+                    "LEGACY_FIELDS_NOT_ALLOWED",
+                    "Le mode multi-clients utilise les points de récupération et colis de chaque groupe."));
+        }
+        if (clients.isEmpty()) {
+            errors.add(error("clients", "CLIENT_REQUIRED", "Ajoutez au moins un client."));
+        }
+        if (request.settings().returnToDepot()) {
+            errors.add(error(
+                    "settings.returnToDepot",
+                    "RETURN_NOT_SUPPORTED",
+                    "Le retour commun n'est pas disponible lorsqu'il existe plusieurs points de récupération."));
         }
     }
 
@@ -135,6 +175,7 @@ public class PlanValidationService {
 
     private void validateUniquePackageIds(
             List<DeliveryPackageRequest> packages,
+            List<DeliveryClientRequest> clients,
             List<PlanningValidationError> errors) {
         Map<String, Integer> firstIndexes = new HashMap<>();
 
@@ -146,6 +187,24 @@ public class PlanValidationService {
                         "packages[" + index + "].id",
                         "DUPLICATE_ID",
                         "Cet identifiant de colis est déjà utilisé à l'index " + firstIndex + "."));
+            }
+        }
+
+        Map<String, String> firstPaths = new HashMap<>();
+        for (int clientIndex = 0; clientIndex < clients.size(); clientIndex++) {
+            DeliveryClientRequest client = clients.get(clientIndex);
+            for (int groupIndex = 0; groupIndex < client.deliveryGroups().size(); groupIndex++) {
+                DeliveryGroupRequest group = client.deliveryGroups().get(groupIndex);
+                for (int packageIndex = 0; packageIndex < group.packages().size(); packageIndex++) {
+                    String id = group.packages().get(packageIndex).id().trim();
+                    String path = "clients[" + clientIndex + "].deliveryGroups[" + groupIndex
+                            + "].packages[" + packageIndex + "].id";
+                    String firstPath = firstPaths.putIfAbsent(id, path);
+                    if (firstPath != null) {
+                        errors.add(error(path, "DUPLICATE_ID", "Cet identifiant de colis est déjà utilisé dans "
+                                + firstPath + "."));
+                    }
+                }
             }
         }
     }
@@ -185,6 +244,7 @@ public class PlanValidationService {
 
     private List<DeliveryPackage> normalizePackages(
             List<DeliveryPackageRequest> requests,
+            String collectionPath,
             List<PlanningValidationError> errors) {
         List<DeliveryPackage> packages = new ArrayList<>();
 
@@ -192,18 +252,55 @@ public class PlanValidationService {
             DeliveryPackageRequest request = requests.get(index);
             DeliveryTimeWindow deliveryWindow = normalizeDeliveryWindow(
                     request.deliveryWindow(),
-                    "packages[" + index + "].deliveryWindow",
+                    collectionPath + "[" + index + "].deliveryWindow",
                     errors);
             packages.add(new DeliveryPackage(
                     request.id().trim(),
                     request.label().trim(),
                     request.weightKg(),
                     normalizeOptional(request.phone()),
-                    normalizeLocation(request.destination(), "packages[" + index + "].destination", errors),
+                    normalizeLocation(request.destination(), collectionPath + "[" + index + "].destination", errors),
                     deliveryWindow));
         }
 
         return List.copyOf(packages);
+    }
+
+    private List<DeliveryClient> normalizeClients(
+            List<DeliveryClientRequest> requests,
+            List<PlanningValidationError> errors) {
+        List<DeliveryClient> clients = new ArrayList<>();
+        Map<String, Integer> clientIds = new HashMap<>();
+        Map<String, String> groupIds = new HashMap<>();
+
+        for (int clientIndex = 0; clientIndex < requests.size(); clientIndex++) {
+            DeliveryClientRequest request = requests.get(clientIndex);
+            String clientId = request.id().trim();
+            Integer previousClient = clientIds.putIfAbsent(clientId, clientIndex);
+            if (previousClient != null) {
+                errors.add(error("clients[" + clientIndex + "].id", "DUPLICATE_ID",
+                        "Cet identifiant de client est déjà utilisé à l'index " + previousClient + "."));
+            }
+
+            List<DeliveryGroup> groups = new ArrayList<>();
+            for (int groupIndex = 0; groupIndex < request.deliveryGroups().size(); groupIndex++) {
+                DeliveryGroupRequest group = request.deliveryGroups().get(groupIndex);
+                String groupPath = "clients[" + clientIndex + "].deliveryGroups[" + groupIndex + "]";
+                String groupId = group.id().trim();
+                String previousPath = groupIds.putIfAbsent(groupId, groupPath + ".id");
+                if (previousPath != null) {
+                    errors.add(error(groupPath + ".id", "DUPLICATE_ID",
+                            "Cet identifiant de groupe est déjà utilisé dans " + previousPath + "."));
+                }
+                groups.add(new DeliveryGroup(
+                        groupId,
+                        group.name().trim(),
+                        normalizeLocation(group.pickup(), groupPath + ".pickup", errors),
+                        normalizePackages(group.packages(), groupPath + ".packages", errors)));
+            }
+            clients.add(new DeliveryClient(clientId, request.name().trim(), groups));
+        }
+        return List.copyOf(clients);
     }
 
     private DeliveryTimeWindow normalizeDeliveryWindow(

@@ -130,7 +130,7 @@ function InputField({ label, children, wide = false }: {
   return <label className={`workspace-field${wide ? ' workspace-field--wide' : ''}`}><span>{label}</span>{children}</label>
 }
 
-function CsvImportButton<T>({ accessToken, kind, onImported }: {
+export function CsvImportButton<T>({ accessToken, kind, onImported }: {
   accessToken: string
   kind: ImportKind
   onImported: (items: T[], filename: string) => void
@@ -275,7 +275,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     setFileMessage(undefined)
     try {
       const parsed: unknown = JSON.parse(await file.text())
-      if (!isDeliveryPlan(parsed)) throw new Error('Ce fichier ne correspond pas à une sauvegarde AZY Livraison valide.')
+      if (!isDeliveryPlan(parsed) || parsed.pattern !== 'SINGLE_PICKUP_MULTI_DELIVERY') {
+        throw new Error('Cette sauvegarde ne correspond pas au mode un retrait, plusieurs livraisons.')
+      }
       replacePlan(materializeVehicleDefaults(parsed))
       setFileMessage(`${file.name} chargé : ${parsed.packages.length} colis et ${parsed.couriers.length} livreurs.`)
     } catch (error) {
@@ -289,7 +291,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     setValidationMessage(undefined)
     try {
       const response = await validatePlan(plan, accessToken)
-      if (response.plan) replacePlan(response.plan)
+      if (response.plan?.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY') replacePlan(response.plan)
       setValidationMessage('Le plan est valide et prêt pour la génération du résultat.')
     } catch (error) {
       if (error instanceof PlanValidationFailure) {
@@ -309,7 +311,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     setValidationMessage(undefined)
     try {
       const validation = await validatePlan(plan, accessToken)
-      const normalizedPlan = validation.plan ?? plan
+      const normalizedPlan = validation.plan?.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? validation.plan : plan
       setPlan(normalizedPlan)
       setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
       window.scrollTo({ top: 0, behavior: 'smooth' })

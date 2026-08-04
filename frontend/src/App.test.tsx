@@ -68,9 +68,25 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Un retrait, plusieurs livraisons' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Plusieurs groupes de livraison' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Plusieurs clients' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Session active')).toBeInTheDocument())
     expect(screen.getByText('admin')).toBeInTheDocument()
+  })
+
+  it('opens the multi-client workspace and creates a client delivery group', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch())
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode multi-clients' }))
+    expect(await screen.findByRole('heading', { name: 'Rassemblez toutes les courses.' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un client' }))
+    fireEvent.change(screen.getByLabelText('Nom du client'), { target: { value: 'Client Alpha' } })
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter un retrait/ }))
+
+    expect(screen.getByText('Nouvelle course')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Ajouter les colis de ce retrait/ })).toBeInTheDocument()
+    expect(screen.getByText('Plusieurs clients · plusieurs retraits')).toBeInTheDocument()
   })
 
   it('shows the login form when no refresh session exists', async () => {

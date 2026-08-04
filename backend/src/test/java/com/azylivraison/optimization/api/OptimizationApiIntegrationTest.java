@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.startsWith;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.hasItem;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -105,6 +107,25 @@ class OptimizationApiIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void optimizesMultipleClientsWithPickupBeforeEveryDelivery() throws Exception {
+        mockMvc.perform(post("/api/plans/optimize")
+                        .with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(multiClientPlan()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value("2.0"))
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.summary.packageCount").value(2))
+                .andExpect(jsonPath("$.summary.assignedPackageCount").value(2))
+                .andExpect(jsonPath("$.routes.length()").value(1))
+                .andExpect(jsonPath("$.routes[0].loadedWeightKg").value(2))
+                .andExpect(jsonPath("$.routes[0].stops.length()").value(4))
+                .andExpect(jsonPath("$.routes[0].stops[?(@.type == 'PICKUP')]").value(hasSize(2)))
+                .andExpect(jsonPath("$.routes[0].stops[?(@.type == 'DELIVERY')]").value(hasSize(2)))
+                .andExpect(jsonPath("$.routes[0].stops[*].clientName").value(hasItem("Client Alpha")));
+    }
+
     private static String planWithOneDeliverableAndOneOverweightPackage() {
         return """
                 {
@@ -161,6 +182,48 @@ class OptimizationApiIntegrationTest {
                       "latitude": -18.9200, "longitude": 47.5000
                     }
                 """.strip());
+    }
+
+    private static String multiClientPlan() {
+        return """
+                {
+                  "schemaVersion": "2.0",
+                  "pattern": "MULTI_CLIENT_MULTI_PICKUP_DELIVERY",
+                  "planId": "multi-opt-001",
+                  "name": "Deux clients",
+                  "departureAt": "2026-08-05T08:00:00+03:00",
+                  "timezone": "Indian/Antananarivo",
+                  "settings": { "returnToDepot": false, "routingPreset": "MAIN_ROADS" },
+                  "couriers": [{
+                    "id": "livreur-001", "name": "Soa", "vehicleType": "MOTO",
+                    "maxWeightKg": 2, "averageSpeedKmh": 30
+                  }],
+                  "clients": [
+                    {
+                      "id": "client-alpha", "name": "Client Alpha",
+                      "deliveryGroups": [{
+                        "id": "groupe-alpha", "name": "Course Alpha",
+                        "pickup": { "label": "Retrait Alpha", "latitude": -18.9089, "longitude": 47.5212 },
+                        "packages": [{
+                          "id": "colis-alpha", "label": "Destinataire Alpha", "weightKg": 2,
+                          "destination": { "label": "Ankorondrano", "latitude": -18.8792, "longitude": 47.5175 }
+                        }]
+                      }]
+                    },
+                    {
+                      "id": "client-beta", "name": "Client Beta",
+                      "deliveryGroups": [{
+                        "id": "groupe-beta", "name": "Course Beta",
+                        "pickup": { "label": "Retrait Beta", "latitude": -18.8650, "longitude": 47.5200 },
+                        "packages": [{
+                          "id": "colis-beta", "label": "Destinataire Beta", "weightKg": 2,
+                          "destination": { "label": "Ambodivona", "latitude": -18.8900, "longitude": 47.5300 }
+                        }]
+                      }]
+                    }
+                  ]
+                }
+                """;
     }
 
     private static HttpServer startOsrm() {

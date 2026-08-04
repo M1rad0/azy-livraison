@@ -23,6 +23,7 @@ import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
 import com.azylivraison.planning.domain.DeliveryPlan;
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.planning.domain.PlanningPattern;
 import com.azylivraison.routing.domain.RoutingPoint;
 import com.azylivraison.routing.service.RoutingMatrixResult;
 import com.azylivraison.routing.service.RoutingService;
@@ -39,13 +40,21 @@ public class OptimizationService {
 
     private final RoutingService routingService;
     private final OrToolsRoutingOptimizer optimizer;
+    private final MultiClientOptimizationService multiClientOptimizationService;
 
-    public OptimizationService(RoutingService routingService, OrToolsRoutingOptimizer optimizer) {
+    public OptimizationService(
+            RoutingService routingService,
+            OrToolsRoutingOptimizer optimizer,
+            MultiClientOptimizationService multiClientOptimizationService) {
         this.routingService = routingService;
         this.optimizer = optimizer;
+        this.multiClientOptimizationService = multiClientOptimizationService;
     }
 
     public OptimizationResult optimize(DeliveryPlan plan) {
+        if (plan.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY) {
+            return multiClientOptimizationService.optimize(plan);
+        }
         requireCoordinates(plan.depot(), "Le point de récupération doit être confirmé sur la carte.");
 
         List<String> warnings = new ArrayList<>();

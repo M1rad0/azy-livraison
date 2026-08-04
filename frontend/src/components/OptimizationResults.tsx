@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Download,
   BarChart3,
+  Building2,
   ListChecks,
   LoaderCircle,
   MapPin,
@@ -21,8 +22,8 @@ import {
 } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { OptimizationResult, CourierRoute, RouteStop, UnassignedReason } from '../api/optimization'
-import type { DeliveryPlan } from '../api/plans'
+import type { OptimizationResult, CourierRoute, UnassignedReason } from '../api/optimization'
+import type { AnyDeliveryPlan } from '../api/plans'
 import { calculateRoute, type RoutingRouteResponse } from '../api/routing'
 
 const TILE_URL = import.meta.env.VITE_MAP_TILE_URL
@@ -42,8 +43,8 @@ function hasCoordinates(location: { latitude?: number; longitude?: number }) {
   return Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
 }
 
-function isDeliveryStop(_stop: RouteStop) {
-  return true
+function isDeliveryStop(stop: { type?: 'PICKUP' | 'DELIVERY' }) {
+  return stop.type !== 'PICKUP'
 }
 
 function formatDuration(seconds: number) {
@@ -117,13 +118,14 @@ function FitResultBounds({ routes, depot }: { routes: DrawnRoute[]; depot?: [num
 
 function ResultMap({ result, plan, accessToken }: {
   result: OptimizationResult
-  plan: DeliveryPlan
+  plan: AnyDeliveryPlan
   accessToken: string
 }) {
   const [drawnRoutes, setDrawnRoutes] = useState<DrawnRoute[]>([])
   const [loading, setLoading] = useState(false)
-  const depot = hasCoordinates(plan.depot)
-    ? [plan.depot.latitude as number, plan.depot.longitude as number] as [number, number]
+  const depotLocation = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? plan.depot : undefined
+  const depot = depotLocation && hasCoordinates(depotLocation)
+    ? [depotLocation.latitude as number, depotLocation.longitude as number] as [number, number]
     : undefined
 
   useEffect(() => {
@@ -140,7 +142,7 @@ function ResultMap({ result, plan, accessToken }: {
           latitude: customDeparture.latitude as number,
           longitude: customDeparture.longitude as number,
         }] : []),
-        ...(depot ? [{
+        ...(plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' && depot ? [{
           id: `pickup-${courierRoute.courierId}`,
           latitude: depot[0],
           longitude: depot[1],
@@ -150,7 +152,7 @@ function ResultMap({ result, plan, accessToken }: {
           latitude: stop.destination.latitude as number,
           longitude: stop.destination.longitude as number,
         }] : []),
-        ...(plan.settings.returnToDepot && depot ? [{
+        ...(plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' && plan.settings.returnToDepot && depot ? [{
           id: `return-${courierRoute.courierId}`,
           latitude: depot[0],
           longitude: depot[1],
@@ -178,7 +180,7 @@ function ResultMap({ result, plan, accessToken }: {
       active = false
       controller.abort()
     }
-  }, [accessToken, depot?.[0], depot?.[1], plan.couriers, plan.settings.returnToDepot, result])
+  }, [accessToken, depot?.[0], depot?.[1], plan.couriers, plan.pattern, plan.settings.returnToDepot, result])
 
   return (
     <section className="result-map-card" aria-labelledby="result-map-title">
@@ -194,7 +196,7 @@ function ResultMap({ result, plan, accessToken }: {
             {depot && (
               <CircleMarker center={depot} radius={11} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
                 <Tooltip permanent direction="top">Retrait</Tooltip>
-                <Popup><strong>{plan.depot.label || 'Point de récupération'}</strong></Popup>
+                <Popup><strong>{depotLocation?.label || 'Point de récupération'}</strong></Popup>
               </CircleMarker>
             )}
             {drawnRoutes.map((route) => route.geometry && (
@@ -206,13 +208,13 @@ function ResultMap({ result, plan, accessToken }: {
             ))}
             {drawnRoutes.flatMap((route) => route.courierRoute.stops.map((stop) => hasCoordinates(stop.destination) && (
               <CircleMarker
-                key={`${route.courierRoute.courierId}-${stop.packageId}-${stop.order}`}
+                key={`${route.courierRoute.courierId}-${stop.type}-${stop.packageId}-${stop.order}`}
                 center={[stop.destination.latitude as number, stop.destination.longitude as number]}
                 radius={8}
-                pathOptions={{ color: '#fff', fillColor: route.color, fillOpacity: 1, weight: 3 }}
+                pathOptions={{ color: '#fff', fillColor: stop.type === 'PICKUP' ? '#0b3557' : route.color, fillOpacity: 1, weight: 3 }}
               >
                 <Tooltip permanent direction="top">{stop.order}</Tooltip>
-                <Popup><strong>{stop.packageLabel}</strong><br />{route.courierRoute.courierName} · {formatDateTime(stop.estimatedArrivalAt)}</Popup>
+                <Popup><strong>{stop.type === 'PICKUP' ? `Récupération · ${stop.deliveryGroupName ?? stop.packageLabel}` : stop.packageLabel}</strong><br />{stop.clientName && <>{stop.clientName}<br /></>}{route.courierRoute.courierName} · {formatDateTime(stop.estimatedArrivalAt)}</Popup>
               </CircleMarker>
             ))) }
           </MapContainer>
@@ -237,7 +239,7 @@ function ResultMap({ result, plan, accessToken }: {
 
 export function OptimizationResults({ result, plan, accessToken, onBack }: {
   result: OptimizationResult
-  plan: DeliveryPlan
+  plan: AnyDeliveryPlan
   accessToken: string
   onBack: () => void
 }) {
@@ -384,7 +386,7 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
                       <li key={stop.packageId}>
                         <time dateTime={stop.estimatedArrivalAt}>{formatTime(stop.estimatedArrivalAt)}</time>
                         <span className="dispatch-list__order" style={{ backgroundColor: color }}>{deliveryIndex + 1}</span>
-                        <div className="dispatch-list__package"><strong>{stop.packageLabel}</strong>{stop.phone && <small><Smartphone aria-hidden="true" />{stop.phone}</small>}</div>
+                        <div className="dispatch-list__package"><strong>{stop.packageLabel}</strong>{stop.clientName && <small>{stop.clientName} · {stop.deliveryGroupName}</small>}{stop.phone && <small><Smartphone aria-hidden="true" />{stop.phone}</small>}</div>
                         <div className="dispatch-list__destination"><MapPin aria-hidden="true" /><span>{formatLocation(stop.destination)}</span></div>
                       </li>
                     ))}
@@ -456,10 +458,11 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
                 </div>
                 <ol className="route-stop-list">
                   {route.stops.map((stop) => (
-                    <li key={`${stop.packageId}-${stop.order}`}>
+                    <li key={`${stop.type}-${stop.packageId}-${stop.order}`} className={stop.type === 'PICKUP' ? 'route-stop--pickup' : ''}>
                       <span style={{ backgroundColor: color }}>{stop.order}</span>
                       <div>
-                        <strong>{stop.packageLabel}</strong>
+                        <strong>{stop.type === 'PICKUP' ? `Récupérer · ${stop.packageLabel}` : stop.packageLabel}</strong>
+                        {stop.clientName && <p><Building2 aria-hidden="true" />{stop.clientName} · {stop.deliveryGroupName}</p>}
                         <p><MapPin aria-hidden="true" />{stop.destination.label || stop.destination.destinationQuery || 'Destination confirmée'}</p>
                         {stop.phone && <p><Smartphone aria-hidden="true" />{stop.phone}</p>}
                       </div>

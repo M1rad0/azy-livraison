@@ -167,6 +167,22 @@ class PlanningApiIntegrationTest {
     }
 
     @Test
+    void validatesAndNormalizesAMultiClientPlan() throws Exception {
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(multiClientPlan()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.plan.schemaVersion").value("2.0"))
+                .andExpect(jsonPath("$.plan.pattern").value("MULTI_CLIENT_MULTI_PICKUP_DELIVERY"))
+                .andExpect(jsonPath("$.plan.depot").doesNotExist())
+                .andExpect(jsonPath("$.plan.packages").isEmpty())
+                .andExpect(jsonPath("$.plan.clients.length()").value(2))
+                .andExpect(jsonPath("$.plan.clients[0].deliveryGroups[0].pickup.label").value("Retrait Alpha"))
+                .andExpect(jsonPath("$.plan.clients[1].deliveryGroups[0].packages[0].id").value("colis-beta"));
+    }
+
+    @Test
     void listsVehiclePresets() throws Exception {
         mockMvc.perform(get("/api/vehicle-presets").with(user("admin")))
                 .andExpect(status().isOk())
@@ -178,5 +194,47 @@ class PlanningApiIntegrationTest {
 
     private String readResource(String path) throws IOException {
         return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    private String multiClientPlan() {
+        return """
+                {
+                  "schemaVersion": "2.0",
+                  "pattern": "MULTI_CLIENT_MULTI_PICKUP_DELIVERY",
+                  "planId": "multi-001",
+                  "name": "Deux clients",
+                  "departureAt": "2026-08-05T08:00:00+03:00",
+                  "timezone": "Indian/Antananarivo",
+                  "settings": { "returnToDepot": false, "routingPreset": "MAIN_ROADS" },
+                  "couriers": [{
+                    "id": "livreur-001", "name": "Soa", "vehicleType": "MOTO",
+                    "maxWeightKg": 10, "averageSpeedKmh": 25
+                  }],
+                  "clients": [
+                    {
+                      "id": "client-alpha", "name": "Client Alpha",
+                      "deliveryGroups": [{
+                        "id": "groupe-alpha", "name": "Course Alpha",
+                        "pickup": { "label": "Retrait Alpha", "destinationQuery": "Analakely" },
+                        "packages": [{
+                          "id": "colis-alpha", "label": "Destinataire Alpha", "weightKg": 2,
+                          "destination": { "destinationQuery": "Ankorondrano" }
+                        }]
+                      }]
+                    },
+                    {
+                      "id": "client-beta", "name": "Client Beta",
+                      "deliveryGroups": [{
+                        "id": "groupe-beta", "name": "Course Beta",
+                        "pickup": { "label": "Retrait Beta", "destinationQuery": "Ivandry" },
+                        "packages": [{
+                          "id": "colis-beta", "label": "Destinataire Beta", "weightKg": 1,
+                          "destination": { "destinationQuery": "Ambodivona" }
+                        }]
+                      }]
+                    }
+                  ]
+                }
+                """;
     }
 }

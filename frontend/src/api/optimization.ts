@@ -1,5 +1,5 @@
 import type { Location } from './csvImports'
-import type { DeliveryPlan, RoutingPreset } from './plans'
+import type { AnyDeliveryPlan, RoutingPreset } from './plans'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -59,6 +59,11 @@ export interface CourierRoute {
 
 export interface RouteStop {
   order: number
+  type: 'PICKUP' | 'DELIVERY'
+  clientId?: string
+  clientName?: string
+  deliveryGroupId?: string
+  deliveryGroupName?: string
   packageId: string
   packageLabel: string
   phone?: string
@@ -78,6 +83,10 @@ export interface UnassignedPackage {
   reason: UnassignedReason
   message: string
   minimumRequiredCapacityKg?: number
+  clientId?: string
+  clientName?: string
+  deliveryGroupId?: string
+  deliveryGroupName?: string
 }
 
 interface OptimizationErrorResponse {
@@ -92,7 +101,7 @@ export class OptimizationFailure extends Error {
 }
 
 export async function optimizePlan(
-  plan: DeliveryPlan,
+  plan: AnyDeliveryPlan,
   accessToken: string,
   signal?: AbortSignal,
 ): Promise<OptimizationResult> {

@@ -13,7 +13,7 @@ import {
 import { Clock3, LoaderCircle, MapPinned, Route, Ruler, TriangleAlert, X } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { calculateRoute, type RoutingRouteResponse } from '../api/routing'
-import type { DeliveryPlan } from '../api/plans'
+import type { AnyDeliveryPlan } from '../api/plans'
 
 const TILE_URL = import.meta.env.VITE_MAP_TILE_URL
   ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -28,6 +28,10 @@ interface PreviewDestination {
   label: string
   latitude: number
   longitude: number
+  destinationQuery?: string
+  pickupLabel: string
+  pickupLatitude: number
+  pickupLongitude: number
 }
 
 interface PreviewRoute {
@@ -64,6 +68,7 @@ function FitPreviewBounds({ depot, destinations, routes }: {
     const points: [number, number][] = []
     if (depot) points.push(depot)
     destinations.forEach((destination) => points.push([destination.latitude, destination.longitude]))
+    destinations.forEach((destination) => points.push([destination.pickupLatitude, destination.pickupLongitude]))
     routes.forEach((item) => item.route?.geometry.coordinates.forEach(([longitude, latitude]) => points.push([latitude, longitude])))
     if (points.length > 0) map.fitBounds(points, { padding: [42, 42], maxZoom: 16 })
   }, [depot, destinations, map, routes])
@@ -72,25 +77,52 @@ function FitPreviewBounds({ depot, destinations, routes }: {
 }
 
 export function PlanMapPreview({ plan, accessToken, onClose }: {
-  plan: DeliveryPlan
+  plan: AnyDeliveryPlan
   accessToken: string
   onClose: () => void
 }) {
-  const depotCoordinates = hasCoordinates(plan.depot)
-    ? [plan.depot.latitude as number, plan.depot.longitude as number] as [number, number]
+  const depotLocation = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? plan.depot : undefined
+  const depotCoordinates = depotLocation && hasCoordinates(depotLocation)
+    ? [depotLocation.latitude as number, depotLocation.longitude as number] as [number, number]
     : undefined
-  const destinations = useMemo(() => plan.packages.flatMap((deliveryPackage, index) => (
-    hasCoordinates(deliveryPackage.destination)
-      ? [{
-          index,
-          id: deliveryPackage.id,
-          label: deliveryPackage.label || `Colis ${index + 1}`,
-          latitude: deliveryPackage.destination.latitude as number,
-          longitude: deliveryPackage.destination.longitude as number,
-        }]
-      : []
-  )), [plan.packages])
-  const unresolvedCount = plan.packages.length - destinations.length
+  const allPackageCount = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY'
+    ? plan.packages.length
+    : plan.clients.reduce((sum, client) => sum + client.deliveryGroups.reduce((groupSum, group) => groupSum + group.packages.length, 0), 0)
+  const unresolvedPickupCount = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY'
+    ? (depotCoordinates ? 0 : 1)
+    : plan.clients.flatMap((client) => client.deliveryGroups).filter((group) => !hasCoordinates(group.pickup)).length
+  const destinations = useMemo(() => {
+    if (plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY') {
+      if (!depotCoordinates) return []
+      return plan.packages.flatMap((deliveryPackage, index) => hasCoordinates(deliveryPackage.destination) ? [{
+        index,
+        id: deliveryPackage.id,
+        label: deliveryPackage.label || `Colis ${index + 1}`,
+        latitude: deliveryPackage.destination.latitude as number,
+        longitude: deliveryPackage.destination.longitude as number,
+        destinationQuery: deliveryPackage.destination.destinationQuery,
+        pickupLabel: plan.depot.label || 'Point de récupération',
+        pickupLatitude: depotCoordinates[0],
+        pickupLongitude: depotCoordinates[1],
+      }] : [])
+    }
+    let index = 0
+    return plan.clients.flatMap((client) => client.deliveryGroups.flatMap((group) => group.packages.flatMap((deliveryPackage) => {
+      const destinationIndex = index++
+      return hasCoordinates(group.pickup) && hasCoordinates(deliveryPackage.destination) ? [{
+        index: destinationIndex,
+        id: deliveryPackage.id,
+        label: deliveryPackage.label || `Colis ${destinationIndex + 1}`,
+        latitude: deliveryPackage.destination.latitude as number,
+        longitude: deliveryPackage.destination.longitude as number,
+        destinationQuery: deliveryPackage.destination.destinationQuery,
+        pickupLabel: `${client.name || 'Client'} · ${group.name || 'Retrait'}`,
+        pickupLatitude: group.pickup.latitude as number,
+        pickupLongitude: group.pickup.longitude as number,
+      }] : []
+    })))
+  }, [depotCoordinates?.[0], depotCoordinates?.[1], plan])
+  const unresolvedCount = allPackageCount - destinations.length
   const [routes, setRoutes] = useState<PreviewRoute[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -101,7 +133,7 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
   }, [])
 
   useEffect(() => {
-    if (!depotCoordinates || destinations.length === 0) return
+    if (destinations.length === 0) return
     const controller = new AbortController()
     let active = true
     setLoading(true)
@@ -109,7 +141,7 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
       const color = ROUTE_COLORS[index % ROUTE_COLORS.length]
       try {
         const routeResult = await calculateRoute([
-          { id: 'depot', latitude: depotCoordinates[0], longitude: depotCoordinates[1] },
+          { id: `pickup-${destination.id}`, latitude: destination.pickupLatitude, longitude: destination.pickupLongitude },
           { id: destination.id || `package-${destination.index + 1}`, latitude: destination.latitude, longitude: destination.longitude },
         ], accessToken, controller.signal)
         return { destination, color, route: routeResult }
@@ -129,7 +161,7 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
       active = false
       controller.abort()
     }
-  }, [accessToken, depotCoordinates?.[0], depotCoordinates?.[1], destinations])
+  }, [accessToken, destinations])
 
   const successfulRoutes = routes.filter((item) => item.route)
   const totalDistance = successfulRoutes.reduce((sum, item) => sum + (item.route?.distanceMeters ?? 0), 0)
@@ -160,9 +192,15 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
               {depotCoordinates && (
                 <CircleMarker center={depotCoordinates} radius={11} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
                   <Tooltip permanent direction="top">Retrait</Tooltip>
-                  <Popup><strong>{plan.depot.label || 'Point de récupération'}</strong><br />{plan.depot.destinationQuery}</Popup>
+                  <Popup><strong>{depotLocation?.label || 'Point de récupération'}</strong><br />{depotLocation?.destinationQuery}</Popup>
                 </CircleMarker>
               )}
+
+              {plan.pattern === 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY' && destinations.map((destination) => (
+                <CircleMarker key={`pickup-${destination.id}-${destination.index}`} center={[destination.pickupLatitude, destination.pickupLongitude]} radius={10} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
+                  <Tooltip direction="top">Retrait</Tooltip><Popup><strong>{destination.pickupLabel}</strong></Popup>
+                </CircleMarker>
+              ))}
 
               {destinations.map((destination, index) => (
                 <CircleMarker
@@ -172,7 +210,7 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
                   pathOptions={{ color: '#fff', fillColor: ROUTE_COLORS[index % ROUTE_COLORS.length], fillOpacity: 1, weight: 3 }}
                 >
                   <Tooltip permanent direction="top">{destination.index + 1}</Tooltip>
-                  <Popup><strong>{destination.label}</strong><br />{plan.packages[destination.index]?.destination.destinationQuery}</Popup>
+                  <Popup><strong>{destination.label}</strong><br />{destination.destinationQuery}</Popup>
                 </CircleMarker>
               ))}
 
@@ -193,8 +231,8 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
               <p><strong>Aperçu de couverture</strong>Chaque ligne relie le retrait à un colis. La répartition finale entre livreurs sera calculée à l’étape suivante.</p>
             </div>
 
-            {!depotCoordinates && (
-              <div className="map-preview-warning"><TriangleAlert aria-hidden="true" /><p><strong>Retrait à confirmer</strong>Sélectionnez une proposition dans la recherche du point de récupération.</p></div>
+            {unresolvedPickupCount > 0 && (
+              <div className="map-preview-warning"><TriangleAlert aria-hidden="true" /><p><strong>{unresolvedPickupCount} retrait{unresolvedPickupCount > 1 ? 's' : ''} à confirmer</strong>Sélectionnez une proposition dans la recherche du point de récupération.</p></div>
             )}
             {unresolvedCount > 0 && (
               <div className="map-preview-warning"><TriangleAlert aria-hidden="true" /><p><strong>{unresolvedCount} destination{unresolvedCount > 1 ? 's' : ''} à confirmer</strong>Utilisez la recherche sous chaque colis pour placer ces points sur la carte.</p></div>

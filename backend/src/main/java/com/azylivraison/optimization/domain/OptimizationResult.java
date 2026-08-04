@@ -43,6 +43,11 @@ public record OptimizationResult(
         NO_FEASIBLE_ASSIGNMENT
     }
 
+    public enum RouteStopType {
+        PICKUP,
+        DELIVERY
+    }
+
     public record DataContext(
             String routingProvider,
             RoutingPreset routingPreset,
@@ -83,6 +88,11 @@ public record OptimizationResult(
 
     public record RouteStop(
             int order,
+            RouteStopType type,
+            String clientId,
+            String clientName,
+            String deliveryGroupId,
+            String deliveryGroupName,
             String packageId,
             String packageLabel,
             String phone,
@@ -93,6 +103,23 @@ public record OptimizationResult(
             double durationFromPreviousSeconds,
             double cumulativeDistanceMeters,
             double cumulativeDurationSeconds) {
+
+        public RouteStop(
+                int order,
+                String packageId,
+                String packageLabel,
+                String phone,
+                BigDecimal weightKg,
+                Location destination,
+                OffsetDateTime estimatedArrivalAt,
+                double distanceFromPreviousMeters,
+                double durationFromPreviousSeconds,
+                double cumulativeDistanceMeters,
+                double cumulativeDurationSeconds) {
+            this(order, RouteStopType.DELIVERY, null, null, null, null, packageId, packageLabel, phone,
+                    weightKg, destination, estimatedArrivalAt, distanceFromPreviousMeters,
+                    durationFromPreviousSeconds, cumulativeDistanceMeters, cumulativeDurationSeconds);
+        }
     }
 
     public record UnassignedPackage(
@@ -101,6 +128,21 @@ public record OptimizationResult(
             BigDecimal weightKg,
             UnassignedReason reason,
             String message,
-            BigDecimal minimumRequiredCapacityKg) {
+            BigDecimal minimumRequiredCapacityKg,
+            String clientId,
+            String clientName,
+            String deliveryGroupId,
+            String deliveryGroupName) {
+
+        public UnassignedPackage(
+                String packageId,
+                String packageLabel,
+                BigDecimal weightKg,
+                UnassignedReason reason,
+                String message,
+                BigDecimal minimumRequiredCapacityKg) {
+            this(packageId, packageLabel, weightKg, reason, message, minimumRequiredCapacityKg,
+                    null, null, null, null);
+        }
     }
 }

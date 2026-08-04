@@ -1,0 +1,382 @@
+import { useId, useState, type ChangeEvent, type ReactNode } from 'react'
+import {
+  Building2,
+  ClipboardList,
+  Clock3,
+  FolderOpen,
+  Layers3,
+  LoaderCircle,
+  MapPin,
+  MapPinned,
+  PackagePlus,
+  Plus,
+  Save,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  UserPlus,
+  Users,
+} from 'lucide-react'
+import type { Courier, DeliveryPackage, Location } from '../api/csvImports'
+import {
+  isDeliveryPlan,
+  materializeVehicleDefaults,
+  PlanValidationFailure,
+  validatePlan,
+  type DeliveryClient,
+  type DeliveryGroup,
+  type MultiClientDeliveryPlan,
+  type PlanningValidationError,
+} from '../api/plans'
+import { optimizePlan, type OptimizationResult } from '../api/optimization'
+import { LocationPicker } from './LocationPicker'
+import { OptimizationResults } from './OptimizationResults'
+import { PlanMapPreview } from './PlanMapPreview'
+import { CsvImportButton } from './PlanningWorkspace'
+
+interface Props {
+  accessToken: string
+}
+
+function antananarivoDateTime(date = new Date()) {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Indian/Antananarivo',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date).replace(' ', 'T')
+}
+
+function toOffsetDateTime(value: string) {
+  return value ? `${value}:00+03:00` : undefined
+}
+
+function defaultWindowEnd(departureAt: string) {
+  return `${antananarivoDateTime(new Date(new Date(departureAt).getTime() + 2 * 60 * 60 * 1000))}:00+03:00`
+}
+
+function nextId(prefix: string, existing: string[]) {
+  let index = existing.length + 1
+  let candidate = `${prefix}-${String(index).padStart(3, '0')}`
+  while (existing.includes(candidate)) {
+    index += 1
+    candidate = `${prefix}-${String(index).padStart(3, '0')}`
+  }
+  return candidate
+}
+
+function defaultPlan(): MultiClientDeliveryPlan {
+  const localDeparture = antananarivoDateTime()
+  return {
+    schemaVersion: '2.0',
+    pattern: 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY',
+    planId: `multi-${localDeparture.slice(0, 10)}`,
+    name: `Livraisons multi-clients du ${localDeparture.slice(0, 10)}`,
+    departureAt: `${localDeparture}:00+03:00`,
+    timezone: 'Indian/Antananarivo',
+    settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
+    couriers: [],
+    clients: [],
+  }
+}
+
+function InputField({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="workspace-field"><span>{label}</span>{children}</label>
+}
+
+export function MultiClientPlanningWorkspace({ accessToken }: Props) {
+  const jsonInputId = useId()
+  const [plan, setPlan] = useState<MultiClientDeliveryPlan>(defaultPlan)
+  const [validationErrors, setValidationErrors] = useState<PlanningValidationError[]>([])
+  const [message, setMessage] = useState<string>()
+  const [fileMessage, setFileMessage] = useState<string>()
+  const [validating, setValidating] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
+
+  function updatePlan(update: (current: MultiClientDeliveryPlan) => MultiClientDeliveryPlan) {
+    setPlan((current) => update(current))
+    setValidationErrors([])
+    setMessage(undefined)
+  }
+
+  function addClient() {
+    updatePlan((current) => {
+      const id = nextId('client', current.clients.map((client) => client.id))
+      return { ...current, clients: [...current.clients, { id, name: '', deliveryGroups: [] }] }
+    })
+  }
+
+  function updateClient(clientIndex: number, update: Partial<DeliveryClient>) {
+    updatePlan((current) => ({
+      ...current,
+      clients: current.clients.map((client, index) => index === clientIndex ? { ...client, ...update } : client),
+    }))
+  }
+
+  function updateGroup(clientIndex: number, groupIndex: number, update: Partial<DeliveryGroup>) {
+    updatePlan((current) => ({
+      ...current,
+      clients: current.clients.map((client, index) => index !== clientIndex ? client : {
+        ...client,
+        deliveryGroups: client.deliveryGroups.map((group, index) => index === groupIndex ? { ...group, ...update } : group),
+      }),
+    }))
+  }
+
+  function addGroup(clientIndex: number) {
+    updatePlan((current) => {
+      const groupIds = current.clients.flatMap((client) => client.deliveryGroups.map((group) => group.id))
+      return {
+        ...current,
+        clients: current.clients.map((client, index) => index !== clientIndex ? client : {
+          ...client,
+          deliveryGroups: [...client.deliveryGroups, {
+            id: nextId('course', groupIds),
+            name: '',
+            pickup: { destinationQuery: '' },
+            packages: [],
+          }],
+        }),
+      }
+    })
+  }
+
+  function addPackage(clientIndex: number, groupIndex: number) {
+    updatePlan((current) => {
+      const packageIds = current.clients.flatMap((client) => client.deliveryGroups.flatMap((group) => group.packages.map((item) => item.id)))
+      return {
+        ...current,
+        clients: current.clients.map((client, index) => index !== clientIndex ? client : {
+          ...client,
+          deliveryGroups: client.deliveryGroups.map((group, index) => index !== groupIndex ? group : {
+            ...group,
+            packages: [...group.packages, {
+              id: nextId('colis', packageIds),
+              label: '',
+              weightKg: 1,
+              destination: { destinationQuery: '' },
+            }],
+          }),
+        }),
+      }
+    })
+  }
+
+  function updatePackage(clientIndex: number, groupIndex: number, packageIndex: number, update: Partial<DeliveryPackage>) {
+    const group = plan.clients[clientIndex].deliveryGroups[groupIndex]
+    updateGroup(clientIndex, groupIndex, {
+      packages: group.packages.map((item, index) => index === packageIndex ? { ...item, ...update } : item),
+    })
+  }
+
+  function updatePackageDestination(clientIndex: number, groupIndex: number, packageIndex: number, update: Partial<Location>) {
+    const item = plan.clients[clientIndex].deliveryGroups[groupIndex].packages[packageIndex]
+    updatePackage(clientIndex, groupIndex, packageIndex, { destination: { ...item.destination, ...update } })
+  }
+
+  function addCourier() {
+    updatePlan((current) => ({
+      ...current,
+      couriers: [...current.couriers, {
+        id: nextId('livreur', current.couriers.map((courier) => courier.id)),
+        name: '', vehicleType: 'MOTO', maxWeightKg: 30, averageSpeedKmh: 25,
+      }],
+    }))
+  }
+
+  function updateCourier(index: number, update: Partial<Courier>) {
+    updatePlan((current) => ({
+      ...current,
+      couriers: current.couriers.map((courier, courierIndex) => courierIndex === index ? { ...courier, ...update } : courier),
+    }))
+  }
+
+  function exportJson() {
+    const blob = new Blob([`${JSON.stringify(plan, null, 2)}\n`], { type: 'application/json;charset=utf-8' })
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `${plan.planId.trim() || 'plan-multi-azy'}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(objectUrl)
+    setFileMessage('Sauvegarde téléchargée.')
+  }
+
+  async function importJson(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const parsed: unknown = JSON.parse(await file.text())
+      if (!isDeliveryPlan(parsed) || parsed.pattern !== 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY') {
+        throw new Error('Cette sauvegarde ne correspond pas au mode multi-clients.')
+      }
+      const loaded = materializeVehicleDefaults(parsed)
+      setPlan(loaded)
+      setValidationErrors([])
+      const packageCount = loaded.clients.reduce((sum, client) => sum
+        + client.deliveryGroups.reduce((groupSum, group) => groupSum + group.packages.length, 0), 0)
+      setFileMessage(`${file.name} chargé : ${loaded.clients.length} clients et ${packageCount} colis.`)
+    } catch (error) {
+      setFileMessage(error instanceof Error ? error.message : 'Lecture du fichier impossible.')
+    }
+  }
+
+  async function handleValidation(generate: boolean) {
+    generate ? setGenerating(true) : setValidating(true)
+    setValidationErrors([])
+    setMessage(undefined)
+    try {
+      const response = await validatePlan(plan, accessToken)
+      if (!response.plan || response.plan.pattern !== 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY') return
+      setPlan(response.plan)
+      if (generate) {
+        setOptimizationResult(await optimizePlan(response.plan, accessToken))
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } else {
+        setMessage('Le plan multi-clients est valide et prêt pour l’optimisation.')
+      }
+    } catch (error) {
+      if (error instanceof PlanValidationFailure) {
+        setValidationErrors(error.errors)
+        setMessage(error.message)
+      } else {
+        setMessage(error instanceof Error ? error.message : 'Opération impossible.')
+      }
+    } finally {
+      setValidating(false)
+      setGenerating(false)
+    }
+  }
+
+  const groups = plan.clients.flatMap((client) => client.deliveryGroups)
+  const packages = groups.flatMap((group) => group.packages)
+  const totalWeight = packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0)
+
+  if (optimizationResult) {
+    return <OptimizationResults result={optimizationResult} plan={plan} accessToken={accessToken} onBack={() => setOptimizationResult(undefined)} />
+  }
+
+  return (
+    <div className="planning-workspace planning-workspace--multi">
+      <section className="workspace-hero" aria-labelledby="multi-workspace-title">
+        <div>
+          <p className="eyebrow">Plan · Plusieurs clients et retraits</p>
+          <h1 id="multi-workspace-title">Rassemblez toutes les courses.</h1>
+          <p>Chaque client peut fournir plusieurs retraits. La même équipe de livreurs prend en charge l’ensemble.</p>
+        </div>
+        <div className="workspace-progress"><span className="is-complete">1 <small>Mode</small></span><span className="is-active">2 <small>Préparation</small></span><span>3 <small>Résultat</small></span></div>
+      </section>
+
+      <div className="planning-layout">
+        <div className="planning-form">
+          <section className="workspace-section">
+            <div className="workspace-section__heading"><div><span><ClipboardList /></span><div><p className="eyebrow">Brouillon commun</p><h2>Informations générales</h2></div></div></div>
+            <div className="workspace-fields">
+              <InputField label="Référence"><input value={plan.planId} onChange={(event) => updatePlan((current) => ({ ...current, planId: event.target.value }))} /></InputField>
+              <InputField label="Nom du plan"><input value={plan.name} onChange={(event) => updatePlan((current) => ({ ...current, name: event.target.value }))} /></InputField>
+              <InputField label="Départ · heure d’Antananarivo"><input type="datetime-local" value={plan.departureAt.slice(0, 16)} onChange={(event) => updatePlan((current) => ({ ...current, departureAt: `${event.target.value}:00+03:00` }))} /></InputField>
+            </div>
+          </section>
+
+          <section className="workspace-section multi-clients-section">
+            <div className="workspace-section__heading workspace-section__heading--actions">
+              <div><span><Building2 /></span><div><p className="eyebrow">Demandes à traiter</p><h2>Clients</h2></div></div>
+              <button className="button" type="button" onClick={addClient}><Plus />Ajouter un client</button>
+            </div>
+            {plan.clients.length === 0 ? (
+              <button className="workspace-empty" type="button" onClick={addClient}><span><Building2 /></span><strong>Ajouter votre premier client</strong><small>puis créez ses retraits et ses colis</small></button>
+            ) : <div className="multi-client-list">{plan.clients.map((client, clientIndex) => (
+              <article className="multi-client-card" key={`${client.id}-${clientIndex}`}>
+                <header>
+                  <span className="multi-client-card__number">{String(clientIndex + 1).padStart(2, '0')}</span>
+                  <div className="multi-client-card__identity">
+                    <InputField label="Identifiant"><input value={client.id} onChange={(event) => updateClient(clientIndex, { id: event.target.value })} /></InputField>
+                    <InputField label="Nom du client"><input value={client.name} onChange={(event) => updateClient(clientIndex, { name: event.target.value })} /></InputField>
+                  </div>
+                  <button className="text-button" type="button" onClick={() => updatePlan((current) => ({ ...current, clients: current.clients.filter((_, index) => index !== clientIndex) }))}><Trash2 />Supprimer</button>
+                </header>
+                <div className="delivery-groups">
+                  {client.deliveryGroups.map((group, groupIndex) => (
+                    <section className="delivery-group-card" key={`${group.id}-${groupIndex}`}>
+                      <div className="delivery-group-card__heading">
+                        <div><Layers3 /><span><small>Retrait {groupIndex + 1}</small><strong>{group.name || 'Nouvelle course'}</strong></span></div>
+                        <button type="button" onClick={() => updateClient(clientIndex, { deliveryGroups: client.deliveryGroups.filter((_, index) => index !== groupIndex) })}><Trash2 />Retirer</button>
+                      </div>
+                      <div className="workspace-fields">
+                        <InputField label="Identifiant"><input value={group.id} onChange={(event) => updateGroup(clientIndex, groupIndex, { id: event.target.value })} /></InputField>
+                        <InputField label="Nom de la course"><input value={group.name} onChange={(event) => updateGroup(clientIndex, groupIndex, { name: event.target.value })} /></InputField>
+                      </div>
+                      <div className="delivery-group-pickup">
+                        <span><MapPin />Point de récupération</span>
+                        <LocationPicker accessToken={accessToken} value={group.pickup} title={`Retrait · ${group.name || client.name || `client ${clientIndex + 1}`}`} description="Recherchez et confirmez le lieu où récupérer les colis de cette course." onChange={(pickup) => updateGroup(clientIndex, groupIndex, { pickup })} />
+                      </div>
+                      <div className="delivery-group-packages">
+                        <div className="delivery-group-packages__heading">
+                          <strong>{group.packages.length} colis</strong>
+                          <div>
+                            <CsvImportButton<DeliveryPackage> accessToken={accessToken} kind="packages" onImported={(items, filename) => { updateGroup(clientIndex, groupIndex, { packages: items }); setFileMessage(`${filename} a rempli la course ${group.name || group.id}.`) }} />
+                            <button className="button button--secondary" type="button" onClick={() => addPackage(clientIndex, groupIndex)}><PackagePlus />Ajouter</button>
+                          </div>
+                        </div>
+                        {group.packages.map((item, packageIndex) => (
+                          <article className="editable-card multi-package-card" key={`${item.id}-${packageIndex}`}>
+                            <div className="editable-card__topline"><strong>Colis {packageIndex + 1}</strong><button type="button" onClick={() => updateGroup(clientIndex, groupIndex, { packages: group.packages.filter((_, index) => index !== packageIndex) })}><Trash2 />Supprimer</button></div>
+                            <div className="editable-card__grid editable-card__grid--package">
+                              <InputField label="Identifiant"><input value={item.id} onChange={(event) => updatePackage(clientIndex, groupIndex, packageIndex, { id: event.target.value })} /></InputField>
+                              <InputField label="Libellé"><input value={item.label} onChange={(event) => updatePackage(clientIndex, groupIndex, packageIndex, { label: event.target.value })} /></InputField>
+                              <InputField label="Poids (kg)"><input type="number" min="0.01" step="0.01" value={item.weightKg} onChange={(event) => updatePackage(clientIndex, groupIndex, packageIndex, { weightKg: Number(event.target.value) })} /></InputField>
+                              <InputField label="Téléphone"><input value={item.phone ?? ''} onChange={(event) => updatePackage(clientIndex, groupIndex, packageIndex, { phone: event.target.value })} /></InputField>
+                              <div className="editable-card__full-field"><span>Destination</span><LocationPicker accessToken={accessToken} value={item.destination} title={`Destination · ${item.label || `colis ${packageIndex + 1}`}`} description="Recherchez l’adresse du destinataire ou placez le point sur la carte." onChange={(location) => updatePackageDestination(clientIndex, groupIndex, packageIndex, location)} /></div>
+                              <div className="editable-card__optional">
+                                <div className="editable-card__optional-heading"><div><Clock3 /><span><strong>Créneau de livraison</strong><small>Facultatif</small></span></div>{item.deliveryWindow ? <button type="button" onClick={() => updatePackage(clientIndex, groupIndex, packageIndex, { deliveryWindow: undefined })}><Trash2 />Retirer</button> : <button type="button" onClick={() => updatePackage(clientIndex, groupIndex, packageIndex, { deliveryWindow: { startAt: plan.departureAt, endAt: defaultWindowEnd(plan.departureAt) } })}><Plus />Ajouter</button>}</div>
+                                {item.deliveryWindow && <div className="optional-fields"><InputField label="Livrer à partir de"><input type="datetime-local" value={item.deliveryWindow.startAt.slice(0, 16)} onChange={(event) => updatePackage(clientIndex, groupIndex, packageIndex, { deliveryWindow: { ...item.deliveryWindow!, startAt: toOffsetDateTime(event.target.value) ?? '' } })} /></InputField><InputField label="Livrer avant"><input type="datetime-local" value={item.deliveryWindow.endAt.slice(0, 16)} onChange={(event) => updatePackage(clientIndex, groupIndex, packageIndex, { deliveryWindow: { ...item.deliveryWindow!, endAt: toOffsetDateTime(event.target.value) ?? '' } })} /></InputField></div>}
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                        {group.packages.length === 0 && <button className="workspace-empty workspace-empty--compact" type="button" onClick={() => addPackage(clientIndex, groupIndex)}><PackagePlus /><strong>Ajouter les colis de ce retrait</strong></button>}
+                      </div>
+                    </section>
+                  ))}
+                  <button className="add-group-button" type="button" onClick={() => addGroup(clientIndex)}><Plus /><span><strong>Ajouter un retrait</strong><small>Une origine avec une ou plusieurs livraisons</small></span></button>
+                </div>
+              </article>
+            ))}</div>}
+          </section>
+
+          <section className="workspace-section">
+            <div className="workspace-section__heading workspace-section__heading--actions">
+              <div><span><Users /></span><div><p className="eyebrow">Équipe partagée</p><h2>Livreurs</h2></div></div>
+              <div className="workspace-section__actions"><CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => { updatePlan((current) => ({ ...current, couriers: items })); setFileMessage(`${filename} a remplacé la liste des livreurs.`) }} /><button className="button" type="button" onClick={addCourier}><UserPlus />Ajouter</button></div>
+            </div>
+            {plan.couriers.length === 0 ? <button className="workspace-empty" type="button" onClick={addCourier}><span><UserPlus /></span><strong>Ajouter votre premier livreur</strong><small>l’équipe sera utilisée pour tous les clients</small></button> : <div className="editable-list">{plan.couriers.map((courier, index) => (
+              <article className="editable-card" key={`${courier.id}-${index}`}>
+                <div className="editable-card__topline"><strong>Livreur {String(index + 1).padStart(2, '0')}</strong><button type="button" onClick={() => updatePlan((current) => ({ ...current, couriers: current.couriers.filter((_, courierIndex) => courierIndex !== index) }))}><Trash2 />Supprimer</button></div>
+                <div className="editable-card__grid">
+                  <InputField label="Identifiant"><input value={courier.id} onChange={(event) => updateCourier(index, { id: event.target.value })} /></InputField>
+                  <InputField label="Nom"><input value={courier.name} onChange={(event) => updateCourier(index, { name: event.target.value })} /></InputField>
+                  <InputField label="Véhicule"><select value={courier.vehicleType} onChange={(event) => { const vehicleType = event.target.value as Courier['vehicleType']; updateCourier(index, vehicleType === 'MOTO' ? { vehicleType, maxWeightKg: 30, averageSpeedKmh: 25 } : { vehicleType, maxWeightKg: 10, averageSpeedKmh: 12 }) }}><option value="MOTO">Moto</option><option value="BICYCLE">Bicyclette</option></select></InputField>
+                  <InputField label="Capacité (kg)"><input type="number" min="0.01" step="0.01" value={courier.maxWeightKg} onChange={(event) => updateCourier(index, { maxWeightKg: Number(event.target.value) })} /></InputField>
+                  <InputField label="Vitesse (km/h)"><input type="number" min="0.01" step="0.01" value={courier.averageSpeedKmh} onChange={(event) => updateCourier(index, { averageSpeedKmh: Number(event.target.value) })} /></InputField>
+                  <div className="editable-card__optional"><div className="editable-card__optional-heading"><div><MapPin /><span><strong>Départ personnalisé</strong><small>Facultatif · sinon la tournée commence au premier retrait attribué</small></span></div>{courier.departureAt || courier.departureLocation ? <button type="button" onClick={() => updateCourier(index, { departureAt: undefined, departureLocation: undefined })}><Trash2 />Retirer</button> : <button type="button" onClick={() => updateCourier(index, { departureAt: plan.departureAt, departureLocation: {} })}><Plus />Personnaliser</button>}</div>
+                    {(courier.departureAt || courier.departureLocation) && <div className="courier-departure-fields"><InputField label="Heure de départ"><input type="datetime-local" value={courier.departureAt?.slice(0, 16) ?? ''} onChange={(event) => updateCourier(index, { departureAt: toOffsetDateTime(event.target.value) })} /></InputField><div className="editable-card__full-field"><span>Lieu de départ</span><LocationPicker accessToken={accessToken} value={courier.departureLocation ?? {}} title={`Départ de ${courier.name || `livreur ${index + 1}`}`} description="Ce trajet sera compté jusqu’au premier point de récupération attribué." onChange={(departureLocation) => updateCourier(index, { departureLocation })} /></div></div>}
+                  </div>
+                </div>
+              </article>
+            ))}</div>}
+          </section>
+        </div>
+
+        <aside className="plan-sidebar">
+          <div className="plan-sidebar__card"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Clients</dt><dd>{plan.clients.length}</dd></div><div><dt>Retraits</dt><dd>{groups.length}</dd></div><div><dt>Colis</dt><dd>{packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div></dl></div>
+          <div className="plan-sidebar__card plan-files"><div><p className="eyebrow">Reprendre plus tard</p><h3>Sauvegarde du brouillon</h3></div><p>Le fichier conserve les clients, leurs retraits, leurs colis et l’équipe commune.</p><input id={jsonInputId} type="file" accept=".json,application/json" onChange={(event) => void importJson(event)} /><label className="button button--secondary" htmlFor={jsonInputId}><FolderOpen />Ouvrir une sauvegarde</label><button className="button button--secondary" type="button" onClick={exportJson}><Save />Télécharger la sauvegarde</button>{fileMessage && <span className="inline-message" role="status">{fileMessage}</span>}</div>
+          <div className="plan-sidebar__card plan-validation"><p className="eyebrow">Contrôle métier</p><h3>Prêt à répartir ?</h3><p>Chaque récupération sera obligatoirement placée avant la livraison du colis concerné.</p><button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}><MapPinned />Visualiser les liaisons</button><button className="button button--wide" type="button" disabled={validating || generating} onClick={() => void handleValidation(false)}><ShieldCheck />{validating ? 'Validation…' : 'Valider le plan'}</button><button className="button button--wide button--generate" type="button" disabled={validating || generating} onClick={() => void handleValidation(true)}>{generating ? <LoaderCircle className="spin" /> : <Sparkles />}{generating ? 'Optimisation en cours…' : 'Générer les tournées'}</button>{message && <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>{message}</p>}{validationErrors.length > 0 && <ul className="validation-errors">{validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{error.path}</strong>{error.message}</li>)}</ul>}</div>
+        </aside>
+      </div>
+      {mapPreviewOpen && <PlanMapPreview plan={plan} accessToken={accessToken} onClose={() => setMapPreviewOpen(false)} />}
+    </div>
+  )
+}

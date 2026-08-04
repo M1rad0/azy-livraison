@@ -3,9 +3,9 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  Clock3,
   LogIn,
   LogOut,
+  Layers3,
   PackageCheck,
   Route,
 } from 'lucide-react'
@@ -16,6 +16,8 @@ import {
   type AuthSession,
 } from './api/auth'
 import { PlanningWorkspace } from './components/PlanningWorkspace'
+import { MultiClientPlanningWorkspace } from './components/MultiClientPlanningWorkspace'
+import type { PlanningPattern } from './api/plans'
 import './App.css'
 
 type SessionState = 'restoring' | 'guest' | 'authenticated'
@@ -113,7 +115,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessi
 
 function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () => Promise<void> }) {
   const [loggingOut, setLoggingOut] = useState(false)
-  const [patternSelected, setPatternSelected] = useState(false)
+  const [selectedPattern, setSelectedPattern] = useState<PlanningPattern>()
   const accountInitials = session.account.username.trim().slice(0, 2).toUpperCase() || 'AZ'
 
   async function handleLogout() {
@@ -143,23 +145,27 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
         </div>
       </header>
 
-      {patternSelected && (
+      {selectedPattern && (
         <nav className="workspace-context-bar" aria-label="Mode de planification actif">
           <div className="mode-context">
             <span className="mode-context__icon" aria-hidden="true"><Route /></span>
             <div>
               <small>Mode actif</small>
-              <strong>Un retrait · plusieurs livraisons</strong>
+              <strong>{selectedPattern === 'SINGLE_PICKUP_MULTI_DELIVERY'
+                ? 'Un retrait · plusieurs livraisons'
+                : 'Plusieurs clients · plusieurs retraits'}</strong>
             </div>
-            <button type="button" onClick={() => setPatternSelected(false)}>
+            <button type="button" onClick={() => setSelectedPattern(undefined)}>
               <ArrowLeft aria-hidden="true" />Changer de mode
             </button>
           </div>
         </nav>
       )}
 
-      {patternSelected ? (
-        <PlanningWorkspace accessToken={session.accessToken} />
+      {selectedPattern ? (
+        selectedPattern === 'SINGLE_PICKUP_MULTI_DELIVERY'
+          ? <PlanningWorkspace accessToken={session.accessToken} />
+          : <MultiClientPlanningWorkspace accessToken={session.accessToken} />
       ) : (
         <>
           <section className="hero pattern-hero" aria-labelledby="page-title">
@@ -192,20 +198,20 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
                   <span className="section-badge"><CheckCircle2 aria-hidden="true" />Disponible</span>
                   <h3>Un retrait, plusieurs livraisons</h3>
                   <p>Un point de récupération commun, plusieurs colis, plusieurs livreurs et des destinations réparties.</p>
-                  <button className="button button--wide" type="button" onClick={() => setPatternSelected(true)}><Route aria-hidden="true" />Choisir ce mode <ArrowRight aria-hidden="true" /></button>
+                  <button className="button button--wide" type="button" onClick={() => setSelectedPattern('SINGLE_PICKUP_MULTI_DELIVERY')}><Route aria-hidden="true" />Choisir ce mode <ArrowRight aria-hidden="true" /></button>
                 </div>
               </article>
 
-              <article className="pattern-card pattern-card--soon" aria-disabled="true">
+              <article className="pattern-card pattern-card--active pattern-card--multi">
                 <div className="pattern-card__visual pattern-card__visual--multi" aria-hidden="true">
                   <span className="pattern-node pattern-node--pickup">A</span><i /><span className="pattern-node">1</span>
                   <span className="pattern-node pattern-node--pickup">B</span><i /><span className="pattern-node">2</span>
                 </div>
                 <div className="pattern-card__content">
-                  <span className="section-badge section-badge--muted"><Clock3 aria-hidden="true" />Prochainement</span>
-                  <h3>Plusieurs groupes de livraison</h3>
-                  <p>Plusieurs groupes indépendants, chacun avec son point de récupération et ses destinations.</p>
-                  <button className="button button--secondary button--wide" type="button" disabled><Clock3 aria-hidden="true" />Bientôt disponible</button>
+                  <span className="section-badge"><CheckCircle2 aria-hidden="true" />Disponible</span>
+                  <h3>Plusieurs clients</h3>
+                  <p>Chaque client peut avoir plusieurs retraits avec leurs livraisons, répartis entre une même équipe de livreurs.</p>
+                  <button className="button button--wide" type="button" onClick={() => setSelectedPattern('MULTI_CLIENT_MULTI_PICKUP_DELIVERY')}><Layers3 aria-hidden="true" />Choisir le mode multi-clients <ArrowRight aria-hidden="true" /></button>
                 </div>
               </article>
             </div>
