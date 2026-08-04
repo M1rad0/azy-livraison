@@ -30,9 +30,9 @@ class CsvImportApiIntegrationTest {
     @Test
     void importsPackagesWithBomTextDestinationsCoordinatesAndDecimalComma() throws Exception {
         MockMultipartFile file = csv("packages.csv", "\uFEFF" + """
-                id;label;weight_kg;destination_query;latitude;longitude;phone
-                colis-001;Client Analakely;4,5;Analakely, Antananarivo;;;+261000000000
-                colis-002;Client coordonnées;2.0;;-18.9100;47.5250;
+                id;label;weight_kg;destination_query;latitude;longitude;phone;window_start_at;window_end_at
+                colis-001;Client Analakely;4,5;Analakely, Antananarivo;;;+261000000000;2026-08-05T09:00:00+03:00;2026-08-05T11:00:00+03:00
+                colis-002;Client coordonnées;2.0;;-18.9100;47.5250;;;
                 """);
 
         mockMvc.perform(multipart("/api/import/packages/csv")
@@ -46,6 +46,8 @@ class CsvImportApiIntegrationTest {
                 .andExpect(jsonPath("$.items[0].weightKg").value(4.5))
                 .andExpect(jsonPath("$.items[0].destination.destinationQuery")
                         .value("Analakely, Antananarivo"))
+                .andExpect(jsonPath("$.items[0].deliveryWindow.startAt")
+                        .value("2026-08-05T09:00:00+03:00"))
                 .andExpect(jsonPath("$.items[1].destination.latitude").value(-18.91))
                 .andExpect(jsonPath("$.errors").isEmpty());
     }
@@ -53,9 +55,9 @@ class CsvImportApiIntegrationTest {
     @Test
     void importsCommaSeparatedCouriersAndAppliesVehicleDefaults() throws Exception {
         MockMultipartFile file = csv("couriers.csv", """
-                id,name,vehicle_type,max_weight_kg,average_speed_kmh
-                livreur-001,Exemple Moto,MOTO,35,22
-                livreur-002,Exemple Vélo,bicycle,,
+                id,name,vehicle_type,max_weight_kg,average_speed_kmh,departure_at,departure_query,departure_latitude,departure_longitude
+                livreur-001,Exemple Moto,MOTO,35,22,2026-08-05T08:00:00+03:00,"Analakely, Antananarivo",,
+                livreur-002,Exemple Vélo,bicycle,,,,,,
                 """);
 
         mockMvc.perform(multipart("/api/import/couriers/csv")
@@ -66,6 +68,8 @@ class CsvImportApiIntegrationTest {
                 .andExpect(jsonPath("$.importType").value("COURIERS"))
                 .andExpect(jsonPath("$.delimiter").value(","))
                 .andExpect(jsonPath("$.items[0].maxWeightKg").value(35))
+                .andExpect(jsonPath("$.items[0].departureLocation.destinationQuery")
+                        .value("Analakely, Antananarivo"))
                 .andExpect(jsonPath("$.items[1].vehicleType").value("BICYCLE"))
                 .andExpect(jsonPath("$.items[1].maxWeightKg").value(10))
                 .andExpect(jsonPath("$.items[1].averageSpeedKmh").value(12));
@@ -74,9 +78,9 @@ class CsvImportApiIntegrationTest {
     @Test
     void reportsAllRowErrorsWithoutReturningPartialItems() throws Exception {
         MockMultipartFile file = csv("packages.csv", """
-                id;label;weight_kg;destination_query;latitude;longitude;phone
-                colis-001;Premier;1;Analakely;;;
-                colis-001;;0;;;47.5;
+                id;label;weight_kg;destination_query;latitude;longitude;phone;window_start_at;window_end_at
+                colis-001;Premier;1;Analakely;;;;;
+                colis-001;;0;;;47.5;;;
                 """);
 
         mockMvc.perform(multipart("/api/import/packages/csv")
@@ -175,7 +179,7 @@ class CsvImportApiIntegrationTest {
                         org.hamcrest.Matchers.containsString("packages-template.csv")))
                 .andExpect(content().contentTypeCompatibleWith("text/csv"))
                 .andExpect(content().string(org.hamcrest.Matchers.startsWith(
-                        "id;label;weight_kg;destination_query;latitude;longitude;phone")));
+                        "id;label;weight_kg;destination_query;latitude;longitude;phone;window_start_at;window_end_at")));
     }
 
     private MockMultipartFile csv(String filename, String content) {

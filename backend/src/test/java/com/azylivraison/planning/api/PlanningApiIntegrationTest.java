@@ -38,10 +38,16 @@ class PlanningApiIntegrationTest {
                 .andExpect(jsonPath("$.plan.name").value("Tournée Antananarivo matin"))
                 .andExpect(jsonPath("$.plan.couriers[0].maxWeightKg").value(35))
                 .andExpect(jsonPath("$.plan.couriers[0].averageSpeedKmh").value(22))
+                .andExpect(jsonPath("$.plan.couriers[0].departureAt")
+                        .value("2026-08-03T07:30:00+03:00"))
+                .andExpect(jsonPath("$.plan.couriers[0].departureLocation.destinationQuery")
+                        .value("Isoraka, Antananarivo"))
                 .andExpect(jsonPath("$.plan.couriers[1].maxWeightKg").value(10))
                 .andExpect(jsonPath("$.plan.couriers[1].averageSpeedKmh").value(12))
                 .andExpect(jsonPath("$.plan.packages[0].destination.destinationQuery")
                         .value("Analakely, Antananarivo"))
+                .andExpect(jsonPath("$.plan.packages[0].deliveryWindow.endAt")
+                        .value("2026-08-03T11:00:00+03:00"))
                 .andExpect(jsonPath("$.plan.packages[0].destination.latitude").doesNotExist())
                 .andExpect(jsonPath("$.plan.packages[1].destination.latitude").value(-18.91))
                 .andExpect(jsonPath("$.plan.packages[1].destination.longitude").value(47.525));
@@ -120,6 +126,19 @@ class PlanningApiIntegrationTest {
                         .content(mismatchedOffset))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[?(@.code == 'TIMEZONE_OFFSET_MISMATCH')]").exists());
+    }
+
+    @Test
+    void rejectsAnInvertedDeliveryWindow() throws Exception {
+        String invertedWindow = readResource("plans/valid-plan.json")
+                .replace("2026-08-03T11:00:00+03:00", "2026-08-03T08:30:00+03:00");
+
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(invertedWindow))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.path == 'packages[0].deliveryWindow' && @.code == 'INVALID_TIME_WINDOW')]")
+                        .exists());
     }
 
     @Test

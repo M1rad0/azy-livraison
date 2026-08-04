@@ -11,11 +11,13 @@ import java.util.Map;
 import com.azylivraison.planning.api.DeliveryPlanRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.CourierRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.DeliveryPackageRequest;
+import com.azylivraison.planning.api.DeliveryPlanRequest.DeliveryTimeWindowRequest;
 import com.azylivraison.planning.api.DeliveryPlanRequest.LocationRequest;
 import com.azylivraison.planning.api.PlanningValidationError;
 import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
 import com.azylivraison.planning.domain.DeliveryPlan;
+import com.azylivraison.planning.domain.DeliveryTimeWindow;
 import com.azylivraison.planning.domain.Location;
 import com.azylivraison.planning.domain.PlanSettings;
 import com.azylivraison.planning.domain.PlanningPattern;
@@ -44,7 +46,7 @@ public class PlanValidationService {
         validateUniquePackageIds(request.packages(), errors);
 
         Location depot = normalizeLocation(request.depot(), "depot", errors);
-        List<Courier> couriers = normalizeCouriers(request.couriers());
+        List<Courier> couriers = normalizeCouriers(request.couriers(), errors);
         List<DeliveryPackage> packages = normalizePackages(request.packages(), errors);
 
         if (!errors.isEmpty()) {
@@ -148,9 +150,13 @@ public class PlanValidationService {
         }
     }
 
-    private List<Courier> normalizeCouriers(List<CourierRequest> requests) {
-        return requests.stream()
-                .map(request -> {
+    private List<Courier> normalizeCouriers(
+            List<CourierRequest> requests,
+            List<PlanningValidationError> errors) {
+        List<Courier> couriers = new ArrayList<>();
+
+        for (int index = 0; index < requests.size(); index++) {
+            CourierRequest request = requests.get(index);
                     VehiclePreset preset = vehiclePresetService.get(request.vehicleType());
                     BigDecimal maxWeightKg = request.maxWeightKg() != null
                             ? request.maxWeightKg()
@@ -159,14 +165,22 @@ public class PlanValidationService {
                             ? request.averageSpeedKmh()
                             : preset.averageSpeedKmh();
 
-                    return new Courier(
+            validateOptionalOffset(request.departureAt(), "couriers[" + index + "].departureAt", errors);
+            Location departureLocation = request.departureLocation() == null
+                    ? null
+                    : normalizeLocation(request.departureLocation(), "couriers[" + index + "].departureLocation", errors);
+
+            couriers.add(new Courier(
                             request.id().trim(),
                             request.name().trim(),
                             request.vehicleType(),
                             maxWeightKg,
-                            averageSpeedKmh);
-                })
-                .toList();
+                            averageSpeedKmh,
+                            request.departureAt(),
+                            departureLocation));
+        }
+
+        return List.copyOf(couriers);
     }
 
     private List<DeliveryPackage> normalizePackages(
@@ -176,15 +190,56 @@ public class PlanValidationService {
 
         for (int index = 0; index < requests.size(); index++) {
             DeliveryPackageRequest request = requests.get(index);
+            DeliveryTimeWindow deliveryWindow = normalizeDeliveryWindow(
+                    request.deliveryWindow(),
+                    "packages[" + index + "].deliveryWindow",
+                    errors);
             packages.add(new DeliveryPackage(
                     request.id().trim(),
                     request.label().trim(),
                     request.weightKg(),
                     normalizeOptional(request.phone()),
-                    normalizeLocation(request.destination(), "packages[" + index + "].destination", errors)));
+                    normalizeLocation(request.destination(), "packages[" + index + "].destination", errors),
+                    deliveryWindow));
         }
 
         return List.copyOf(packages);
+    }
+
+    private DeliveryTimeWindow normalizeDeliveryWindow(
+            DeliveryTimeWindowRequest request,
+            String path,
+            List<PlanningValidationError> errors) {
+        if (request == null) {
+            return null;
+        }
+
+        validateOptionalOffset(request.startAt(), path + ".startAt", errors);
+        validateOptionalOffset(request.endAt(), path + ".endAt", errors);
+        if (request.startAt() != null && request.endAt() != null
+                && !request.endAt().isAfter(request.startAt())) {
+            errors.add(error(
+                    path,
+                    "INVALID_TIME_WINDOW",
+                    "La fin du créneau doit être postérieure à son début."));
+        }
+        return new DeliveryTimeWindow(request.startAt(), request.endAt());
+    }
+
+    private void validateOptionalOffset(
+            java.time.OffsetDateTime value,
+            String path,
+            List<PlanningValidationError> errors) {
+        if (value == null) {
+            return;
+        }
+        ZoneId zoneId = ZoneId.of(MVP_TIMEZONE);
+        if (!zoneId.getRules().getOffset(value.toInstant()).equals(value.getOffset())) {
+            errors.add(error(
+                    path,
+                    "TIMEZONE_OFFSET_MISMATCH",
+                    "L'heure doit utiliser le décalage du fuseau Indian/Antananarivo."));
+        }
     }
 
     private Location normalizeLocation(
@@ -225,4 +280,3 @@ public class PlanValidationService {
         return new PlanningValidationError(path, code, message);
     }
 }
-

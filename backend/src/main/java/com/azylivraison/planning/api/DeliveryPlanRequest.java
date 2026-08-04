@@ -98,7 +98,20 @@ public record DeliveryPlanRequest(
 
             @DecimalMin(value = "0.0", inclusive = false,
                     message = "La vitesse moyenne doit être strictement positive.")
-            BigDecimal averageSpeedKmh) {
+            BigDecimal averageSpeedKmh,
+
+            OffsetDateTime departureAt,
+
+            @Valid
+            LocationRequest departureLocation) {
+    }
+
+    public record DeliveryTimeWindowRequest(
+            @NotNull(message = "Le début du créneau est obligatoire lorsqu'un créneau est renseigné.")
+            OffsetDateTime startAt,
+
+            @NotNull(message = "La fin du créneau est obligatoire lorsqu'un créneau est renseigné.")
+            OffsetDateTime endAt) {
     }
 
     public record DeliveryPackageRequest(
@@ -121,6 +134,9 @@ public record DeliveryPlanRequest(
 
             @NotNull(message = "La destination du colis est obligatoire.")
             @Valid
-            LocationRequest destination) {
+            LocationRequest destination,
+
+            @Valid
+            DeliveryTimeWindowRequest deliveryWindow) {
     }
 }

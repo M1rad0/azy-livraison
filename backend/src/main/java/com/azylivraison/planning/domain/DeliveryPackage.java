@@ -7,6 +7,6 @@ public record DeliveryPackage(
         String label,
         BigDecimal weightKg,
         String phone,
-        Location destination) {
+        Location destination,
+        DeliveryTimeWindow deliveryWindow) {
 }
-

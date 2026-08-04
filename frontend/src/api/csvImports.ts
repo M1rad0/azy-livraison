@@ -15,6 +15,10 @@ export interface DeliveryPackage {
   weightKg: number
   phone?: string
   destination: Location
+  deliveryWindow?: {
+    startAt: string
+    endAt: string
+  }
 }
 
 export interface Courier {
@@ -23,6 +27,8 @@ export interface Courier {
   vehicleType: 'MOTO' | 'BICYCLE'
   maxWeightKg: number
   averageSpeedKmh: number
+  departureAt?: string
+  departureLocation?: Location
 }
 
 export interface CsvRowError {
@@ -86,7 +92,7 @@ export async function downloadCsvTemplate(kind: ImportKind, accessToken: string)
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
-    throw new CsvImportFailure('Le modèle CSV n’a pas pu être téléchargé.', [], response.status)
+    throw new CsvImportFailure('Le modèle n’a pas pu être téléchargé.', [], response.status)
   }
 
   const blob = await response.blob()

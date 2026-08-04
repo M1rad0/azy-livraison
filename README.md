@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : socle, authentification, imports CSV, géocodage et routage local en place.** Le frontend React, l'API Spring Boot, PostgreSQL, Flyway et leur orchestration Docker Compose sont opérationnels. Nominatim résout les adresses de Madagascar et OSRM calcule matrices et tracés ; la carte et l'optimisation restent à implémenter.
+> **État du projet : préparation complète des plans et services géographiques locaux en place.** Après connexion, le frontend permet de choisir le pattern MVP, remplir un brouillon unique, y injecter les imports CSV, l'importer ou l'exporter en JSON et le valider avec Spring Boot. Nominatim résout les adresses de Madagascar et OSRM calcule matrices et tracés ; la carte de résultat et l'optimisation restent à implémenter.
 
 ## Objectif
 
@@ -289,7 +289,13 @@ Le JSON est le format canonique. Chaque fichier possède une version de schéma 
       "name": "Exemple Livreur",
       "vehicleType": "MOTO",
       "maxWeightKg": 35.0,
-      "averageSpeedKmh": 22.0
+      "averageSpeedKmh": 22.0,
+      "departureAt": "2026-08-03T07:30:00+03:00",
+      "departureLocation": {
+        "destinationQuery": "Isoraka, Antananarivo",
+        "latitude": -18.915,
+        "longitude": 47.518
+      }
     },
     {
       "id": "livreur-002",
@@ -305,13 +311,17 @@ Le JSON est le format canonique. Chaque fichier possède une version de schéma 
       "phone": "+261000000000",
       "destination": {
         "destinationQuery": "Analakely, Antananarivo"
+      },
+      "deliveryWindow": {
+        "startAt": "2026-08-03T09:00:00+03:00",
+        "endAt": "2026-08-03T11:00:00+03:00"
       }
     }
   ]
 }
 ```
 
-Les valeurs `maxWeightKg` et `averageSpeedKmh` absentes utilisent le préréglage du véhicule. Une valeur présente doit être positive et remplace le préréglage.
+Les valeurs `maxWeightKg` et `averageSpeedKmh` absentes utilisent le préréglage du véhicule. Une valeur présente doit être positive et remplace le préréglage. `deliveryWindow`, `departureAt` et `departureLocation` sont facultatifs. Sans départ personnalisé, un livreur part du dépôt à l'heure globale du plan. Un créneau présent doit posséder un début et une fin cohérents.
 
 Le contrat formel se trouve dans le [schéma JSON du plan 1.0](schemas/delivery-plan/1.0/delivery-plan.schema.json). Des fichiers [valide](schemas/examples/delivery-plan-1.0.valid.json) et [invalide](schemas/examples/delivery-plan-1.0.invalid.json) servent de références.
 
@@ -389,24 +399,24 @@ L'import est atomique : toutes les lignes sont contrôlées avant utilisation et
 Modèle prêt à remplir : [`schemas/csv/packages-template.csv`](schemas/csv/packages-template.csv).
 
 ```csv
-id;label;weight_kg;destination_query;latitude;longitude;phone
-colis-001;Client Analakely;4.5;Analakely, Antananarivo;;;+261000000000
-colis-002;Client coordonnees;2.0;;-18.9100;47.5250;
+id;label;weight_kg;destination_query;latitude;longitude;phone;window_start_at;window_end_at
+colis-001;Client Analakely;4.5;Analakely, Antananarivo;;;+261000000000;2026-08-05T09:00:00+03:00;2026-08-05T11:00:00+03:00
+colis-002;Client coordonnees;2.0;;-18.9100;47.5250;;;
 ```
 
-`destination_query` peut être vide uniquement lorsque les deux coordonnées sont présentes. Lorsqu'elles sont présentes, les coordonnées sont prioritaires.
+`destination_query` peut être vide uniquement lorsque les deux coordonnées sont présentes. Lorsqu'elles sont présentes, les coordonnées sont prioritaires. `window_start_at` et `window_end_at` sont facultatifs, mais doivent être fournis ensemble au format ISO avec le décalage `+03:00`.
 
 ### Livreurs
 
 Modèle prêt à remplir : [`schemas/csv/couriers-template.csv`](schemas/csv/couriers-template.csv).
 
 ```csv
-id;name;vehicle_type;max_weight_kg;average_speed_kmh
-livreur-001;Exemple Livreur;MOTO;35;22
-livreur-002;Exemple Vélo;BICYCLE;;
+id;name;vehicle_type;max_weight_kg;average_speed_kmh;departure_at;departure_query;departure_latitude;departure_longitude
+livreur-001;Exemple Livreur;MOTO;35;22;2026-08-05T08:00:00+03:00;Analakely, Antananarivo;;
+livreur-002;Exemple Vélo;BICYCLE;;;;;;
 ```
 
-Les cellules vides de capacité et de vitesse demandent l'utilisation du préréglage du véhicule.
+Les cellules vides de capacité et de vitesse demandent l'utilisation du préréglage du véhicule. Les quatre colonnes de départ sont facultatives ; sans valeur, le dépôt et l'heure globale du plan sont utilisés.
 
 Une réponse valide contient les éléments normalisés directement compatibles avec le plan :
 
@@ -709,7 +719,9 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - [x] Docker Compose, PostgreSQL, Flyway et health checks ;
 - [x] modèles métier, schéma JSON 1.0 et validation des plans ;
 - [x] compte initial, login, access token et refresh token ;
-- [x] imports CSV colis et livreurs.
+- [x] imports CSV colis et livreurs ;
+- [x] choix du pattern et workspace de formulaire unifié ;
+- [x] import/export JSON des brouillons de plan.
 
 ### Phase 2 — Géographie
 
@@ -726,9 +738,9 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - colis non affectés expliqués ;
 - affichage comparatif des tournées.
 
-### Phase 4 — Partage et mise en ligne
+### Phase 4 — Résultats, partage et mise en ligne
 
-- exports JSON, CSV et PDF ;
+- exports JSON, CSV et PDF du résultat ;
 - durcissement de la sécurité ;
 - sauvegarde optionnelle de métadonnées ;
 - fournisseur de tuiles adapté au trafic réel ;
@@ -736,7 +748,7 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 
 ### Plus tard
 
-- plusieurs points de récupération et de destination ;
+- plusieurs groupes possédant chacun une récupération et plusieurs destinations ;
 - profils routiers spécialisés ;
 - rôles et permissions ;
 - créneaux horaires ;
