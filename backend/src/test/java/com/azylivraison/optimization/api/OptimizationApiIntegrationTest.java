@@ -126,6 +126,28 @@ class OptimizationApiIntegrationTest {
                 .andExpect(jsonPath("$.routes[0].stops[*].clientName").value(hasItem("Client Alpha")));
     }
 
+    @Test
+    void startsAMultiClientRouteAtTheCourierOriginBeforeTheFirstPickup() throws Exception {
+        mockMvc.perform(post("/api/plans/optimize")
+                        .with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(multiClientPlanWithCourierDeparture()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.summary.assignedPackageCount").value(1))
+                .andExpect(jsonPath("$.routes.length()").value(1))
+                .andExpect(jsonPath("$.routes[0].departureLocation.label").value("Alasora"))
+                .andExpect(jsonPath("$.routes[0].departureAt").value(startsWith("2026-08-05T06:00:")))
+                .andExpect(jsonPath("$.routes[0].distanceMeters").value(1700))
+                .andExpect(jsonPath("$.routes[0].stops.length()").value(2))
+                .andExpect(jsonPath("$.routes[0].stops[0].type").value("PICKUP"))
+                .andExpect(jsonPath("$.routes[0].stops[0].deliveryGroupName").value("Retrait Ampasampito"))
+                .andExpect(jsonPath("$.routes[0].stops[0].distanceFromPreviousMeters").value(1200))
+                .andExpect(jsonPath("$.routes[0].stops[0].estimatedArrivalAt")
+                        .value(startsWith("2026-08-05T06:02:")))
+                .andExpect(jsonPath("$.routes[0].stops[1].type").value("DELIVERY"));
+    }
+
     private static String planWithOneDeliverableAndOneOverweightPackage() {
         return """
                 {
@@ -222,6 +244,43 @@ class OptimizationApiIntegrationTest {
                       }]
                     }
                   ]
+                }
+                """;
+    }
+
+    private static String multiClientPlanWithCourierDeparture() {
+        return """
+                {
+                  "schemaVersion": "2.0",
+                  "pattern": "MULTI_CLIENT_MULTI_PICKUP_DELIVERY",
+                  "planId": "multi-custom-start-001",
+                  "name": "Départ Alasora",
+                  "departureAt": "2026-08-05T06:00:00+03:00",
+                  "timezone": "Indian/Antananarivo",
+                  "settings": { "returnToDepot": false, "routingPreset": "MAIN_ROADS" },
+                  "couriers": [{
+                    "id": "livreur-001", "name": "Omni Man", "vehicleType": "MOTO",
+                    "maxWeightKg": 30, "averageSpeedKmh": 30,
+                    "departureAt": "2026-08-05T06:00:00+03:00",
+                    "departureLocation": {
+                      "label": "Alasora", "latitude": -18.9553235, "longitude": 47.5674821
+                    }
+                  }],
+                  "clients": [{
+                    "id": "client-001", "name": "Client",
+                    "deliveryGroups": [{
+                      "id": "course-001", "name": "Retrait Ampasampito",
+                      "pickup": {
+                        "label": "Ampasampito", "latitude": -18.8957014, "longitude": 47.545794
+                      },
+                      "packages": [{
+                        "id": "colis-001", "label": "Colis", "weightKg": 1.5,
+                        "destination": {
+                          "label": "Destination", "latitude": -18.9385813, "longitude": 47.5281625
+                        }
+                      }]
+                    }]
+                  }]
                 }
                 """;
     }

@@ -44,19 +44,23 @@ class MultiClientOrToolsRoutingOptimizer {
         long startedAt = System.nanoTime();
         int actualNodeCount = problem.matrixPointByNode().length;
         int vehicleCount = problem.couriers().size();
+        int syntheticStartCount = (int) Arrays.stream(problem.courierStartNodes())
+                .filter(node -> node < 0)
+                .count();
         int syntheticStartBase = actualNodeCount;
-        int syntheticEndBase = syntheticStartBase + vehicleCount;
+        int syntheticEndBase = syntheticStartBase + syntheticStartCount;
         int[] starts = new int[vehicleCount];
         int[] ends = new int[vehicleCount];
+        int nextSyntheticStart = syntheticStartBase;
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
             starts[vehicle] = problem.courierStartNodes()[vehicle] >= 0
                     ? problem.courierStartNodes()[vehicle]
-                    : syntheticStartBase + vehicle;
+                    : nextSyntheticStart++;
             ends[vehicle] = syntheticEndBase + vehicle;
         }
 
         RoutingIndexManager manager = new RoutingIndexManager(
-                actualNodeCount + vehicleCount * 2,
+                actualNodeCount + syntheticStartCount + vehicleCount,
                 vehicleCount,
                 starts,
                 ends);
