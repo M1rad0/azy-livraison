@@ -77,6 +77,25 @@ describe('App', () => {
     expect(screen.getByText('admin')).toBeInTheDocument()
   })
 
+  it('keeps file actions above the workspace and changes the sidebar with the active step', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch())
+    render(<App />)
+
+    await openWorkspace()
+    expect(screen.getByRole('region', { name: 'Fichier de travail' })).toBeInTheDocument()
+    expect(screen.getByText('Poids total')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Prêt à préparer les tournées ?' })).not.toBeInTheDocument()
+
+    selectWorkspaceTab('Livraisons')
+    expect(screen.getByText('Poids total')).toBeInTheDocument()
+    expect(screen.getByLabelText('Ouvrir une sauvegarde')).toBeInTheDocument()
+
+    selectWorkspaceTab('Livreurs')
+    expect(screen.getByRole('heading', { name: 'Prêt à préparer les tournées ?' })).toBeInTheDocument()
+    expect(screen.queryByText('Poids total')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Générer les tournées' })).toBeInTheDocument()
+  })
+
   it('edits withdrawals inline, packages in dialogs, then shows the multi-client summary', async () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
@@ -306,6 +325,7 @@ describe('App', () => {
     await openWorkspace()
     fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
     await screen.findByDisplayValue('Contrôle des trajets')
+    selectWorkspaceTab('Livreurs')
     fireEvent.click(screen.getByRole('button', { name: 'Visualiser les trajets' }))
 
     expect(await screen.findByRole('heading', { name: 'Aperçu des trajets' })).toBeInTheDocument()
@@ -552,6 +572,7 @@ describe('App', () => {
     await openWorkspace()
     fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
     await screen.findByDisplayValue('Tournée résultat')
+    selectWorkspaceTab('Livreurs')
     fireEvent.click(screen.getByRole('button', { name: 'Générer les tournées' }))
 
     expect(await screen.findByRole('heading', { name: 'Les tournées sont prêtes.' })).toBeInTheDocument()
