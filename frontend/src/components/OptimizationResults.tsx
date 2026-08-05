@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { OptimizationResult, CourierRoute, UnassignedReason } from '../api/optimization'
+import type { OptimizationResult, CourierRoute, RouteStop, UnassignedReason } from '../api/optimization'
 import type { AnyDeliveryPlan } from '../api/plans'
 import { calculateRoute, type RoutingRouteResponse } from '../api/routing'
 
@@ -45,6 +45,31 @@ function hasCoordinates(location: { latitude?: number; longitude?: number }) {
 
 function isDeliveryStop(stop: { type?: 'PICKUP' | 'DELIVERY' }) {
   return stop.type !== 'PICKUP'
+}
+
+interface DispatchStop {
+  stop: RouteStop
+  pickupPackageCount: number
+}
+
+function dispatchStops(stops: RouteStop[]): DispatchStop[] {
+  return stops.reduce<DispatchStop[]>((entries, stop) => {
+    const previous = entries.at(-1)
+    if (stop.type === 'PICKUP'
+      && previous?.stop.type === 'PICKUP'
+      && previous.stop.deliveryGroupId === stop.deliveryGroupId) {
+      previous.pickupPackageCount += 1
+      return entries
+    }
+    entries.push({ stop, pickupPackageCount: 1 })
+    return entries
+  }, [])
+}
+
+function dispatchStopLabel(stop: RouteStop) {
+  return stop.type === 'PICKUP'
+    ? `Récupération — ${stop.deliveryGroupName || stop.destination.label || 'Point de retrait'}`
+    : stop.packageLabel
 }
 
 function formatDuration(seconds: number) {
@@ -266,7 +291,7 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
       'Livreur',
       'Véhicule',
       'Ordre',
-      'Colis',
+      'Étape',
       'Destination',
       'Téléphone',
       'Heure prévue',
@@ -274,15 +299,15 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
     ]]
 
     result.routes.forEach((route) => {
-      route.stops.filter(isDeliveryStop).forEach((stop) => rows.push([
+      dispatchStops(route.stops).forEach(({ stop, pickupPackageCount }) => rows.push([
         route.courierName,
         route.vehicleType === 'MOTO' ? 'Moto' : 'Bicyclette',
         stop.order,
-        stop.packageLabel,
+        dispatchStopLabel(stop),
         formatLocation(stop.destination),
-        stop.phone,
+        stop.type === 'PICKUP' ? undefined : stop.phone,
         formatTime(stop.estimatedArrivalAt),
-        'Affecté',
+        stop.type === 'PICKUP' ? `${pickupPackageCount} colis à récupérer` : 'À livrer',
       ]))
     })
     result.unassignedPackages.forEach((item) => rows.push([
@@ -373,20 +398,20 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
           <div className="dispatch-groups">
             {result.routes.map((route, routeIndex) => {
               const color = routeColors.get(route.courierId) ?? ROUTE_COLORS[routeIndex % ROUTE_COLORS.length]
-              const deliveries = route.stops.filter(isDeliveryStop)
+              const stops = dispatchStops(route.stops)
               return (
                 <article className="dispatch-group" key={route.courierId} style={{ '--route-color': color } as CSSProperties}>
                   <header>
                     <span className="dispatch-group__avatar"><Bike aria-hidden="true" /></span>
                     <div><small>{route.vehicleType === 'MOTO' ? 'Moto' : 'Bicyclette'}</small><h3>{route.courierName}</h3></div>
-                    <div className="dispatch-group__first"><span>Première livraison</span><strong>{deliveries[0] ? formatTime(deliveries[0].estimatedArrivalAt) : '—'}</strong></div>
+                    <div className="dispatch-group__first"><span>Premier arrêt</span><strong>{stops[0] ? formatTime(stops[0].stop.estimatedArrivalAt) : '—'}</strong></div>
                   </header>
                   <ol className="dispatch-list">
-                    {deliveries.map((stop, deliveryIndex) => (
-                      <li key={stop.packageId}>
+                    {stops.map(({ stop, pickupPackageCount }, stopIndex) => (
+                      <li key={`${stop.type ?? 'DELIVERY'}-${stop.packageId}-${stop.order}`} className={stop.type === 'PICKUP' ? 'dispatch-list__pickup' : ''}>
                         <time dateTime={stop.estimatedArrivalAt}>{formatTime(stop.estimatedArrivalAt)}</time>
-                        <span className="dispatch-list__order" style={{ backgroundColor: color }}>{deliveryIndex + 1}</span>
-                        <div className="dispatch-list__package"><strong>{stop.packageLabel}</strong>{stop.clientName && <small>{stop.clientName} · {stop.deliveryGroupName}</small>}{stop.phone && <small><Smartphone aria-hidden="true" />{stop.phone}</small>}</div>
+                        <span className="dispatch-list__order" style={{ backgroundColor: stop.type === 'PICKUP' ? '#0b3557' : color }}>{stopIndex + 1}</span>
+                        <div className="dispatch-list__package"><strong>{dispatchStopLabel(stop)}</strong>{stop.type === 'PICKUP' && <small>{stop.clientName}{pickupPackageCount > 1 ? ` · ${pickupPackageCount} colis` : ''}</small>}{stop.type !== 'PICKUP' && stop.clientName && <small>{stop.clientName} · {stop.deliveryGroupName}</small>}{stop.type !== 'PICKUP' && stop.phone && <small><Smartphone aria-hidden="true" />{stop.phone}</small>}</div>
                         <div className="dispatch-list__destination"><MapPin aria-hidden="true" /><span>{formatLocation(stop.destination)}</span></div>
                       </li>
                     ))}

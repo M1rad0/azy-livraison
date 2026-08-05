@@ -2721,6 +2721,19 @@ tbody tr:last-child td {
   border-bottom: 0;
 }
 
+.dispatch-list li.dispatch-list__pickup {
+  background: linear-gradient(90deg, #eef5f9, #f8fbfd);
+  border-bottom-color: #cadbe6;
+}
+
+.dispatch-list li.dispatch-list__pickup .dispatch-list__package strong {
+  color: var(--forest-deep);
+}
+
+.dispatch-list li.dispatch-list__pickup .dispatch-list__destination svg {
+  color: var(--forest-deep);
+}
+
 .dispatch-list time {
   color: var(--forest-deep);
   font-size: 1.05rem;
