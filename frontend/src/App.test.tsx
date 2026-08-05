@@ -81,10 +81,7 @@ describe('App', () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
 
-    document.documentElement.scrollTop = 240
     await openWorkspace()
-    expect(document.documentElement.scrollTop).toBe(0)
-    expect(screen.getByRole('main')).toHaveClass('app-shell--workspace')
     expect(screen.getByRole('region', { name: 'Fichier de travail' })).toBeInTheDocument()
     expect(screen.getByText('Poids total')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Prêt à préparer les tournées ?' })).not.toBeInTheDocument()
@@ -117,10 +114,6 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Nom de la course'), { target: { value: 'Course Alpha' } })
 
     expect(screen.getByText('Course Alpha')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Réduire' }))
-    expect(screen.queryByLabelText('Nom de la course')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Déployer' }))
-    expect(screen.getByLabelText('Nom de la course')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Ajouter les colis de ce retrait/ }))
 
     const packageDialog = screen.getByRole('dialog', { name: 'Nouveau colis' })
