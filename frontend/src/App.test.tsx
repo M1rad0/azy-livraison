@@ -77,19 +77,42 @@ describe('App', () => {
     expect(screen.getByText('admin')).toBeInTheDocument()
   })
 
-  it('opens the multi-client workspace and creates a client delivery group', async () => {
+  it('edits withdrawals inline, packages in dialogs, then shows the multi-client summary', async () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode multi-clients' }))
     expect(await screen.findByRole('heading', { name: 'Rassemblez toutes les courses.' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute('aria-selected', 'true')
 
+    selectWorkspaceTab('Livraisons')
+    expect(screen.getByRole('tab', { name: /^Livraisons/ })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter un client' }))
     fireEvent.change(screen.getByLabelText('Nom du client'), { target: { value: 'Client Alpha' } })
     fireEvent.click(screen.getByRole('button', { name: /Ajouter un retrait/ }))
 
-    expect(screen.getByText('Nouvelle course')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Ajouter les colis de ce retrait/ })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Nom de la course'), { target: { value: 'Course Alpha' } })
+
+    expect(screen.getByText('Course Alpha')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter les colis de ce retrait/ }))
+
+    const packageDialog = screen.getByRole('dialog', { name: 'Nouveau colis' })
+    fireEvent.change(within(packageDialog).getByLabelText('Libellé'), { target: { value: 'Colis Bureau' } })
+    fireEvent.change(within(packageDialog).getByLabelText('Poids (kg)'), { target: { value: '2.5' } })
+    fireEvent.click(within(packageDialog).getByRole('button', { name: 'Terminer' }))
+
+    expect(screen.getByText('Colis Bureau')).toBeInTheDocument()
+    expect(screen.getAllByText('2,5 kg').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier Colis Bureau' }))
+    expect(screen.getByRole('dialog', { name: 'Colis Bureau' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Résumé' }))
+    const summaryDialog = screen.getByRole('dialog', { name: 'Résumé du plan' })
+    expect(within(summaryDialog).getByText('Client Alpha')).toBeInTheDocument()
+    expect(within(summaryDialog).getByText('Course Alpha')).toBeInTheDocument()
+    expect(within(summaryDialog).getByText('Colis Bureau')).toBeInTheDocument()
     expect(screen.getByText('Plusieurs clients · plusieurs retraits')).toBeInTheDocument()
   })
 
