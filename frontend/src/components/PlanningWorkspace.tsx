@@ -38,6 +38,7 @@ import { optimizePlan, type OptimizationResult } from '../api/optimization'
 import { PlanMapPreview } from './PlanMapPreview'
 import { LocationPicker } from './LocationPicker'
 import { OptimizationResults } from './OptimizationResults'
+import { validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
 
 interface PlanningWorkspaceProps {
   accessToken: string
@@ -190,6 +191,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
   const [fileMessage, setFileMessage] = useState<string>()
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('plan')
 
   function replacePlan(nextPlan: DeliveryPlan) {
     setPlan(nextPlan)
@@ -296,6 +298,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     } catch (error) {
       if (error instanceof PlanValidationFailure) {
         setValidationErrors(error.errors)
+        if (error.errors[0]) setActiveTab(validationPathTab(error.errors[0].path))
         setValidationMessage(error.message)
       } else {
         setValidationMessage(error instanceof Error ? error.message : 'Validation impossible.')
@@ -318,6 +321,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     } catch (error) {
       if (error instanceof PlanValidationFailure) {
         setValidationErrors(error.errors)
+        if (error.errors[0]) setActiveTab(validationPathTab(error.errors[0].path))
         setValidationMessage(error.message)
       } else {
         setValidationMessage(error instanceof Error ? error.message : 'Génération impossible.')
@@ -328,6 +332,11 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   }
 
   const totalWeight = plan.packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0)
+  const tabErrorCounts = validationErrors.reduce<Partial<Record<WorkspaceTab, number>>>((counts, error) => {
+    const tab = validationPathTab(error.path)
+    counts[tab] = (counts[tab] ?? 0) + 1
+    return counts
+  }, {})
 
   if (optimizationResult) {
     return (
@@ -358,9 +367,17 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
         </div>
       </section>
 
+      <WorkspaceTabs
+        activeTab={activeTab}
+        deliveryMeta={`${plan.packages.length} colis`}
+        courierCount={plan.couriers.length}
+        errorCounts={tabErrorCounts}
+        onChange={setActiveTab}
+      />
+
       <div className="planning-layout">
-        <div className="planning-form">
-          <section className="workspace-section" aria-labelledby="plan-general-title">
+        <div className="planning-form" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
+          {activeTab === 'plan' && <section className="workspace-section" aria-labelledby="plan-general-title">
             <div className="workspace-section__heading">
               <div><span><ClipboardList aria-hidden="true" /></span><div><p className="eyebrow">Brouillon</p><h2 id="plan-general-title">Informations générales</h2></div></div>
             </div>
@@ -379,9 +396,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                 <span><strong>Retour au point de récupération</strong><small>Ajouter le trajet retour à chaque tournée.</small></span>
               </label>
             </div>
-          </section>
+          </section>}
 
-          <section className="workspace-section" aria-labelledby="depot-title">
+          {activeTab === 'deliveries' && <section className="workspace-section" aria-labelledby="depot-title">
             <div className="workspace-section__heading">
               <div><span><MapPin aria-hidden="true" /></span><div><p className="eyebrow">Origine commune</p><h2 id="depot-title">Point de récupération</h2></div></div>
               <span className="section-badge">1 point</span>
@@ -398,9 +415,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
               description="Recherchez le lieu commun de récupération, puis confirmez-le sur la carte."
               onChange={(location) => updateDepot(location)}
             />
-          </section>
+          </section>}
 
-          <section className="workspace-section" aria-labelledby="packages-title">
+          {activeTab === 'deliveries' && <section className="workspace-section" aria-labelledby="packages-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
               <div><span><PackagePlus aria-hidden="true" /></span><div><p className="eyebrow">Destinations</p><h2 id="packages-title">Colis</h2></div></div>
               <div className="workspace-section__actions">
@@ -461,9 +478,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                 ))}
               </div>
             )}
-          </section>
+          </section>}
 
-          <section className="workspace-section" aria-labelledby="couriers-title">
+          {activeTab === 'couriers' && <section className="workspace-section" aria-labelledby="couriers-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
               <div><span><Users aria-hidden="true" /></span><div><p className="eyebrow">Équipe</p><h2 id="couriers-title">Livreurs</h2></div></div>
               <div className="workspace-section__actions">
@@ -529,55 +546,12 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                 ))}
               </div>
             )}
-          </section>
+          </section>}
         </div>
-
         <aside className="plan-sidebar">
-          <div className="plan-sidebar__card">
-            <p className="eyebrow">Plan en cours</p>
-            <h2>{plan.name || 'Sans titre'}</h2>
-            <dl className="plan-summary">
-              <div><dt>Colis</dt><dd>{plan.packages.length}</dd></div>
-              <div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div>
-              <div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div>
-              <div><dt>Retour dépôt</dt><dd>{plan.settings.returnToDepot ? 'Oui' : 'Non'}</dd></div>
-            </dl>
-          </div>
-
-          <div className="plan-sidebar__card plan-files">
-            <div><p className="eyebrow">Reprendre plus tard</p><h3>Sauvegarde du brouillon</h3></div>
-            <p>Téléchargez votre préparation pour la partager ou la reprendre plus tard, même sur un autre ordinateur.</p>
-            <input id={jsonInputId} type="file" accept=".json,application/json" onChange={(event) => void importJson(event)} />
-            <label className="button button--secondary" htmlFor={jsonInputId}><FolderOpen aria-hidden="true" />Ouvrir une sauvegarde</label>
-            <button className="button button--secondary" type="button" onClick={exportJson}><Save aria-hidden="true" />Télécharger la sauvegarde</button>
-            {fileMessage && <span className="inline-message" role="status">{fileMessage}</span>}
-          </div>
-
-          <div className="plan-sidebar__card plan-validation">
-            <p className="eyebrow">Contrôle métier</p>
-            <h3>Prêt à continuer ?</h3>
-            <p>Nous vérifions les informations, les destinations et les capacités avant de préparer les tournées.</p>
-            <button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}>
-              <MapPinned aria-hidden="true" />Visualiser les trajets
-            </button>
-            <button className="button button--wide" type="button" disabled={validating} onClick={() => void handleValidation()}>
-              <ShieldCheck aria-hidden="true" />{validating ? 'Validation…' : 'Valider le plan'}
-            </button>
-            <button className="button button--wide button--generate" type="button" disabled={generating || validating} onClick={() => void handleGeneration()}>
-              {generating ? <LoaderCircle className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-              {generating ? 'Optimisation en cours…' : 'Générer les tournées'}
-            </button>
-            {validationMessage && (
-              <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>
-                {validationMessage}
-              </p>
-            )}
-            {validationErrors.length > 0 && (
-              <ul className="validation-errors">
-                {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}
-              </ul>
-            )}
-          </div>
+          <div className="plan-sidebar__card"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Colis</dt><dd>{plan.packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div><div><dt>Retour dépôt</dt><dd>{plan.settings.returnToDepot ? 'Oui' : 'Non'}</dd></div></dl></div>
+          <div className="plan-sidebar__card plan-files"><div><p className="eyebrow">Reprendre plus tard</p><h3>Sauvegarde du brouillon</h3></div><p>Téléchargez votre préparation pour la partager ou la reprendre plus tard, même sur un autre ordinateur.</p><input id={jsonInputId} type="file" accept=".json,application/json" onChange={(event) => void importJson(event)} /><label className="button button--secondary" htmlFor={jsonInputId}><FolderOpen aria-hidden="true" />Ouvrir une sauvegarde</label><button className="button button--secondary" type="button" onClick={exportJson}><Save aria-hidden="true" />Télécharger la sauvegarde</button>{fileMessage && <span className="inline-message" role="status">{fileMessage}</span>}</div>
+          <div className="plan-sidebar__card plan-validation"><p className="eyebrow">Contrôle métier</p><h3>Prêt à continuer ?</h3><p>Nous vérifions les informations, les destinations et les capacités avant de préparer les tournées.</p><button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}><MapPinned aria-hidden="true" />Visualiser les trajets</button><button className="button button--wide" type="button" disabled={validating} onClick={() => void handleValidation()}><ShieldCheck aria-hidden="true" />{validating ? 'Validation…' : 'Valider le plan'}</button><button className="button button--wide button--generate" type="button" disabled={generating || validating} onClick={() => void handleGeneration()}>{generating ? <LoaderCircle className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}{generating ? 'Optimisation en cours…' : 'Générer les tournées'}</button>{validationMessage && <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>{validationMessage}</p>}{validationErrors.length > 0 && <ul className="validation-errors">{validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}</ul>}</div>
         </aside>
       </div>
       {mapPreviewOpen && <PlanMapPreview plan={plan} accessToken={accessToken} onClose={() => setMapPreviewOpen(false)} />}

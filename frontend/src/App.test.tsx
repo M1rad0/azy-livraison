@@ -53,6 +53,10 @@ async function openWorkspace() {
   await screen.findByRole('heading', { name: 'Construisez votre tournée.' })
 }
 
+function selectWorkspaceTab(name: 'Plan' | 'Livraisons' | 'Livreurs') {
+  fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }))
+}
+
 describe('App', () => {
   afterEach(() => {
     cleanup()
@@ -149,6 +153,7 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
+    selectWorkspaceTab('Livraisons')
     expect(screen.getByRole('button', { name: 'Changer de mode' }).closest('nav')).toHaveClass('workspace-context-bar')
     expect(screen.getByRole('button', { name: 'Changer de mode' }).closest('header')).toBeNull()
     const file = new File(['id;label\ncolis-001;Client Analakely'], 'packages.csv', { type: 'text/csv' })
@@ -189,6 +194,7 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
+    selectWorkspaceTab('Livraisons')
     fireEvent.click(screen.getByRole('button', { name: 'Choisir sur la carte' }))
     fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
     fireEvent.click(await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ }))
@@ -221,6 +227,7 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
+    selectWorkspaceTab('Livraisons')
     fireEvent.click(screen.getByRole('button', { name: /Ajouter votre premier colis/ }))
 
     fireEvent.click(within(screen.getByRole('region', { name: 'Colis' })).getByRole('button', { name: 'Choisir sur la carte' }))
@@ -322,18 +329,21 @@ describe('App', () => {
 
     render(<App />)
     await openWorkspace()
+    selectWorkspaceTab('Livraisons')
     fireEvent.change(screen.getByLabelText('Liste de colis à importer'), {
       target: { files: [new File(['packages'], 'packages.csv', { type: 'text/csv' })] },
     })
+    await screen.findByDisplayValue('Client A')
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un créneau' }))
+    fireEvent.change(screen.getByLabelText('Livrer à partir de'), { target: { value: '2026-08-05T09:00' } })
+    fireEvent.change(screen.getByLabelText('Livrer avant'), { target: { value: '2026-08-05T11:00' } })
+
+    selectWorkspaceTab('Livreurs')
     fireEvent.change(screen.getByLabelText('Liste de livreurs à importer'), {
       target: { files: [new File(['couriers'], 'couriers.csv', { type: 'text/csv' })] },
     })
-    await screen.findByDisplayValue('Client A')
     await screen.findByDisplayValue('Soa')
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un créneau' }))
     fireEvent.click(screen.getByRole('button', { name: 'Personnaliser' }))
-    fireEvent.change(screen.getByLabelText('Livrer à partir de'), { target: { value: '2026-08-05T09:00' } })
-    fireEvent.change(screen.getByLabelText('Livrer avant'), { target: { value: '2026-08-05T11:00' } })
     fireEvent.change(screen.getByLabelText('Heure de départ'), { target: { value: '2026-08-05T07:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Valider le plan' }))
 
@@ -386,10 +396,12 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
 
     expect(await screen.findByDisplayValue('Plan repris depuis un fichier')).toBeInTheDocument()
+    selectWorkspaceTab('Livreurs')
     expect(screen.getByDisplayValue('Soa')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Client A')).toBeInTheDocument()
     expect(screen.getByDisplayValue('30')).toBeInTheDocument()
     expect(screen.getByDisplayValue('25')).toBeInTheDocument()
+    selectWorkspaceTab('Livraisons')
+    expect(screen.getByDisplayValue('Client A')).toBeInTheDocument()
     expect(screen.getByText(/plan-reprise.json chargé/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Télécharger la sauvegarde' }))
