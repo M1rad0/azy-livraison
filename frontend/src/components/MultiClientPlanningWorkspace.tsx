@@ -1,6 +1,7 @@
-import { useId, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import {
   Building2,
+  ChevronDown,
   ClipboardList,
   Clock3,
   Eye,
@@ -35,6 +36,8 @@ import { OptimizationResults } from './OptimizationResults'
 import { PlanMapPreview } from './PlanMapPreview'
 import { CsvImportButton } from './PlanningWorkspace'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
+import { WorkspaceIntro } from './WorkspaceIntro'
+import { WorkspaceTabActionBar } from './WorkspaceTabActionBar'
 import { validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
 
 interface Props {
@@ -119,6 +122,21 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
   const [editor, setEditor] = useState<EditorState>()
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('plan')
+  const [collapsedClients, setCollapsedClients] = useState<Set<number>>(() => new Set())
+  const scrollPanelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scrollPanelRef.current) scrollPanelRef.current.scrollTop = 0
+  }, [activeTab])
+
+  function toggleClient(clientIndex: number) {
+    setCollapsedClients((current) => {
+      const next = new Set(current)
+      if (next.has(clientIndex)) next.delete(clientIndex)
+      else next.add(clientIndex)
+      return next
+    })
+  }
 
   function updatePlan(update: (current: MultiClientDeliveryPlan) => MultiClientDeliveryPlan) {
     setPlan((current) => update(current))
@@ -138,6 +156,11 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       ...current,
       clients: current.clients.map((client, index) => index === clientIndex ? { ...client, ...update } : client),
     }))
+  }
+
+  function removeClient(clientIndex: number) {
+    updatePlan((current) => ({ ...current, clients: current.clients.filter((_, index) => index !== clientIndex) }))
+    setCollapsedClients(new Set())
   }
 
   function updateGroup(clientIndex: number, groupIndex: number, update: Partial<DeliveryGroup>) {
@@ -244,6 +267,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       }
       const loaded = materializeVehicleDefaults(parsed)
       setPlan(loaded)
+      setCollapsedClients(new Set())
       setValidationErrors([])
       const packageCount = loaded.clients.reduce((sum, client) => sum
         + client.deliveryGroups.reduce((groupSum, group) => groupSum + group.packages.length, 0), 0)
@@ -303,14 +327,12 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
 
   return (
     <div className="planning-workspace planning-workspace--multi">
-      <section className="workspace-hero" aria-labelledby="multi-workspace-title">
-        <div>
-          <p className="eyebrow">Plan · Plusieurs clients et retraits</p>
-          <h1 id="multi-workspace-title">Rassemblez toutes les courses.</h1>
-          <p>Chaque client peut fournir plusieurs retraits. La même équipe de livreurs prend en charge l’ensemble.</p>
-        </div>
-        <div className="workspace-progress"><span className="is-complete">1 <small>Mode</small></span><span className="is-active">2 <small>Préparation</small></span><span>3 <small>Résultat</small></span></div>
-      </section>
+      <WorkspaceIntro
+        titleId="multi-workspace-title"
+        eyebrow="Plan · Plusieurs clients et retraits"
+        title="Rassemblez toutes les courses."
+        description="Chaque client peut fournir plusieurs retraits. La même équipe de livreurs prend en charge l’ensemble."
+      />
 
       <WorkspaceDraftBar inputId={jsonInputId} message={fileMessage} onImport={importJson} onExport={exportJson} />
 
@@ -332,7 +354,25 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       )}
 
       <div className="planning-layout">
-        <div className="planning-form" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
+        <section className="workspace-panel">
+          <WorkspaceTabActionBar
+            title={activeTab === 'plan' ? 'Informations générales' : activeTab === 'deliveries' ? 'Clients et retraits' : 'Équipe partagée'}
+            description={activeTab === 'plan' ? 'Identité et horaire du plan commun' : activeTab === 'deliveries' ? `${plan.clients.length} client${plan.clients.length > 1 ? 's' : ''} · ${groups.length} retrait${groups.length > 1 ? 's' : ''}` : `${plan.couriers.length} livreur${plan.couriers.length > 1 ? 's' : ''}`}
+          >
+            {activeTab === 'deliveries' ? (
+              <>
+                <button className="button button--secondary" type="button" onClick={() => setEditor({ kind: 'summary' })}><Eye />Résumé</button>
+                <button className="button" type="button" onClick={addClient}><Plus />Ajouter un client</button>
+              </>
+            ) : activeTab === 'couriers' ? (
+              <>
+                <CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => { updatePlan((current) => ({ ...current, couriers: items })); setFileMessage(`${filename} a remplacé la liste des livreurs.`) }} />
+                <button className="button" type="button" onClick={addCourier}><UserPlus />Ajouter un livreur</button>
+              </>
+            ) : undefined}
+          </WorkspaceTabActionBar>
+
+          <div ref={scrollPanelRef} className="planning-form workspace-panel__scroll" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
           {activeTab === 'plan' && <section className="workspace-section">
             <div className="workspace-section__heading"><div><span><ClipboardList /></span><div><p className="eyebrow">Brouillon commun</p><h2>Informations générales</h2></div></div></div>
             <div className="workspace-fields">
@@ -343,12 +383,9 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
           </section>}
 
           {activeTab === 'deliveries' && <section className="workspace-section multi-clients-section">
-            <div className="workspace-section__heading workspace-section__heading--actions">
+            <div className="workspace-section__heading">
               <div><span><Building2 /></span><div><p className="eyebrow">Demandes à traiter</p><h2>Clients</h2></div></div>
-              <div className="workspace-section__actions">
-                <button className="button button--secondary" type="button" onClick={() => setEditor({ kind: 'summary' })}><Eye />Résumé</button>
-                <button className="button" type="button" onClick={addClient}><Plus />Ajouter un client</button>
-              </div>
+              <span className="section-badge">{plan.clients.length} client{plan.clients.length > 1 ? 's' : ''}</span>
             </div>
             {plan.clients.length === 0 ? (
               <button className="workspace-empty" type="button" onClick={addClient}><span><Building2 /></span><strong>Ajouter votre premier client</strong><small>puis créez ses retraits et ses colis</small></button>
@@ -362,10 +399,11 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
                   </div>
                   <div className="multi-client-card__actions">
                     <span>{client.deliveryGroups.length} retrait{client.deliveryGroups.length > 1 ? 's' : ''}</span>
-                    <button className="text-button" type="button" onClick={() => updatePlan((current) => ({ ...current, clients: current.clients.filter((_, index) => index !== clientIndex) }))}><Trash2 />Supprimer</button>
+                    <button className={`client-collapse${collapsedClients.has(clientIndex) ? ' is-collapsed' : ''}`} type="button" aria-expanded={!collapsedClients.has(clientIndex)} onClick={() => toggleClient(clientIndex)}><ChevronDown />{collapsedClients.has(clientIndex) ? 'Déployer' : 'Réduire'}</button>
+                    <button className="text-button" type="button" onClick={() => removeClient(clientIndex)}><Trash2 />Supprimer</button>
                   </div>
                 </header>
-                <div className="delivery-groups">
+                {!collapsedClients.has(clientIndex) && <div className="delivery-groups">
                   {client.deliveryGroups.map((group, groupIndex) => (
                     <section className="delivery-group-card delivery-group-card--compact" key={`${group.id}-${groupIndex}`}>
                       <div className="delivery-group-card__heading">
@@ -413,15 +451,15 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
                     </section>
                   ))}
                   <button className="add-group-button" type="button" onClick={() => addGroup(clientIndex)}><Plus /><span><strong>Ajouter un retrait</strong><small>Une origine avec une ou plusieurs livraisons</small></span></button>
-                </div>
+                </div>}
               </article>
             ))}</div>}
           </section>}
 
           {activeTab === 'couriers' && <section className="workspace-section">
-            <div className="workspace-section__heading workspace-section__heading--actions">
+            <div className="workspace-section__heading">
               <div><span><Users /></span><div><p className="eyebrow">Équipe partagée</p><h2>Livreurs</h2></div></div>
-              <div className="workspace-section__actions"><CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => { updatePlan((current) => ({ ...current, couriers: items })); setFileMessage(`${filename} a remplacé la liste des livreurs.`) }} /><button className="button" type="button" onClick={addCourier}><UserPlus />Ajouter</button></div>
+              <span className="section-badge">{plan.couriers.length} livreur{plan.couriers.length > 1 ? 's' : ''}</span>
             </div>
             {plan.couriers.length === 0 ? <button className="workspace-empty" type="button" onClick={addCourier}><span><UserPlus /></span><strong>Ajouter votre premier livreur</strong><small>l’équipe sera utilisée pour tous les clients</small></button> : <div className="editable-list">{plan.couriers.map((courier, index) => (
               <article className="editable-card" key={`${courier.id}-${index}`}>
@@ -439,8 +477,9 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
               </article>
             ))}</div>}
           </section>}
-        </div>
-        <aside className="plan-sidebar">
+          </div>
+        </section>
+        <aside className="plan-sidebar plan-sidebar--scroll">
           {activeTab !== 'couriers' ? (
             <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Clients</dt><dd>{plan.clients.length}</dd></div><div><dt>Retraits</dt><dd>{groups.length}</dd></div><div><dt>Colis</dt><dd>{packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div></dl></div>
           ) : (

@@ -1,4 +1,4 @@
-import { useId, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import {
   Clock3,
   ClipboardList,
@@ -37,6 +37,8 @@ import { PlanMapPreview } from './PlanMapPreview'
 import { LocationPicker } from './LocationPicker'
 import { OptimizationResults } from './OptimizationResults'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
+import { WorkspaceIntro } from './WorkspaceIntro'
+import { WorkspaceTabActionBar } from './WorkspaceTabActionBar'
 import { validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
 
 interface PlanningWorkspaceProps {
@@ -191,6 +193,11 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   const [fileMessage, setFileMessage] = useState<string>()
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('plan')
+  const scrollPanelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scrollPanelRef.current) scrollPanelRef.current.scrollTop = 0
+  }, [activeTab])
 
   function replacePlan(nextPlan: DeliveryPlan) {
     setPlan(nextPlan)
@@ -353,18 +360,12 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
 
   return (
     <div className="planning-workspace">
-      <section className="workspace-hero" aria-labelledby="workspace-title">
-        <div>
-          <p className="eyebrow">Plan · Un retrait vers plusieurs livraisons</p>
-          <h1 id="workspace-title">Construisez votre tournée.</h1>
-          <p>Chaque saisie et chaque import enrichissent le même brouillon partageable.</p>
-        </div>
-        <div className="workspace-progress" aria-label="Étapes du plan">
-          <span className="is-complete">1 <small>Mode</small></span>
-          <span className="is-active">2 <small>Préparation</small></span>
-          <span>3 <small>Résultat</small></span>
-        </div>
-      </section>
+      <WorkspaceIntro
+        titleId="workspace-title"
+        eyebrow="Plan · Un retrait vers plusieurs livraisons"
+        title="Construisez votre tournée."
+        description="Chaque saisie et chaque import enrichissent le même brouillon partageable."
+      />
 
       <WorkspaceDraftBar inputId={jsonInputId} message={fileMessage} onImport={importJson} onExport={exportJson} />
 
@@ -386,7 +387,31 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
       )}
 
       <div className="planning-layout">
-        <div className="planning-form" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
+        <section className="workspace-panel">
+          <WorkspaceTabActionBar
+            title={activeTab === 'plan' ? 'Informations générales' : activeTab === 'deliveries' ? 'Point de récupération et colis' : 'Équipe de livraison'}
+            description={activeTab === 'plan' ? 'Identité et horaire du plan' : activeTab === 'deliveries' ? `${plan.packages.length} colis dans le brouillon` : `${plan.couriers.length} livreur${plan.couriers.length > 1 ? 's' : ''}`}
+          >
+            {activeTab === 'deliveries' ? (
+              <>
+                <CsvImportButton<DeliveryPackage> accessToken={accessToken} kind="packages" onImported={(items, filename) => {
+                  updatePlan((current) => ({ ...current, packages: items }))
+                  setFileMessage(`${filename} a remplacé la liste des colis.`)
+                }} />
+                <button className="button" type="button" onClick={addPackage}><Plus aria-hidden="true" />Ajouter un colis</button>
+              </>
+            ) : activeTab === 'couriers' ? (
+              <>
+                <CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => {
+                  updatePlan((current) => ({ ...current, couriers: items }))
+                  setFileMessage(`${filename} a remplacé la liste des livreurs.`)
+                }} />
+                <button className="button" type="button" onClick={addCourier}><UserPlus aria-hidden="true" />Ajouter un livreur</button>
+              </>
+            ) : undefined}
+          </WorkspaceTabActionBar>
+
+          <div ref={scrollPanelRef} className="planning-form workspace-panel__scroll" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
           {activeTab === 'plan' && <section className="workspace-section" aria-labelledby="plan-general-title">
             <div className="workspace-section__heading">
               <div><span><ClipboardList aria-hidden="true" /></span><div><p className="eyebrow">Brouillon</p><h2 id="plan-general-title">Informations générales</h2></div></div>
@@ -428,15 +453,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
           </section>}
 
           {activeTab === 'deliveries' && <section className="workspace-section" aria-labelledby="packages-title">
-            <div className="workspace-section__heading workspace-section__heading--actions">
+            <div className="workspace-section__heading">
               <div><span><PackagePlus aria-hidden="true" /></span><div><p className="eyebrow">Destinations</p><h2 id="packages-title">Colis</h2></div></div>
-              <div className="workspace-section__actions">
-                <CsvImportButton<DeliveryPackage> accessToken={accessToken} kind="packages" onImported={(items, filename) => {
-                  updatePlan((current) => ({ ...current, packages: items }))
-                  setFileMessage(`${filename} a remplacé la liste des colis.`)
-                }} />
-                <button className="button" type="button" onClick={addPackage}><Plus aria-hidden="true" />Ajouter</button>
-              </div>
+              <span className="section-badge">{plan.packages.length} colis</span>
             </div>
             {plan.packages.length === 0 ? (
               <button className="workspace-empty" type="button" onClick={addPackage}>
@@ -491,15 +510,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
           </section>}
 
           {activeTab === 'couriers' && <section className="workspace-section" aria-labelledby="couriers-title">
-            <div className="workspace-section__heading workspace-section__heading--actions">
+            <div className="workspace-section__heading">
               <div><span><Users aria-hidden="true" /></span><div><p className="eyebrow">Équipe</p><h2 id="couriers-title">Livreurs</h2></div></div>
-              <div className="workspace-section__actions">
-                <CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => {
-                  updatePlan((current) => ({ ...current, couriers: items }))
-                  setFileMessage(`${filename} a remplacé la liste des livreurs.`)
-                }} />
-                <button className="button" type="button" onClick={addCourier}><UserPlus aria-hidden="true" />Ajouter</button>
-              </div>
+              <span className="section-badge">{plan.couriers.length} livreur{plan.couriers.length > 1 ? 's' : ''}</span>
             </div>
             {plan.couriers.length === 0 ? (
               <button className="workspace-empty" type="button" onClick={addCourier}>
@@ -557,8 +570,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
               </div>
             )}
           </section>}
-        </div>
-        <aside className="plan-sidebar">
+          </div>
+        </section>
+        <aside className="plan-sidebar plan-sidebar--scroll">
           {activeTab !== 'couriers' ? (
             <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Colis</dt><dd>{plan.packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div><div><dt>Retour dépôt</dt><dd>{plan.settings.returnToDepot ? 'Oui' : 'Non'}</dd></div></dl></div>
           ) : (

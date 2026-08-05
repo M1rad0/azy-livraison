@@ -118,6 +118,12 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
   const [selectedPattern, setSelectedPattern] = useState<PlanningPattern>()
   const accountInitials = session.account.username.trim().slice(0, 2).toUpperCase() || 'AZ'
 
+  useEffect(() => {
+    if (!selectedPattern) return
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [selectedPattern])
+
   async function handleLogout() {
     setLoggingOut(true)
     try {
@@ -128,7 +134,7 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${selectedPattern ? ' app-shell--workspace' : ''}`}>
       <header className="topbar">
         <Brand />
         <div className="account-menu">
