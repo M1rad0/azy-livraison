@@ -23,6 +23,7 @@ import com.google.ortools.constraintsolver.RoutingModel;
 import com.google.ortools.constraintsolver.RoutingSearchParameters;
 import com.google.ortools.constraintsolver.main;
 import com.azylivraison.optimization.config.OptimizationProperties;
+import com.azylivraison.optimization.domain.OperationalPolicy;
 import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
 
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Component;
 class OrToolsRoutingOptimizer {
 
     private static final long PROHIBITIVE_ARC_COST = 1_000_000_000_000L;
+    private static final long LATENESS_COST_PER_SECOND = 10_000L;
     private final OptimizationProperties properties;
 
     OrToolsRoutingOptimizer(OptimizationProperties properties) {
@@ -59,7 +61,8 @@ class OrToolsRoutingOptimizer {
         RoutingModel routing = new RoutingModel(manager);
 
         long maxArcDistance = maximumFiniteDistance(problem.distancesMeters());
-        long dropPenalty = safeDropPenalty(maxArcDistance, problem.packages().size(), vehicleCount);
+        OperationalPolicy policy = properties.operationalPolicy();
+        long dropPenalty = safeDropPenalty(maxArcDistance, problem.packages().size(), vehicleCount, policy);
         int distanceCallback = routing.registerTransitCallback((fromIndex, toIndex) -> distanceCost(
                 problem,
                 actualNodeCount,
@@ -94,12 +97,13 @@ class OrToolsRoutingOptimizer {
         long[] timeCapacities = new long[vehicleCount];
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
             Courier courier = problem.couriers().get(vehicle);
-            timeCallbacks[vehicle] = routing.registerTransitCallback((fromIndex, toIndex) -> travelSeconds(
-                    problem,
-                    actualNodeCount,
-                    manager.indexToNode(fromIndex),
-                    manager.indexToNode(toIndex),
-                    courier));
+            timeCallbacks[vehicle] = routing.registerTransitCallback((fromIndex, toIndex) -> {
+                int fromNode = manager.indexToNode(fromIndex);
+                int toNode = manager.indexToNode(toIndex);
+                long travel = travelSeconds(problem, actualNodeCount, fromNode, toNode, courier);
+                long service = serviceSeconds(problem, fromNode, policy);
+                return saturatedAdd(travel, service);
+            });
             timeCapacities[vehicle] = horizon;
         }
         routing.addDimensionWithVehicleTransitAndCapacity(
@@ -126,9 +130,15 @@ class OrToolsRoutingOptimizer {
             long routingIndex = manager.nodeToIndex(problem.packageNodes()[packageIndex]);
             DeliveryPackage deliveryPackage = problem.packages().get(packageIndex);
             if (deliveryPackage.deliveryWindow() != null) {
-                long start = secondsBetween(reference, deliveryPackage.deliveryWindow().startAt());
-                long end = secondsBetween(reference, deliveryPackage.deliveryWindow().endAt());
-                timeDimension.cumulVar(routingIndex).setRange(start, end);
+                long requestedStart = secondsBetween(reference, deliveryPackage.deliveryWindow().startAt());
+                long requestedEnd = secondsBetween(reference, deliveryPackage.deliveryWindow().endAt());
+                long hardStart = Math.max(0, requestedStart - policy.deliveryWindowEarlyTolerance().toSeconds());
+                long hardEnd = saturatedAdd(requestedEnd, policy.deliveryWindowLateTolerance().toSeconds());
+                timeDimension.cumulVar(routingIndex).setRange(hardStart, Math.min(horizon, hardEnd));
+                timeDimension.setCumulVarSoftUpperBound(
+                        routingIndex,
+                        requestedEnd,
+                        LATENESS_COST_PER_SECOND);
             }
             routing.addDisjunction(new long[]{routingIndex}, dropPenalty);
         }
@@ -270,7 +280,11 @@ class OrToolsRoutingOptimizer {
                 .orElse(1);
         long travelAllowance = (long) Math.ceil(
                 maxArcDistance * Math.max(1, problem.packages().size() + 1) * 3.6 / slowestSpeed);
-        return Math.max(86_400, latestConstraint + travelAllowance + 86_400);
+        long serviceAllowance = saturatedAdd(
+                properties.operationalPolicy().pickupServiceDuration().toSeconds(),
+                properties.operationalPolicy().deliveryServiceDuration().toSeconds()
+                        * Math.max(1, problem.packages().size()));
+        return Math.max(86_400, saturatedAdd(latestConstraint, saturatedAdd(travelAllowance, serviceAllowance + 86_400)));
     }
 
     private long distanceCost(
@@ -336,15 +350,42 @@ class OrToolsRoutingOptimizer {
                 .orElse(1L);
     }
 
-    private long safeDropPenalty(long maxArcDistance, int packageCount, int vehicleCount) {
+    private long safeDropPenalty(
+            long maxArcDistance,
+            int packageCount,
+            int vehicleCount,
+            OperationalPolicy policy) {
         long multiplier = Math.max(2, packageCount + vehicleCount + 1L);
         try {
-            return Math.addExact(
-                    Math.multiplyExact(maxArcDistance + properties.vehicleActivationPenaltyMeters(), multiplier),
-                    1_000_000L);
+            long routeUpperBound = Math.multiplyExact(
+                    maxArcDistance + properties.vehicleActivationPenaltyMeters(), multiplier);
+            long latenessUpperBound = Math.multiplyExact(
+                    Math.multiplyExact(policy.deliveryWindowLateTolerance().toSeconds(), LATENESS_COST_PER_SECOND),
+                    Math.max(1, packageCount));
+            return Math.min(PROHIBITIVE_ARC_COST / 2,
+                    Math.addExact(Math.addExact(routeUpperBound, latenessUpperBound), 1_000_000L));
         } catch (ArithmeticException exception) {
             return PROHIBITIVE_ARC_COST / 2;
         }
+    }
+
+    private long serviceSeconds(
+            OptimizationProblem problem,
+            int fromNode,
+            OperationalPolicy policy) {
+        if (fromNode == problem.depotNode()) {
+            return policy.pickupServiceDuration().toSeconds();
+        }
+        for (int packageNode : problem.packageNodes()) {
+            if (packageNode == fromNode) return policy.deliveryServiceDuration().toSeconds();
+        }
+        return 0;
+    }
+
+    private long saturatedAdd(long left, long right) {
+        if (right > 0 && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+        if (right < 0 && left < Long.MIN_VALUE - right) return Long.MIN_VALUE;
+        return left + right;
     }
 
     private long grams(BigDecimal kilograms) {

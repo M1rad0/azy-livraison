@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.azylivraison.optimization.config.OptimizationProperties;
+import com.azylivraison.optimization.domain.OperationalPolicy;
 import com.azylivraison.optimization.domain.OptimizationResult.RouteStopType;
 import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
@@ -33,6 +34,7 @@ import org.springframework.stereotype.Component;
 class MultiClientOrToolsRoutingOptimizer {
 
     private static final long PROHIBITIVE_ARC_COST = 1_000_000_000_000L;
+    private static final long LATENESS_COST_PER_SECOND = 10_000L;
     private final OptimizationProperties properties;
 
     MultiClientOrToolsRoutingOptimizer(OptimizationProperties properties) {
@@ -41,6 +43,12 @@ class MultiClientOrToolsRoutingOptimizer {
     }
 
     MultiClientSolvedOptimization solve(MultiClientOptimizationProblem problem) {
+        return solve(problem, properties.vehicleActivationPenaltyMeters());
+    }
+
+    MultiClientSolvedOptimization solve(
+            MultiClientOptimizationProblem problem,
+            long vehicleActivationPenaltyMeters) {
         long startedAt = System.nanoTime();
         int actualNodeCount = problem.matrixPointByNode().length;
         int vehicleCount = problem.couriers().size();
@@ -66,7 +74,13 @@ class MultiClientOrToolsRoutingOptimizer {
                 ends);
         RoutingModel routing = new RoutingModel(manager);
         long maxArcDistance = maximumFiniteDistance(problem.distancesMeters());
-        long dropPenalty = safeDropPenalty(maxArcDistance, problem.jobs().size(), vehicleCount);
+        OperationalPolicy policy = properties.operationalPolicy();
+        long dropPenalty = safeDropPenalty(
+                maxArcDistance,
+                problem.jobs().size(),
+                vehicleCount,
+                vehicleActivationPenaltyMeters,
+                policy);
 
         int distanceCallback = routing.registerTransitCallback((fromIndex, toIndex) -> distanceCost(
                 problem,
@@ -77,7 +91,7 @@ class MultiClientOrToolsRoutingOptimizer {
                 manager.indexToNode(toIndex)));
         routing.setArcCostEvaluatorOfAllVehicles(distanceCallback);
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
-            routing.setFixedCostOfVehicle(properties.vehicleActivationPenaltyMeters(), vehicle);
+            routing.setFixedCostOfVehicle(vehicleActivationPenaltyMeters, vehicle);
         }
 
         Map<Integer, JobNode> jobsByNode = jobsByNode(problem);
@@ -98,15 +112,20 @@ class MultiClientOrToolsRoutingOptimizer {
         long[] timeCapacities = new long[vehicleCount];
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
             Courier courier = problem.couriers().get(vehicle);
-            timeCallbacks[vehicle] = routing.registerTransitCallback((fromIndex, toIndex) -> travelSeconds(
-                    distanceCost(
-                            problem,
-                            actualNodeCount,
-                            syntheticStartBase,
-                            syntheticEndBase,
-                            manager.indexToNode(fromIndex),
-                            manager.indexToNode(toIndex)),
-                    courier));
+            timeCallbacks[vehicle] = routing.registerTransitCallback((fromIndex, toIndex) -> {
+                int fromNode = manager.indexToNode(fromIndex);
+                int toNode = manager.indexToNode(toIndex);
+                long travel = travelSeconds(
+                        distanceCost(
+                                problem,
+                                actualNodeCount,
+                                syntheticStartBase,
+                                syntheticEndBase,
+                                fromNode,
+                                toNode),
+                        courier);
+                return saturatedAdd(travel, serviceSeconds(problem, jobsByNode, fromNode, toNode, policy));
+            });
             timeCapacities[vehicle] = horizon;
         }
         routing.addDimensionWithVehicleTransitAndCapacity(
@@ -141,9 +160,15 @@ class MultiClientOrToolsRoutingOptimizer {
 
             DeliveryPackage deliveryPackage = problem.jobs().get(jobIndex).deliveryPackage();
             if (deliveryPackage.deliveryWindow() != null) {
-                timeDimension.cumulVar(deliveryIndex).setRange(
-                        secondsBetween(reference, deliveryPackage.deliveryWindow().startAt()),
-                        secondsBetween(reference, deliveryPackage.deliveryWindow().endAt()));
+                long requestedStart = secondsBetween(reference, deliveryPackage.deliveryWindow().startAt());
+                long requestedEnd = secondsBetween(reference, deliveryPackage.deliveryWindow().endAt());
+                long hardStart = Math.max(0, requestedStart - policy.deliveryWindowEarlyTolerance().toSeconds());
+                long hardEnd = saturatedAdd(requestedEnd, policy.deliveryWindowLateTolerance().toSeconds());
+                timeDimension.cumulVar(deliveryIndex).setRange(hardStart, Math.min(horizon, hardEnd));
+                timeDimension.setCumulVarSoftUpperBound(
+                        deliveryIndex,
+                        requestedEnd,
+                        LATENESS_COST_PER_SECOND);
             }
         }
 
@@ -321,7 +346,10 @@ class MultiClientOrToolsRoutingOptimizer {
                 .orElse(1);
         long travelAllowance = (long) Math.ceil(
                 maxArcDistance * Math.max(1, problem.jobs().size() * 2L + 1) * 3.6 / slowestSpeed);
-        return Math.max(86_400, latestConstraint + travelAllowance + 86_400);
+        long serviceAllowance = saturatedAdd(
+                properties.operationalPolicy().pickupServiceDuration().toSeconds() * Math.max(1, problem.jobs().size()),
+                properties.operationalPolicy().deliveryServiceDuration().toSeconds() * Math.max(1, problem.jobs().size()));
+        return Math.max(86_400, saturatedAdd(latestConstraint, saturatedAdd(travelAllowance, serviceAllowance + 86_400)));
     }
 
     private long maximumFiniteDistance(List<List<Double>> distances) {
@@ -333,15 +361,51 @@ class MultiClientOrToolsRoutingOptimizer {
                 .orElse(1L);
     }
 
-    private long safeDropPenalty(long maxArcDistance, int jobCount, int vehicleCount) {
+    private long safeDropPenalty(
+            long maxArcDistance,
+            int jobCount,
+            int vehicleCount,
+            long vehicleActivationPenaltyMeters,
+            OperationalPolicy policy) {
         long multiplier = Math.max(2, jobCount * 2L + vehicleCount + 1L);
         try {
-            return Math.addExact(
-                    Math.multiplyExact(maxArcDistance + properties.vehicleActivationPenaltyMeters(), multiplier),
-                    1_000_000L);
+            long routeUpperBound = Math.multiplyExact(
+                    maxArcDistance + vehicleActivationPenaltyMeters, multiplier);
+            long latenessUpperBound = Math.multiplyExact(
+                    Math.multiplyExact(policy.deliveryWindowLateTolerance().toSeconds(), LATENESS_COST_PER_SECOND),
+                    Math.max(1, jobCount));
+            return Math.min(PROHIBITIVE_ARC_COST / 2,
+                    Math.addExact(Math.addExact(routeUpperBound, latenessUpperBound), 1_000_000L));
         } catch (ArithmeticException exception) {
             return PROHIBITIVE_ARC_COST / 2;
         }
+    }
+
+    private long serviceSeconds(
+            MultiClientOptimizationProblem problem,
+            Map<Integer, JobNode> jobsByNode,
+            int fromNode,
+            int toNode,
+            OperationalPolicy policy) {
+        JobNode from = jobsByNode.get(fromNode);
+        if (from == null) return 0;
+        if (from.type() == RouteStopType.DELIVERY) {
+            return policy.deliveryServiceDuration().toSeconds();
+        }
+
+        JobNode to = jobsByNode.get(toNode);
+        if (to != null && to.type() == RouteStopType.PICKUP) {
+            String fromGroup = problem.jobs().get(from.jobIndex()).deliveryGroupId();
+            String toGroup = problem.jobs().get(to.jobIndex()).deliveryGroupId();
+            if (fromGroup.equals(toGroup)) return 0;
+        }
+        return policy.pickupServiceDuration().toSeconds();
+    }
+
+    private long saturatedAdd(long left, long right) {
+        if (right > 0 && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+        if (right < 0 && left < Long.MIN_VALUE - right) return Long.MIN_VALUE;
+        return left + right;
     }
 
     private long travelSeconds(long distanceMeters, Courier courier) {

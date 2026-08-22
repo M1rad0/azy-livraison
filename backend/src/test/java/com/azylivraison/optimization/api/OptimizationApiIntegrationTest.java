@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.hamcrest.Matchers.startsWith;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.notNullValue;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -96,7 +97,7 @@ class OptimizationApiIntegrationTest {
                 .andExpect(jsonPath("$.routes[0].distanceMeters").value(4100))
                 .andExpect(jsonPath("$.routes[0].stops[0].distanceFromPreviousMeters").value(2900))
                 .andExpect(jsonPath("$.routes[0].stops[0].cumulativeDistanceMeters").value(4100))
-                .andExpect(jsonPath("$.routes[0].stops[0].estimatedArrivalAt").value(startsWith("2026-08-05T08:08:")));
+                .andExpect(jsonPath("$.routes[0].stops[0].estimatedArrivalAt").value(startsWith("2026-08-05T08:18:")));
     }
 
     @Test
@@ -146,6 +147,29 @@ class OptimizationApiIntegrationTest {
                 .andExpect(jsonPath("$.routes[0].stops[0].estimatedArrivalAt")
                         .value(startsWith("2026-08-05T06:02:")))
                 .andExpect(jsonPath("$.routes[0].stops[1].type").value("DELIVERY"));
+    }
+
+    @Test
+    void comparesDirectAndHubStrategiesWithACompleteTransferManifest() throws Exception {
+        mockMvc.perform(post("/api/plans/compare")
+                        .with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(multiClientPlanWithHub()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value("1.0"))
+                .andExpect(jsonPath("$.recommendedStrategy").value(notNullValue()))
+                .andExpect(jsonPath("$.operationalPolicy.pickupServiceSeconds").value(600))
+                .andExpect(jsonPath("$.operationalPolicy.hubTransferSeconds").value(900))
+                .andExpect(jsonPath("$.direct.strategy").value("DIRECT"))
+                .andExpect(jsonPath("$.direct.metrics.assignedPackageCount").value(1))
+                .andExpect(jsonPath("$.viaHub.strategy").value("VIA_HUB"))
+                .andExpect(jsonPath("$.viaHub.metrics.assignedPackageCount").value(1))
+                .andExpect(jsonPath("$.viaHub.result.routes[0].stops[?(@.type == 'PICKUP')]").value(hasSize(1)))
+                .andExpect(jsonPath("$.viaHub.result.routes[0].stops[?(@.type == 'DELIVERY')]").value(hasSize(1)))
+                .andExpect(jsonPath("$.hubExecution.hub.label").value("Point de rencontre"))
+                .andExpect(jsonPath("$.hubExecution.meetingAt").value(notNullValue()))
+                .andExpect(jsonPath("$.hubExecution.packageTransfers[0].collectorCourierId").value("livreur-001"))
+                .andExpect(jsonPath("$.hubExecution.packageTransfers[0].distributorCourierId").value("livreur-001"));
     }
 
     private static String planWithOneDeliverableAndOneOverweightPackage() {
@@ -283,6 +307,21 @@ class OptimizationApiIntegrationTest {
                   }]
                 }
                 """;
+    }
+
+    private static String multiClientPlanWithHub() {
+        return multiClientPlanWithCourierDeparture()
+                .replace("\"schemaVersion\": \"2.0\"", "\"schemaVersion\": \"2.1\"")
+                .replace(
+                        "\"clients\": [{",
+                        """
+                        "redistributionHub": {
+                          "label": "Point de rencontre",
+                          "latitude": -18.9100,
+                          "longitude": 47.5300
+                        },
+                        "clients": [{
+                        """.strip());
     }
 
     private static HttpServer startOsrm() {

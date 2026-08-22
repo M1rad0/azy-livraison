@@ -215,6 +215,14 @@ public class OptimizationService {
                 warnings);
     }
 
+    public OptimizationResult optimizeForComparison(DeliveryPlan plan) {
+        if (plan.pattern() != PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY) {
+            throw new OptimizationInputException(
+                    "La comparaison avec un siège est disponible uniquement pour le mode plusieurs retraits.");
+        }
+        return multiClientOptimizationService.optimizeForComparison(plan);
+    }
+
     private List<Courier> activeCouriers(DeliveryPlan plan, List<String> warnings) {
         List<Courier> active = new ArrayList<>();
         for (Courier courier : plan.couriers()) {

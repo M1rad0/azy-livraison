@@ -12,6 +12,7 @@ public record DeliveryPlan(
         String timezone,
         PlanSettings settings,
         Location depot,
+        Location redistributionHub,
         List<Courier> couriers,
         List<DeliveryPackage> packages,
         List<DeliveryClient> clients) {
@@ -32,8 +33,47 @@ public record DeliveryPlan(
             PlanSettings settings,
             Location depot,
             List<Courier> couriers,
+            List<DeliveryPackage> packages,
+            List<DeliveryClient> clients) {
+        this(
+                schemaVersion,
+                pattern,
+                planId,
+                name,
+                departureAt,
+                timezone,
+                settings,
+                depot,
+                null,
+                couriers,
+                packages,
+                clients);
+    }
+
+    public DeliveryPlan(
+            String schemaVersion,
+            PlanningPattern pattern,
+            String planId,
+            String name,
+            OffsetDateTime departureAt,
+            String timezone,
+            PlanSettings settings,
+            Location depot,
+            List<Courier> couriers,
             List<DeliveryPackage> packages) {
-        this(schemaVersion, pattern, planId, name, departureAt, timezone, settings, depot, couriers, packages, List.of());
+        this(
+                schemaVersion,
+                pattern,
+                planId,
+                name,
+                departureAt,
+                timezone,
+                settings,
+                depot,
+                null,
+                couriers,
+                packages,
+                List.of());
     }
 
     public List<DeliveryPackage> allPackages() {

@@ -22,7 +22,14 @@ import {
 } from 'lucide-react'
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { OptimizationResult, CourierRoute, RouteStop, UnassignedReason } from '../api/optimization'
+import type {
+  CourierRoute,
+  HubExecution,
+  OptimizationResult,
+  OptimizationStrategy,
+  RouteStop,
+  UnassignedReason,
+} from '../api/optimization'
 import type { AnyDeliveryPlan } from '../api/plans'
 import { calculateRoute, type RoutingRouteResponse } from '../api/routing'
 
@@ -121,12 +128,13 @@ function unassignedTitle(reason: UnassignedReason) {
   return titles[reason]
 }
 
-function FitResultBounds({ routes, depot }: { routes: DrawnRoute[]; depot?: [number, number] }) {
+function FitResultBounds({ routes, depot, hub }: { routes: DrawnRoute[]; depot?: [number, number]; hub?: [number, number] }) {
   const map = useMap()
 
   useEffect(() => {
     const points: [number, number][] = []
     if (depot) points.push(depot)
+    if (hub) points.push(hub)
     routes.forEach((route) => {
       route.geometry?.geometry.coordinates.forEach(([longitude, latitude]) => points.push([latitude, longitude]))
       route.courierRoute.stops.forEach((stop) => {
@@ -136,21 +144,27 @@ function FitResultBounds({ routes, depot }: { routes: DrawnRoute[]; depot?: [num
       })
     })
     if (points.length > 0) map.fitBounds(points, { padding: [44, 44], maxZoom: 16 })
-  }, [depot, map, routes])
+  }, [depot, hub, map, routes])
 
   return null
 }
 
-function ResultMap({ result, plan, accessToken }: {
+function ResultMap({ result, plan, accessToken, strategy, hubExecution }: {
   result: OptimizationResult
   plan: AnyDeliveryPlan
   accessToken: string
+  strategy: OptimizationStrategy
+  hubExecution?: HubExecution
 }) {
   const [drawnRoutes, setDrawnRoutes] = useState<DrawnRoute[]>([])
   const [loading, setLoading] = useState(false)
   const depotLocation = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? plan.depot : undefined
   const depot = depotLocation && hasCoordinates(depotLocation)
     ? [depotLocation.latitude as number, depotLocation.longitude as number] as [number, number]
+    : undefined
+  const hubLocation = strategy === 'VIA_HUB' ? hubExecution?.hub : undefined
+  const hub = hubLocation && hasCoordinates(hubLocation)
+    ? [hubLocation.latitude as number, hubLocation.longitude as number] as [number, number]
     : undefined
 
   useEffect(() => {
@@ -161,6 +175,14 @@ function ResultMap({ result, plan, accessToken }: {
       const color = ROUTE_COLORS[index % ROUTE_COLORS.length]
       const plannedCourier = plan.couriers.find((courier) => courier.id === courierRoute.courierId)
       const customDeparture = plannedCourier?.departureLocation
+      const routeStops = courierRoute.stops.filter((stop) => hasCoordinates(stop.destination))
+      const routeStopPoint = (stop: RouteStop, includePhase = false) => ({
+        id: includePhase
+          ? `${courierRoute.courierId}-${stop.type}-${stop.packageId}-${stop.order}`
+          : `${courierRoute.courierId}-${stop.packageId}`,
+        latitude: stop.destination.latitude as number,
+        longitude: stop.destination.longitude as number,
+      })
       const points = [
         ...(customDeparture && hasCoordinates(customDeparture) ? [{
           id: `start-${courierRoute.courierId}`,
@@ -172,11 +194,13 @@ function ResultMap({ result, plan, accessToken }: {
           latitude: depot[0],
           longitude: depot[1],
         }] : []),
-        ...courierRoute.stops.flatMap((stop) => hasCoordinates(stop.destination) ? [{
-          id: `${courierRoute.courierId}-${stop.packageId}`,
-          latitude: stop.destination.latitude as number,
-          longitude: stop.destination.longitude as number,
-        }] : []),
+        ...(strategy === 'VIA_HUB'
+          ? [
+              ...routeStops.filter((stop) => stop.type === 'PICKUP').map((stop) => routeStopPoint(stop, true)),
+              ...(hub ? [{ id: `hub-${courierRoute.courierId}`, latitude: hub[0], longitude: hub[1] }] : []),
+              ...routeStops.filter((stop) => stop.type !== 'PICKUP').map((stop) => routeStopPoint(stop, true)),
+            ]
+          : routeStops.map((stop) => routeStopPoint(stop))),
         ...(plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' && plan.settings.returnToDepot && depot ? [{
           id: `return-${courierRoute.courierId}`,
           latitude: depot[0],
@@ -205,7 +229,7 @@ function ResultMap({ result, plan, accessToken }: {
       active = false
       controller.abort()
     }
-  }, [accessToken, depot?.[0], depot?.[1], plan.couriers, plan.pattern, plan.settings.returnToDepot, result])
+  }, [accessToken, depot?.[0], depot?.[1], hub?.[0], hub?.[1], plan.couriers, plan.pattern, plan.settings.returnToDepot, result, strategy])
 
   return (
     <section className="result-map-card" aria-labelledby="result-map-title">
@@ -217,11 +241,17 @@ function ResultMap({ result, plan, accessToken }: {
         <div className="result-map" data-testid="optimization-result-map">
           <MapContainer center={[-18.895, 47.525]} zoom={13} scrollWheelZoom>
             <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
-            <FitResultBounds routes={drawnRoutes} depot={depot} />
+            <FitResultBounds routes={drawnRoutes} depot={depot} hub={hub} />
             {depot && (
               <CircleMarker center={depot} radius={11} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
                 <Tooltip permanent direction="top">Retrait</Tooltip>
                 <Popup><strong>{depotLocation?.label || 'Point de récupération'}</strong></Popup>
+              </CircleMarker>
+            )}
+            {hub && (
+              <CircleMarker center={hub} radius={12} pathOptions={{ color: '#fff', fillColor: '#f45b0b', fillOpacity: 1, weight: 4 }}>
+                <Tooltip permanent direction="top">Siège</Tooltip>
+                <Popup><strong>{formatLocation(hubLocation ?? {})}</strong><br />Échange et redistribution des colis</Popup>
               </CircleMarker>
             )}
             {drawnRoutes.map((route) => route.geometry && (
@@ -262,11 +292,22 @@ function ResultMap({ result, plan, accessToken }: {
   )
 }
 
-export function OptimizationResults({ result, plan, accessToken, onBack }: {
+export function OptimizationResults({
+  result,
+  plan,
+  accessToken,
+  onBack,
+  embedded = false,
+  strategy = 'DIRECT',
+  hubExecution,
+}: {
   result: OptimizationResult
   plan: AnyDeliveryPlan
   accessToken: string
-  onBack: () => void
+  onBack?: () => void
+  embedded?: boolean
+  strategy?: OptimizationStrategy
+  hubExecution?: HubExecution
 }) {
   const [activeTab, setActiveTab] = useState<'dispatch' | 'details'>('dispatch')
   const generatedLabel = formatDateTime(result.generatedAt)
@@ -334,10 +375,10 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
   }
 
   return (
-    <div className="optimization-results">
-      <section className="result-hero" aria-labelledby="result-title">
+    <div className={`optimization-results${embedded ? ' optimization-results--embedded' : ''}`}>
+      {!embedded && <section className="result-hero" aria-labelledby="result-title">
         <div className="result-hero__topline">
-          <button className="button button--light" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Modifier le plan</button>
+          {onBack && <button className="button button--light" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Modifier le plan</button>}
           <span className={`result-status result-status--${result.status.toLowerCase()}`}>
             {result.status === 'SUCCESS' ? <CheckCircle2 aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
             {result.status === 'SUCCESS' ? 'Toutes les livraisons sont affectées' : `${result.summary.unassignedPackageCount} colis à examiner`}
@@ -356,7 +397,7 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
           <span className="is-complete">2 <small>Préparation</small></span>
           <span className="is-active">3 <small>Résultat</small></span>
         </div>
-      </section>
+      </section>}
 
       <div className="result-tabs" role="tablist" aria-label="Vues du résultat">
         <button
@@ -436,7 +477,7 @@ export function OptimizationResults({ result, plan, accessToken, onBack }: {
             <article><Scale aria-hidden="true" /><span>Poids confié</span><strong>{result.summary.totalAssignedWeightKg.toLocaleString('fr-MG')}<small> kg</small></strong></article>
           </section>
 
-          {result.routes.length > 0 && <ResultMap result={result} plan={plan} accessToken={accessToken} />}
+          {result.routes.length > 0 && <ResultMap result={result} plan={plan} accessToken={accessToken} strategy={strategy} hubExecution={hubExecution} />}
 
           {(result.warnings.length > 0 || result.unassignedPackages.length > 0) && (
             <section className="result-attention" aria-labelledby="attention-title">

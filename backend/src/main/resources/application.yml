@@ -75,6 +75,11 @@ app:
   optimization:
     time-limit: ${OPTIMIZATION_TIME_LIMIT:5s}
     vehicle-activation-penalty-meters: ${OPTIMIZATION_VEHICLE_ACTIVATION_PENALTY_METERS:1000}
+    pickup-service-duration: ${OPTIMIZATION_PICKUP_SERVICE_DURATION:10m}
+    hub-transfer-duration: ${OPTIMIZATION_HUB_TRANSFER_DURATION:15m}
+    delivery-service-duration: ${OPTIMIZATION_DELIVERY_SERVICE_DURATION:5m}
+    delivery-window-early-tolerance: ${OPTIMIZATION_DELIVERY_WINDOW_EARLY_TOLERANCE:0m}
+    delivery-window-late-tolerance: ${OPTIMIZATION_DELIVERY_WINDOW_LATE_TOLERANCE:30m}
   vehicle-presets:
     moto:
       max-weight-kg: ${VEHICLE_MOTO_DEFAULT_MAX_WEIGHT_KG:30}

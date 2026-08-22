@@ -99,8 +99,8 @@ class OrToolsRoutingOptimizerTest {
             assertThat(route.visits())
                     .extracting(SolvedOptimization.SolvedVisit::packageIndex)
                     .containsExactly(1, 0);
-            assertThat(route.visits().get(0).arrivalOffsetSeconds()).isBetween(240L, 600L);
-            assertThat(route.visits().get(1).arrivalOffsetSeconds()).isBetween(1_200L, 1_800L);
+            assertThat(route.visits().get(0).arrivalOffsetSeconds()).isEqualTo(900L);
+            assertThat(route.visits().get(1).arrivalOffsetSeconds()).isEqualTo(1_500L);
         });
     }
 
@@ -151,10 +151,10 @@ class OrToolsRoutingOptimizerTest {
         assertThat(result.droppedPackageIndexes()).isEmpty();
         assertThat(result.routes()).singleElement().satisfies(route -> {
             assertThat(route.departureOffsetSeconds()).isZero();
-            assertThat(route.completionOffsetSeconds()).isBetween(400L, 410L);
+            assertThat(route.completionOffsetSeconds()).isBetween(1_300L, 1_310L);
             assertThat(route.distanceMeters()).isEqualTo(4_000);
             assertThat(route.visits()).singleElement().satisfies(visit -> {
-                assertThat(visit.arrivalOffsetSeconds()).isBetween(400L, 410L);
+                assertThat(visit.arrivalOffsetSeconds()).isBetween(1_000L, 1_010L);
                 assertThat(visit.distanceFromPreviousMeters()).isEqualTo(1_000);
                 assertThat(visit.cumulativeDistanceMeters()).isEqualTo(4_000);
             });

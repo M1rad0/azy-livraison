@@ -49,6 +49,14 @@ class MultiClientOptimizationService {
     }
 
     OptimizationResult optimize(DeliveryPlan plan) {
+        return optimize(plan, null);
+    }
+
+    OptimizationResult optimizeForComparison(DeliveryPlan plan) {
+        return optimize(plan, 0L);
+    }
+
+    private OptimizationResult optimize(DeliveryPlan plan, Long vehicleActivationPenaltyMeters) {
         List<MultiClientOptimizationJob> allJobs = jobs(plan);
         for (DeliveryClient client : plan.clients()) {
             for (DeliveryGroup group : client.deliveryGroups()) {
@@ -100,7 +108,9 @@ class MultiClientOptimizationService {
                 matrixAndNodes.deliveryNodes(),
                 matrixAndNodes.matrixPointByNode(),
                 matrix.distancesMeters());
-        MultiClientSolvedOptimization solved = optimizer.solve(problem);
+        MultiClientSolvedOptimization solved = vehicleActivationPenaltyMeters == null
+                ? optimizer.solve(problem)
+                : optimizer.solve(problem, vehicleActivationPenaltyMeters);
 
         List<CourierRoute> routes = buildRoutes(problem, solved);
         List<UnassignedPackage> unassigned = new ArrayList<>(preliminaryUnassigned);

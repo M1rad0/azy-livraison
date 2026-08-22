@@ -1,6 +1,8 @@
 package com.azylivraison.optimization.api;
 
+import com.azylivraison.optimization.domain.OptimizationComparisonResult;
 import com.azylivraison.optimization.domain.OptimizationResult;
+import com.azylivraison.optimization.service.OptimizationComparisonService;
 import com.azylivraison.optimization.service.OptimizationService;
 import com.azylivraison.planning.api.DeliveryPlanRequest;
 import com.azylivraison.planning.domain.DeliveryPlan;
@@ -20,12 +22,15 @@ public class OptimizationController {
 
     private final PlanValidationService planValidationService;
     private final OptimizationService optimizationService;
+    private final OptimizationComparisonService optimizationComparisonService;
 
     public OptimizationController(
             PlanValidationService planValidationService,
-            OptimizationService optimizationService) {
+            OptimizationService optimizationService,
+            OptimizationComparisonService optimizationComparisonService) {
         this.planValidationService = planValidationService;
         this.optimizationService = optimizationService;
+        this.optimizationComparisonService = optimizationComparisonService;
     }
 
     @PostMapping("/optimize")
@@ -33,5 +38,12 @@ public class OptimizationController {
             @Valid @RequestBody DeliveryPlanRequest request) {
         DeliveryPlan plan = planValidationService.validateAndNormalize(request);
         return ResponseEntity.ok(optimizationService.optimize(plan));
+    }
+
+    @PostMapping("/compare")
+    public ResponseEntity<OptimizationComparisonResult> compare(
+            @Valid @RequestBody DeliveryPlanRequest request) {
+        DeliveryPlan plan = planValidationService.validateAndNormalize(request);
+        return ResponseEntity.ok(optimizationComparisonService.compare(plan));
     }
 }

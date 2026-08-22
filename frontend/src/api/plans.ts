@@ -17,6 +17,11 @@ interface BaseDeliveryPlan {
   couriers: Courier[]
 }
 
+export type HubCourier = Courier & {
+  departureAt: string
+  departureLocation: Location
+}
+
 export interface DeliveryPlan extends BaseDeliveryPlan {
   schemaVersion: '1.0'
   pattern: 'SINGLE_PICKUP_MULTI_DELIVERY'
@@ -38,11 +43,20 @@ export interface DeliveryClient {
   deliveryGroups: DeliveryGroup[]
 }
 
-export interface MultiClientDeliveryPlan extends BaseDeliveryPlan {
-  schemaVersion: '2.0'
+interface MultiClientPlanContent {
   pattern: 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY'
   clients: DeliveryClient[]
   packages?: []
+}
+
+export interface LegacyMultiClientDeliveryPlan extends BaseDeliveryPlan, MultiClientPlanContent {
+  schemaVersion: '2.0'
+}
+
+export interface MultiClientDeliveryPlan extends BaseDeliveryPlan, MultiClientPlanContent {
+  schemaVersion: '2.1'
+  redistributionHub: Location
+  couriers: HubCourier[]
 }
 
 export type AnyDeliveryPlan = DeliveryPlan | MultiClientDeliveryPlan
@@ -55,13 +69,20 @@ export type PortableDeliveryPlan = Omit<DeliveryPlan, 'couriers'> & {
 }
 
 export type PortableMultiClientDeliveryPlan = Omit<MultiClientDeliveryPlan, 'couriers'> & {
+  couriers: Array<Omit<HubCourier, 'maxWeightKg' | 'averageSpeedKmh'> & {
+    maxWeightKg?: number
+    averageSpeedKmh?: number
+  }>
+}
+
+export type PortableLegacyMultiClientDeliveryPlan = Omit<LegacyMultiClientDeliveryPlan, 'couriers'> & {
   couriers: Array<Omit<Courier, 'maxWeightKg' | 'averageSpeedKmh'> & {
     maxWeightKg?: number
     averageSpeedKmh?: number
   }>
 }
 
-export type PortableAnyDeliveryPlan = PortableDeliveryPlan | PortableMultiClientDeliveryPlan
+export type PortableAnyDeliveryPlan = PortableDeliveryPlan | PortableLegacyMultiClientDeliveryPlan | PortableMultiClientDeliveryPlan
 
 export interface PlanningValidationError {
   path: string
@@ -148,6 +169,13 @@ function isCourier(value: unknown) {
     && (value.departureLocation === undefined || value.departureLocation === null || isLocation(value.departureLocation))
 }
 
+function isHubCourier(value: unknown) {
+  return isRecord(value)
+    && isCourier(value)
+    && typeof value.departureAt === 'string'
+    && isLocation(value.departureLocation)
+}
+
 function isPackage(value: unknown) {
   return isRecord(value)
     && typeof value.id === 'string'
@@ -183,8 +211,7 @@ export function isDeliveryPlan(value: unknown): value is PortableAnyDeliveryPlan
       && Array.isArray(plan.packages)
       && plan.packages.every(isPackage)
   }
-  return plan.schemaVersion === '2.0'
-    && plan.pattern === 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY'
+  const hasMultiClientContent = plan.pattern === 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY'
     && Array.isArray(plan.clients)
     && plan.clients.every((client) => isRecord(client)
       && typeof client.id === 'string'
@@ -196,14 +223,37 @@ export function isDeliveryPlan(value: unknown): value is PortableAnyDeliveryPlan
         && isLocation(group.pickup)
         && Array.isArray(group.packages)
         && group.packages.every(isPackage)))
+
+  if (!hasMultiClientContent) return false
+  if (plan.schemaVersion === '2.0') return true
+  return plan.schemaVersion === '2.1'
+    && isLocation(plan.redistributionHub)
+    && Array.isArray(plan.couriers)
+    && plan.couriers.every(isHubCourier)
+}
+
+export function migrateMultiClientDeliveryPlan(
+  plan: PortableLegacyMultiClientDeliveryPlan | PortableMultiClientDeliveryPlan,
+): PortableMultiClientDeliveryPlan {
+  if (plan.schemaVersion === '2.1') return plan
+
+  return {
+    ...plan,
+    schemaVersion: '2.1',
+    redistributionHub: { destinationQuery: '' },
+    couriers: plan.couriers.map((courier) => ({
+      ...courier,
+      departureAt: courier.departureAt ?? plan.departureAt,
+      departureLocation: courier.departureLocation ?? { destinationQuery: '' },
+    })),
+  }
 }
 
 export function materializeVehicleDefaults(plan: PortableDeliveryPlan): DeliveryPlan
 export function materializeVehicleDefaults(plan: PortableMultiClientDeliveryPlan): MultiClientDeliveryPlan
-export function materializeVehicleDefaults(plan: PortableAnyDeliveryPlan): AnyDeliveryPlan {
-  return {
-    ...plan,
-    couriers: plan.couriers.map((courier) => {
+export function materializeVehicleDefaults(plan: PortableDeliveryPlan | PortableMultiClientDeliveryPlan): AnyDeliveryPlan {
+  function materializeCouriers<T extends PortableDeliveryPlan['couriers'][number] | PortableMultiClientDeliveryPlan['couriers'][number]>(couriers: T[]) {
+    return couriers.map((courier) => {
       const defaults = courier.vehicleType === 'MOTO'
         ? { maxWeightKg: 30, averageSpeedKmh: 25 }
         : { maxWeightKg: 10, averageSpeedKmh: 12 }
@@ -212,6 +262,11 @@ export function materializeVehicleDefaults(plan: PortableAnyDeliveryPlan): AnyDe
         maxWeightKg: courier.maxWeightKg ?? defaults.maxWeightKg,
         averageSpeedKmh: courier.averageSpeedKmh ?? defaults.averageSpeedKmh,
       }
-    }),
+    })
   }
+
+  if (plan.schemaVersion === '1.0') {
+    return { ...plan, couriers: materializeCouriers(plan.couriers) }
+  }
+  return { ...plan, couriers: materializeCouriers(plan.couriers) }
 }

@@ -95,6 +95,17 @@ export function validationFieldLabel(path: string) {
     return withField(`Livreur ${Number(courierMatch[1]) + 1}`, courierMatch[2], courierFieldLabels)
   }
 
+  if (path === 'redistributionHub') return 'Siège / point de rencontre'
+  if (path.startsWith('redistributionHub.')) {
+    const hubFieldLabels: Record<string, string> = {
+      label: 'libellé du siège',
+      destinationQuery: 'adresse du siège',
+      latitude: 'latitude du siège',
+      longitude: 'longitude du siège',
+    }
+    return withField('Siège / point de rencontre', path.slice('redistributionHub.'.length), hubFieldLabels)
+  }
+
   if (path.startsWith('depot')) return 'Point de récupération'
   const labels: Record<string, string> = {
     planId: 'Référence',

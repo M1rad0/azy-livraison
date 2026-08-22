@@ -21,6 +21,7 @@ import type { Courier, DeliveryPackage, Location } from '../api/csvImports'
 import {
   isDeliveryPlan,
   materializeVehicleDefaults,
+  migrateMultiClientDeliveryPlan,
   PlanValidationFailure,
   validatePlan,
   type DeliveryClient,
@@ -28,9 +29,9 @@ import {
   type MultiClientDeliveryPlan,
   type PlanningValidationError,
 } from '../api/plans'
-import { optimizePlan, type OptimizationResult } from '../api/optimization'
+import { compareOptimizations, type OptimizationComparisonResult } from '../api/optimization'
 import { LocationPicker } from './LocationPicker'
-import { OptimizationResults } from './OptimizationResults'
+import { OptimizationComparisonResults } from './OptimizationComparisonResults'
 import { PlanMapPreview } from './PlanMapPreview'
 import { CsvImportButton } from './PlanningWorkspace'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
@@ -72,7 +73,7 @@ function nextId(prefix: string, existing: string[]) {
 function defaultPlan(): MultiClientDeliveryPlan {
   const localDeparture = antananarivoDateTime()
   return {
-    schemaVersion: '2.0',
+    schemaVersion: '2.1',
     pattern: 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY',
     planId: `multi-${localDeparture.slice(0, 10)}`,
     name: `Plan de retraits du ${localDeparture.slice(0, 10)}`,
@@ -81,6 +82,7 @@ function defaultPlan(): MultiClientDeliveryPlan {
     settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
     couriers: [],
     clients: [],
+    redistributionHub: { destinationQuery: '' },
   }
 }
 
@@ -130,6 +132,10 @@ function deliveryWindowLabel(item: DeliveryPackage) {
   return `${format(item.deliveryWindow.startAt)} – ${format(item.deliveryWindow.endAt)}`
 }
 
+function hasCoordinates(location: Location) {
+  return Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
+}
+
 export function MultiClientPlanningWorkspace({ accessToken }: Props) {
   const jsonInputId = useId()
   const [plan, setPlan] = useState<MultiClientDeliveryPlan>(defaultPlan)
@@ -140,7 +146,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
   const [generating, setGenerating] = useState(false)
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
   const [editor, setEditor] = useState<EditorState>()
-  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
+  const [optimizationComparison, setOptimizationComparison] = useState<OptimizationComparisonResult>()
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('plan')
 
   function updatePlan(update: (current: MultiClientDeliveryPlan) => MultiClientDeliveryPlan) {
@@ -226,6 +232,8 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       couriers: [...current.couriers, {
         id: nextId('livreur', current.couriers.map((courier) => courier.id)),
         name: '', vehicleType: 'MOTO', maxWeightKg: 30, averageSpeedKmh: 25,
+        departureAt: current.departureAt,
+        departureLocation: { destinationQuery: '' },
       }],
     }))
   }
@@ -259,7 +267,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       if (!isDeliveryPlan(parsed) || parsed.pattern !== 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY') {
         throw new Error('Cette sauvegarde ne correspond pas au mode plusieurs retraits.')
       }
-      const loaded = normalizeWithdrawalPlan(materializeVehicleDefaults(parsed))
+      const loaded = normalizeWithdrawalPlan(materializeVehicleDefaults(migrateMultiClientDeliveryPlan(parsed)))
       setPlan(loaded)
       setValidationErrors([])
       const withdrawals = loaded.clients.flatMap((client) => client.deliveryGroups)
@@ -280,7 +288,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       const normalizedPlan = normalizeWithdrawalPlan(response.plan)
       setPlan(normalizedPlan)
       if (generate) {
-        setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
+        setOptimizationComparison(await compareOptimizations(normalizedPlan, accessToken))
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
         setMessage('Le plan est valide et prêt pour l’optimisation.')
@@ -307,6 +315,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
   })))
   const packages = withdrawals.flatMap((withdrawal) => withdrawal.group.packages)
   const totalWeight = packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0)
+  const hubConfirmed = hasCoordinates(plan.redistributionHub)
   const tabErrorCounts = validationErrors.reduce<Partial<Record<WorkspaceTab, number>>>((counts, error) => {
     const tab = validationPathTab(error.path)
     counts[tab] = (counts[tab] ?? 0) + 1
@@ -320,8 +329,8 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     ? editorGroup?.packages[editor.packageIndex]
     : undefined
 
-  if (optimizationResult) {
-    return <OptimizationResults result={optimizationResult} plan={plan} accessToken={accessToken} onBack={() => setOptimizationResult(undefined)} />
+  if (optimizationComparison) {
+    return <OptimizationComparisonResults comparison={optimizationComparison} plan={plan} accessToken={accessToken} onBack={() => setOptimizationComparison(undefined)} />
   }
 
   return (
@@ -363,6 +372,14 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
               <InputField label="Référence"><input value={plan.planId} onChange={(event) => updatePlan((current) => ({ ...current, planId: event.target.value }))} /></InputField>
               <InputField label="Nom du plan"><input value={plan.name} onChange={(event) => updatePlan((current) => ({ ...current, name: event.target.value }))} /></InputField>
               <InputField label="Départ · heure d’Antananarivo"><input type="datetime-local" value={plan.departureAt.slice(0, 16)} onChange={(event) => updatePlan((current) => ({ ...current, departureAt: `${event.target.value}:00+03:00` }))} /></InputField>
+            </div>
+            <div className={`hub-location-card${hubConfirmed ? ' is-confirmed' : ''}`}>
+              <div className="hub-location-card__heading">
+                <span><MapPinned /></span>
+                <div><p className="eyebrow">Redistribution</p><h3>Siège / point de rencontre</h3><small>Tous les colis y passent après les retraits pour être redistribués entre les livreurs.</small></div>
+                <strong>{hubConfirmed ? 'Siège confirmé' : 'Siège à confirmer'}</strong>
+              </div>
+              <LocationPicker accessToken={accessToken} value={plan.redistributionHub} title="Siège / point de rencontre" description="Recherchez et confirmez le lieu où les livreurs se retrouvent pour redistribuer les colis." onChange={(redistributionHub) => updatePlan((current) => ({ ...current, redistributionHub }))} />
             </div>
           </section>}
 
@@ -431,7 +448,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
           {activeTab === 'couriers' && <section className="workspace-section">
             <div className="workspace-section__heading workspace-section__heading--actions">
               <div><span><Users /></span><div><p className="eyebrow">Équipe partagée</p><h2>Livreurs</h2></div></div>
-              <div className="workspace-section__actions"><CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => { updatePlan((current) => ({ ...current, couriers: items })); setFileMessage(`${filename} a remplacé la liste des livreurs.`) }} /><button className="button" type="button" onClick={addCourier}><UserPlus />Ajouter</button></div>
+              <div className="workspace-section__actions"><CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => { updatePlan((current) => ({ ...current, couriers: items.map((courier) => ({ ...courier, departureAt: courier.departureAt ?? current.departureAt, departureLocation: courier.departureLocation ?? { destinationQuery: '' } })) })); setFileMessage(`${filename} a remplacé la liste des livreurs.`) }} /><button className="button" type="button" onClick={addCourier}><UserPlus />Ajouter</button></div>
             </div>
             {plan.couriers.length === 0 ? <button className="workspace-empty" type="button" onClick={addCourier}><span><UserPlus /></span><strong>Ajouter votre premier livreur</strong><small>l’équipe sera utilisée pour tous les retraits</small></button> : <div className="editable-list">{plan.couriers.map((courier, index) => (
               <article className="editable-card" key={`${courier.id}-${index}`}>
@@ -442,8 +459,8 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
                   <InputField label="Véhicule"><select value={courier.vehicleType} onChange={(event) => { const vehicleType = event.target.value as Courier['vehicleType']; updateCourier(index, vehicleType === 'MOTO' ? { vehicleType, maxWeightKg: 30, averageSpeedKmh: 25 } : { vehicleType, maxWeightKg: 10, averageSpeedKmh: 12 }) }}><option value="MOTO">Moto</option><option value="BICYCLE">Bicyclette</option></select></InputField>
                   <InputField label="Capacité (kg)"><input type="number" min="0.01" step="0.01" value={courier.maxWeightKg} onChange={(event) => updateCourier(index, { maxWeightKg: Number(event.target.value) })} /></InputField>
                   <InputField label="Vitesse (km/h)"><input type="number" min="0.01" step="0.01" value={courier.averageSpeedKmh} onChange={(event) => updateCourier(index, { averageSpeedKmh: Number(event.target.value) })} /></InputField>
-                  <div className="editable-card__optional"><div className="editable-card__optional-heading"><div><MapPin /><span><strong>Départ personnalisé</strong><small>Facultatif · sinon la tournée commence au premier retrait attribué</small></span></div>{courier.departureAt || courier.departureLocation ? <button type="button" onClick={() => updateCourier(index, { departureAt: undefined, departureLocation: undefined })}><Trash2 />Retirer</button> : <button type="button" onClick={() => updateCourier(index, { departureAt: plan.departureAt, departureLocation: {} })}><Plus />Personnaliser</button>}</div>
-                    {(courier.departureAt || courier.departureLocation) && <div className="courier-departure-fields"><InputField label="Heure de départ"><input type="datetime-local" value={courier.departureAt?.slice(0, 16) ?? ''} onChange={(event) => updateCourier(index, { departureAt: toOffsetDateTime(event.target.value) })} /></InputField><div className="editable-card__full-field"><span>Lieu de départ</span><LocationPicker accessToken={accessToken} value={courier.departureLocation ?? {}} title={`Départ de ${courier.name || `livreur ${index + 1}`}`} description="Ce trajet sera compté jusqu’au premier point de récupération attribué." onChange={(departureLocation) => updateCourier(index, { departureLocation })} /></div></div>}
+                  <div className="editable-card__optional editable-card__departure"><div className="editable-card__optional-heading"><div><MapPin /><span><strong>Départ du livreur</strong><small>Requis · le trajet jusqu’au premier retrait ou au siège fait partie du calcul.</small></span></div></div>
+                    <div className="courier-departure-fields"><InputField label="Heure de départ"><input required type="datetime-local" value={courier.departureAt.slice(0, 16)} onChange={(event) => updateCourier(index, { departureAt: toOffsetDateTime(event.target.value) ?? '' })} /></InputField><div className="editable-card__full-field"><span>Lieu de départ · requis</span><LocationPicker accessToken={accessToken} value={courier.departureLocation} title={`Départ de ${courier.name || `livreur ${index + 1}`}`} description="Confirmez le point depuis lequel ce livreur commence sa journée." onChange={(departureLocation) => updateCourier(index, { departureLocation })} /></div></div>
                   </div>
                 </div>
               </article>
@@ -452,7 +469,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
         </div>
         <aside className="plan-sidebar">
           {activeTab !== 'couriers' ? (
-            <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Retraits</dt><dd>{withdrawals.length}</dd></div><div><dt>Colis</dt><dd>{packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div></dl></div>
+            <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Retraits</dt><dd>{withdrawals.length}</dd></div><div><dt>Colis</dt><dd>{packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div><div className={`plan-summary__hub${hubConfirmed ? ' is-confirmed' : ''}`}><dt>Siège</dt><dd>{hubConfirmed ? 'Confirmé' : 'À confirmer'}</dd></div></dl></div>
           ) : (
             <div className="plan-sidebar__card plan-validation"><p className="eyebrow">Finaliser le plan</p><h3>Prêt à répartir les courses ?</h3><p>Vérifiez les liaisons, puis lancez la répartition entre l’équipe commune.</p><button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}><MapPinned />Visualiser les liaisons</button><button className="button button--wide" type="button" disabled={validating || generating} onClick={() => void handleValidation(false)}><ShieldCheck />{validating ? 'Validation…' : 'Valider le plan'}</button><button className="button button--wide button--generate" type="button" disabled={validating || generating} onClick={() => void handleValidation(true)}>{generating ? <LoaderCircle className="spin" /> : <Sparkles />}{generating ? 'Optimisation en cours…' : 'Générer les tournées'}</button>{message && <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>{message}</p>}{validationErrors.length > 0 && <ul className="validation-errors">{validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}</ul>}</div>
           )}
@@ -505,6 +522,11 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
                     <div><span>Colis</span><strong>{packages.length}</strong></div>
                     <div><span>Livreurs</span><strong>{plan.couriers.length}</strong></div>
                     <div><span>Poids</span><strong>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</strong></div>
+                  </div>
+                  <div className={`planning-summary__hub${hubConfirmed ? ' is-confirmed' : ''}`}>
+                    <MapPinned />
+                    <div><small>Siège / point de rencontre</small><strong>{hubConfirmed ? locationLabel(plan.redistributionHub) : 'Lieu à confirmer'}</strong></div>
+                    <span>{hubConfirmed ? 'Confirmé' : 'À confirmer'}</span>
                   </div>
                   {withdrawals.length > 0 ? <div className="planning-summary__clients">{withdrawals.map(({ client, group }, withdrawalIndex) => (
                     <article key={`${client.id}-${group.id}-summary`}>

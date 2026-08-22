@@ -57,8 +57,9 @@ function formatDuration(seconds: number) {
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
 }
 
-function FitPreviewBounds({ depot, destinations, routes }: {
+function FitPreviewBounds({ depot, hub, destinations, routes }: {
   depot?: [number, number]
+  hub?: [number, number]
   destinations: PreviewDestination[]
   routes: PreviewRoute[]
 }) {
@@ -67,11 +68,12 @@ function FitPreviewBounds({ depot, destinations, routes }: {
   useEffect(() => {
     const points: [number, number][] = []
     if (depot) points.push(depot)
+    if (hub) points.push(hub)
     destinations.forEach((destination) => points.push([destination.latitude, destination.longitude]))
     destinations.forEach((destination) => points.push([destination.pickupLatitude, destination.pickupLongitude]))
     routes.forEach((item) => item.route?.geometry.coordinates.forEach(([longitude, latitude]) => points.push([latitude, longitude])))
     if (points.length > 0) map.fitBounds(points, { padding: [42, 42], maxZoom: 16 })
-  }, [depot, destinations, map, routes])
+  }, [depot, destinations, hub, map, routes])
 
   return null
 }
@@ -84,6 +86,10 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
   const depotLocation = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? plan.depot : undefined
   const depotCoordinates = depotLocation && hasCoordinates(depotLocation)
     ? [depotLocation.latitude as number, depotLocation.longitude as number] as [number, number]
+    : undefined
+  const hubLocation = plan.pattern === 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY' ? plan.redistributionHub : undefined
+  const hubCoordinates = hubLocation && hasCoordinates(hubLocation)
+    ? [hubLocation.latitude as number, hubLocation.longitude as number] as [number, number]
     : undefined
   const allPackageCount = plan.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY'
     ? plan.packages.length
@@ -187,12 +193,19 @@ export function PlanMapPreview({ plan, accessToken, onClose }: {
           <div className="plan-preview-map">
             <MapContainer center={[-18.895, 47.525]} zoom={13} scrollWheelZoom>
               <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
-              <FitPreviewBounds depot={depotCoordinates} destinations={destinations} routes={routes} />
+              <FitPreviewBounds depot={depotCoordinates} hub={hubCoordinates} destinations={destinations} routes={routes} />
 
               {depotCoordinates && (
                 <CircleMarker center={depotCoordinates} radius={11} pathOptions={{ color: '#fff', fillColor: '#0b3557', fillOpacity: 1, weight: 4 }}>
                   <Tooltip permanent direction="top">Retrait</Tooltip>
                   <Popup><strong>{depotLocation?.label || 'Point de récupération'}</strong><br />{depotLocation?.destinationQuery}</Popup>
+                </CircleMarker>
+              )}
+
+              {hubCoordinates && (
+                <CircleMarker center={hubCoordinates} radius={12} pathOptions={{ color: '#fff', fillColor: '#f45b0b', fillOpacity: 1, weight: 4 }}>
+                  <Tooltip permanent direction="top">Siège</Tooltip>
+                  <Popup><strong>Siège / point de rencontre</strong><br />{hubLocation?.label || hubLocation?.destinationQuery}</Popup>
                 </CircleMarker>
               )}
 
