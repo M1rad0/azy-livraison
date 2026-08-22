@@ -29,9 +29,9 @@ import {
   type MultiClientDeliveryPlan,
   type PlanningValidationError,
 } from '../api/plans'
-import { optimizePlan, type OptimizationResult } from '../api/optimization'
+import { compareOptimizations, type OptimizationComparisonResult } from '../api/optimization'
 import { LocationPicker } from './LocationPicker'
-import { OptimizationResults } from './OptimizationResults'
+import { OptimizationComparisonResults } from './OptimizationComparisonResults'
 import { PlanMapPreview } from './PlanMapPreview'
 import { CsvImportButton } from './PlanningWorkspace'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
@@ -146,7 +146,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
   const [generating, setGenerating] = useState(false)
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
   const [editor, setEditor] = useState<EditorState>()
-  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
+  const [optimizationComparison, setOptimizationComparison] = useState<OptimizationComparisonResult>()
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('plan')
 
   function updatePlan(update: (current: MultiClientDeliveryPlan) => MultiClientDeliveryPlan) {
@@ -288,7 +288,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
       const normalizedPlan = normalizeWithdrawalPlan(response.plan)
       setPlan(normalizedPlan)
       if (generate) {
-        setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
+        setOptimizationComparison(await compareOptimizations(normalizedPlan, accessToken))
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
         setMessage('Le plan est valide et prêt pour l’optimisation.')
@@ -329,8 +329,8 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     ? editorGroup?.packages[editor.packageIndex]
     : undefined
 
-  if (optimizationResult) {
-    return <OptimizationResults result={optimizationResult} plan={plan} accessToken={accessToken} onBack={() => setOptimizationResult(undefined)} />
+  if (optimizationComparison) {
+    return <OptimizationComparisonResults comparison={optimizationComparison} plan={plan} accessToken={accessToken} onBack={() => setOptimizationComparison(undefined)} />
   }
 
   return (
