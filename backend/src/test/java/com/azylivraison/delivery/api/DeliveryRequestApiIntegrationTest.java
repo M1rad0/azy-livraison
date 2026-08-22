@@ -60,6 +60,7 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().exists(HttpHeaders.LOCATION))
                 .andExpect(jsonPath("$.ownerAccountId").value(CLIENT_ONE_ID.toString()))
+                .andExpect(jsonPath("$.ownerPhone").value("034 00 000 00"))
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.pickup.label").value("Boutique Analakely"))
                 .andExpect(jsonPath("$.packages[0].recipientName").value("Rakoto"))
@@ -128,6 +129,7 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(jsonPath("$.stats.pendingRequestCount").value(1))
                 .andExpect(jsonPath("$.stats.pendingPackageCount").value(2))
                 .andExpect(jsonPath("$.requests[0].ownerDisplayName").value("Client un"))
+                .andExpect(jsonPath("$.requests[0].ownerPhone").value("034 00 000 00"))
                 .andExpect(jsonPath("$.requests[0].packages.length()").value(2));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
@@ -196,8 +198,8 @@ class DeliveryRequestApiIntegrationTest {
         jdbcTemplate.update("""
                 INSERT INTO app_account (
                     id, username, password_hash, enabled, role, display_name, phone
-                ) VALUES (?, ?, ?, TRUE, ?, ?, NULL)
-                """, id, username, "unused-password-hash", role, displayName);
+                ) VALUES (?, ?, ?, TRUE, ?, ?, ?)
+                """, id, username, "unused-password-hash", role, displayName, "034 00 000 00");
     }
 
     private String requestJson(boolean savePickup, boolean acceptOverflow, boolean twoPackages) {

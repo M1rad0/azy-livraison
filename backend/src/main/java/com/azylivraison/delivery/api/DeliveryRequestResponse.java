@@ -13,6 +13,7 @@ public record DeliveryRequestResponse(
         UUID id,
         UUID ownerAccountId,
         String ownerDisplayName,
+        String ownerPhone,
         LocalDate requestedDate,
         LocationResponse pickup,
         CapacitySnapshotResponse capacity,
@@ -35,6 +36,7 @@ public record DeliveryRequestResponse(
                 request.id(),
                 request.ownerAccountId(),
                 request.ownerDisplayName(),
+                request.ownerPhone(),
                 request.requestedDate(),
                 LocationResponse.from(request.pickup()),
                 new CapacitySnapshotResponse(

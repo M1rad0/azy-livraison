@@ -9,6 +9,7 @@ public record StoredDeliveryRequest(
         UUID id,
         UUID ownerAccountId,
         String ownerDisplayName,
+        String ownerPhone,
         LocalDate requestedDate,
         ConfirmedLocation pickup,
         int capacityLimitSnapshot,

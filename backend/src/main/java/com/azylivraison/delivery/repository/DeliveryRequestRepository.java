@@ -26,7 +26,7 @@ import org.springframework.stereotype.Repository;
 public class DeliveryRequestRepository {
 
     private static final String REQUEST_SELECT = """
-            SELECT dr.*, aa.display_name AS owner_display_name
+            SELECT dr.*, aa.display_name AS owner_display_name, aa.phone AS owner_phone
             FROM delivery_request dr
             JOIN app_account aa ON aa.id = dr.owner_account_id
             """;
@@ -247,7 +247,8 @@ public class DeliveryRequestRepository {
     private List<StoredDeliveryRequest> withPackages(List<StoredDeliveryRequest> requests) {
         return requests.stream()
                 .map(request -> new StoredDeliveryRequest(
-                        request.id(), request.ownerAccountId(), request.ownerDisplayName(), request.requestedDate(),
+                        request.id(), request.ownerAccountId(), request.ownerDisplayName(), request.ownerPhone(),
+                        request.requestedDate(),
                         request.pickup(), request.capacityLimitSnapshot(), request.capacityCurrentSnapshot(),
                         request.capacityRequestedSnapshot(), request.capacityProjectedSnapshot(),
                         request.capacityOverflowWarning(), request.capacityOverflowAccepted(), request.status(),
@@ -268,6 +269,7 @@ public class DeliveryRequestRepository {
                 resultSet.getObject("id", UUID.class),
                 resultSet.getObject("owner_account_id", UUID.class),
                 resultSet.getString("owner_display_name"),
+                resultSet.getString("owner_phone"),
                 resultSet.getDate("requested_date").toLocalDate(),
                 new ConfirmedLocation(
                         resultSet.getString("pickup_label"),
