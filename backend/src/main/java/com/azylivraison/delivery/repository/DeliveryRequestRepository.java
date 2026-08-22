@@ -164,6 +164,27 @@ public class DeliveryRequestRepository {
         return withPackages(requests);
     }
 
+    /**
+     * Returns the operational backlog for a service day. An undelivered parcel
+     * from an earlier requested date must remain visible until it is dispatched.
+     */
+    public List<StoredDeliveryRequest> findPendingQueueThrough(LocalDate date) {
+        List<StoredDeliveryRequest> requests = jdbcTemplate.query(
+                REQUEST_SELECT + """
+                         WHERE dr.requested_date <= ?
+                           AND EXISTS (
+                               SELECT 1
+                               FROM delivery_package queued_package
+                               WHERE queued_package.delivery_request_id = dr.id
+                                 AND queued_package.status = 'PENDING'
+                           )
+                         ORDER BY dr.requested_date, dr.created_at, dr.id
+                        """,
+                this::mapRequestWithoutPackages,
+                Date.valueOf(date));
+        return withPackages(requests);
+    }
+
     public QueueCounts queueCounts(LocalDate date) {
         return jdbcTemplate.queryForObject("""
                 SELECT
@@ -173,7 +194,7 @@ public class DeliveryRequestRepository {
                     COUNT(CASE WHEN dp.status = 'PENDING' THEN 1 END) AS pending_packages
                 FROM delivery_request dr
                 LEFT JOIN delivery_package dp ON dp.delivery_request_id = dr.id
-                WHERE dr.requested_date = ?
+                WHERE dr.requested_date <= ?
                 """, (resultSet, rowNumber) -> new QueueCounts(
                 resultSet.getInt("pending_requests"),
                 resultSet.getInt("partially_dispatched_requests"),

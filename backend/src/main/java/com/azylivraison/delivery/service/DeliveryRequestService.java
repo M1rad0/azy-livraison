@@ -120,9 +120,7 @@ public class DeliveryRequestService {
     public AdminQueueResponse queue(LocalDate date) {
         OperationalSettingsSnapshot settings = repository.getOperationalSettings();
         QueueCounts counts = repository.queueCounts(date);
-        List<DeliveryRequestResponse> requests = repository.findForAdministration(date, null).stream()
-                .filter(request -> request.packages().stream()
-                        .anyMatch(deliveryPackage -> deliveryPackage.status() == DeliveryPackageStatus.PENDING))
+        List<DeliveryRequestResponse> requests = repository.findPendingQueueThrough(date).stream()
                 .map(DeliveryRequestResponse::fromPendingPackages)
                 .toList();
         int remaining = Math.max(0, settings.dailyPackageLimit() - counts.pendingPackageCount());

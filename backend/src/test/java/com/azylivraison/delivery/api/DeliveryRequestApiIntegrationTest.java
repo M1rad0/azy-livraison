@@ -139,6 +139,24 @@ class DeliveryRequestApiIntegrationTest {
     }
 
     @Test
+    void keepsOverduePendingPackagesVisibleInTheNextOperationalQueue() throws Exception {
+        mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false, false)
+                                .replace("2026-08-24", "2026-08-23")))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/admin/queue")
+                        .param("date", "2026-08-24")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stats.pendingRequestCount").value(1))
+                .andExpect(jsonPath("$.stats.pendingPackageCount").value(1))
+                .andExpect(jsonPath("$.requests[0].requestedDate").value("2026-08-23"));
+    }
+
+    @Test
     void validatesEveryRequiredBusinessField() throws Exception {
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
