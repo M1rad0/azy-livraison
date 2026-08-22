@@ -6,5 +6,8 @@ public record Account(
         UUID id,
         String username,
         String passwordHash,
-        boolean enabled) {
+        boolean enabled,
+        AccountRole role,
+        String displayName,
+        String phone) {
 }

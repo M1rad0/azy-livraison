@@ -45,6 +45,7 @@ public class TokenService {
                 .id(UUID.randomUUID().toString())
                 .subject(account.username())
                 .claim("accountId", account.id().toString())
+                .claim("role", account.role().name())
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256)
                 .type("JWT")

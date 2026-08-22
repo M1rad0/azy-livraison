@@ -5,6 +5,7 @@ import java.util.Locale;
 
 import com.azylivraison.account.config.AuthProperties;
 import com.azylivraison.account.domain.Account;
+import com.azylivraison.account.domain.AccountRole;
 import com.azylivraison.account.repository.AccountRepository;
 
 import org.slf4j.Logger;
@@ -45,7 +46,10 @@ public class InitialAccountBootstrap implements ApplicationRunner {
                     UUID.randomUUID(),
                     username,
                     passwordEncoder.encode(properties.initialPassword()),
-                    true));
+                    true,
+                    AccountRole.ADMIN,
+                    "Administrateur",
+                    null));
             LOGGER.info("Compte initial '{}' créé.", username);
         } catch (DuplicateKeyException exception) {
             LOGGER.info("Le compte initial '{}' a déjà été créé par une autre instance.", username);

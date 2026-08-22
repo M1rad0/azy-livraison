@@ -37,7 +37,7 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/packages/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(true))
                 .andExpect(jsonPath("$.importType").value("PACKAGES"))
@@ -62,7 +62,7 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/couriers/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(true))
                 .andExpect(jsonPath("$.importType").value("COURIERS"))
@@ -85,7 +85,7 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/packages/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.importedCount").value(0))
@@ -105,7 +105,7 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/packages/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[?(@.code == 'MISSING_HEADER')]").exists())
                 .andExpect(jsonPath("$.errors[?(@.field == 'unexpected' && @.code == 'UNKNOWN_HEADER')]")
@@ -122,7 +122,7 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/packages/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].code").value("INVALID_CONTENT_TYPE"));
     }
@@ -137,7 +137,7 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/packages/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.errors[0].code").value("FILE_TOO_LARGE"));
     }
@@ -152,14 +152,14 @@ class CsvImportApiIntegrationTest {
 
         mockMvc.perform(multipart("/api/import/packages/csv")
                         .file(file)
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].code").value("INVALID_ENCODING"));
     }
 
     @Test
     void rejectsAMissingMultipartFile() throws Exception {
-        mockMvc.perform(multipart("/api/import/packages/csv").with(user("admin")))
+        mockMvc.perform(multipart("/api/import/packages/csv").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].code").value("MISSING_FILE"));
     }
@@ -173,7 +173,7 @@ class CsvImportApiIntegrationTest {
 
     @Test
     void downloadsThePackageTemplate() throws Exception {
-        mockMvc.perform(get("/api/import/packages/template").with(user("admin")))
+        mockMvc.perform(get("/api/import/packages/template").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
                         org.hamcrest.Matchers.containsString("packages-template.csv")))

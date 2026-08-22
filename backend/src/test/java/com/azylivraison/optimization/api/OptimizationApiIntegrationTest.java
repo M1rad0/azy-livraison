@@ -51,7 +51,7 @@ class OptimizationApiIntegrationTest {
     @Test
     void optimizesAPlanAndExplainsEveryUnassignedPackage() throws Exception {
         mockMvc.perform(post("/api/plans/optimize")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(planWithOneDeliverableAndOneOverweightPackage()))
                 .andExpect(status().isOk())
@@ -78,7 +78,7 @@ class OptimizationApiIntegrationTest {
                 .replace("\"latitude\": -18.9089, \"longitude\": 47.5212", "\"destinationQuery\": \"Analakely\"");
 
         mockMvc.perform(post("/api/plans/optimize")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(unresolvedDepot))
                 .andExpect(status().isUnprocessableEntity())
@@ -88,7 +88,7 @@ class OptimizationApiIntegrationTest {
     @Test
     void includesTheTripFromTheCourierStartToThePickupPoint() throws Exception {
         mockMvc.perform(post("/api/plans/optimize")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(planWithCourierDeparture()))
                 .andExpect(status().isOk())
@@ -111,7 +111,7 @@ class OptimizationApiIntegrationTest {
     @Test
     void optimizesMultipleClientsWithPickupBeforeEveryDelivery() throws Exception {
         mockMvc.perform(post("/api/plans/optimize")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(multiClientPlan()))
                 .andExpect(status().isOk())
@@ -130,7 +130,7 @@ class OptimizationApiIntegrationTest {
     @Test
     void startsAMultiClientRouteAtTheCourierOriginBeforeTheFirstPickup() throws Exception {
         mockMvc.perform(post("/api/plans/optimize")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(multiClientPlanWithCourierDeparture()))
                 .andExpect(status().isOk())
@@ -152,7 +152,7 @@ class OptimizationApiIntegrationTest {
     @Test
     void comparesDirectAndHubStrategiesWithACompleteTransferManifest() throws Exception {
         mockMvc.perform(post("/api/plans/compare")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(multiClientPlanWithHub()))
                 .andExpect(status().isOk())
