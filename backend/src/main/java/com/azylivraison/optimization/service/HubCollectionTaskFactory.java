@@ -8,6 +8,7 @@ import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryClient;
 import com.azylivraison.planning.domain.DeliveryGroup;
 import com.azylivraison.planning.domain.DeliveryPackage;
+import com.azylivraison.planning.domain.Location;
 
 import org.springframework.stereotype.Component;
 
@@ -23,7 +24,12 @@ class HubCollectionTaskFactory {
 
         for (DeliveryClient client : clients) {
             for (DeliveryGroup group : client.deliveryGroups()) {
-                BigDecimal totalWeight = group.packages().stream()
+                List<DeliveryPackage> eligiblePackages = group.packages().stream()
+                        .filter(deliveryPackage -> hasCoordinates(deliveryPackage.destination()))
+                        .toList();
+                if (eligiblePackages.isEmpty()) continue;
+
+                BigDecimal totalWeight = eligiblePackages.stream()
                         .map(DeliveryPackage::weightKg)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 if (totalWeight.compareTo(maximumCapacity) <= 0) {
@@ -31,13 +37,13 @@ class HubCollectionTaskFactory {
                             "withdrawal-" + group.id(),
                             client,
                             group,
-                            group.packages(),
+                            eligiblePackages,
                             totalWeight,
                             HubCollectionTask.Kind.WHOLE_WITHDRAWAL));
                     continue;
                 }
 
-                for (DeliveryPackage deliveryPackage : group.packages()) {
+                for (DeliveryPackage deliveryPackage : eligiblePackages) {
                     tasks.add(task(
                             "withdrawal-" + group.id() + "-package-" + deliveryPackage.id(),
                             client,
@@ -49,6 +55,10 @@ class HubCollectionTaskFactory {
             }
         }
         return List.copyOf(tasks);
+    }
+
+    private boolean hasCoordinates(Location location) {
+        return location != null && location.latitude() != null && location.longitude() != null;
     }
 
     private HubCollectionTask task(

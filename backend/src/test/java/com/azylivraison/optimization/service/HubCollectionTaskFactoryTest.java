@@ -56,6 +56,25 @@ class HubCollectionTaskFactoryTest {
                         "withdrawal-retrait-lourd-package-colis-2");
     }
 
+    @Test
+    void excludesPackagesWhoseDestinationHasNoCoordinatesFromCollection() {
+        DeliveryPackage resolved = new DeliveryPackage(
+                "colis-resolu", "Colis résolu", new BigDecimal("6"), null,
+                location("Destination résolue"), null);
+        DeliveryPackage unresolved = new DeliveryPackage(
+                "colis-non-resolu", "Colis non résolu", new BigDecimal("20"), null,
+                new Location("Destination saisie", "Destination saisie", null, null), null);
+
+        List<HubCollectionTask> tasks = factory.create(
+                List.of(client(group("retrait-mixte", List.of(resolved, unresolved)))),
+                List.of(courier("livreur-1", "30")));
+
+        assertThat(tasks).singleElement().satisfies(task -> {
+            assertThat(task.packages()).extracting(DeliveryPackage::id).containsExactly("colis-resolu");
+            assertThat(task.weightKg()).isEqualByComparingTo("6");
+        });
+    }
+
     private static DeliveryClient client(DeliveryGroup... groups) {
         return new DeliveryClient("client-1", "Client", List.of(groups));
     }

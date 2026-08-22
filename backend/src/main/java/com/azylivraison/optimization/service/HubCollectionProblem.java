@@ -1,5 +1,6 @@
 package com.azylivraison.optimization.service;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -15,7 +16,27 @@ record HubCollectionProblem(
         int[] courierStartNodes,
         int[] taskNodes,
         int[] matrixPointByNode,
-        List<List<Double>> distancesMeters) {
+        List<List<Double>> distancesMeters,
+        OffsetDateTime latestHubArrivalAt) {
+
+    HubCollectionProblem(
+            List<Courier> couriers,
+            List<HubCollectionTask> tasks,
+            int hubNode,
+            int[] courierStartNodes,
+            int[] taskNodes,
+            int[] matrixPointByNode,
+            List<List<Double>> distancesMeters) {
+        this(
+                couriers,
+                tasks,
+                hubNode,
+                courierStartNodes,
+                taskNodes,
+                matrixPointByNode,
+                distancesMeters,
+                null);
+    }
 
     HubCollectionProblem {
         couriers = List.copyOf(couriers);

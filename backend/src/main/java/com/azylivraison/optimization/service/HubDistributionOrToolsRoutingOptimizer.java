@@ -69,6 +69,9 @@ class HubDistributionOrToolsRoutingOptimizer {
                 manager.indexToNode(fromIndex),
                 manager.indexToNode(toIndex)));
         routing.setArcCostEvaluatorOfAllVehicles(distanceCallback);
+        for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
+            routing.setFixedCostOfVehicle(problem.vehicleActivationCostMeters()[vehicle], vehicle);
+        }
 
         int demandCallback = routing.registerUnaryTransitCallback(fromIndex -> {
             Integer jobIndex = jobByNode.get(manager.indexToNode(fromIndex));
@@ -109,7 +112,12 @@ class HubDistributionOrToolsRoutingOptimizer {
             routing.addVariableMinimizedByFinalizer(timeDimension.cumulVar(routing.end(vehicle)));
         }
 
-        long dropPenalty = safeDropPenalty(maximumDistance, problem.jobs().size(), vehicleCount, policy);
+        long dropPenalty = safeDropPenalty(
+                maximumDistance,
+                problem.jobs().size(),
+                vehicleCount,
+                Arrays.stream(problem.vehicleActivationCostMeters()).max().orElse(0),
+                policy);
         for (int jobIndex = 0; jobIndex < problem.jobs().size(); jobIndex++) {
             long routingIndex = manager.nodeToIndex(problem.deliveryNodes()[jobIndex]);
             DeliveryPackage deliveryPackage = problem.jobs().get(jobIndex).deliveryPackage();
@@ -290,9 +298,10 @@ class HubDistributionOrToolsRoutingOptimizer {
             long maximumDistance,
             int jobCount,
             int vehicleCount,
+            long maximumActivationCost,
             OperationalPolicy policy) {
         long routeUpperBound = saturatedMultiply(
-                maximumDistance,
+                saturatedAdd(maximumDistance, maximumActivationCost),
                 Math.max(2, jobCount + vehicleCount + 1L));
         long latenessUpperBound = saturatedMultiply(
                 saturatedMultiply(policy.deliveryWindowLateTolerance().toSeconds(), LATENESS_COST_PER_SECOND),

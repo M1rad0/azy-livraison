@@ -88,6 +88,27 @@ class HubDistributionOrToolsRoutingOptimizerTest {
         assertThat(solved.routes()).singleElement().satisfies(route -> assertThat(route.visits()).hasSize(1));
     }
 
+    @Test
+    void includesTheApproachToTheHubWhenChoosingADistributor() {
+        List<MultiClientOptimizationJob> jobs = List.of(job("p1", 1, null));
+        Courier nearby = courier("nearby", 10);
+        Courier farAway = courier("far-away", 10);
+        HubDistributionProblem problem = new HubDistributionProblem(
+                DEPARTURE,
+                List.of(nearby, farAway),
+                jobs,
+                0,
+                new int[]{1},
+                matrix(row(0, 100), row(100, 0)),
+                new long[]{100, 10_000});
+
+        HubDistributionSolvedOptimization solved = optimizer.solve(problem);
+
+        assertThat(solved.droppedJobIndexes()).isEmpty();
+        assertThat(solved.routes()).singleElement()
+                .satisfies(route -> assertThat(problem.couriers().get(route.courierIndex()).id()).isEqualTo("nearby"));
+    }
+
     private HubDistributionProblem problem(
             List<MultiClientOptimizationJob> jobs,
             Courier courier,

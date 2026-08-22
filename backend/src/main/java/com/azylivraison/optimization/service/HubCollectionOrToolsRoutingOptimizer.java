@@ -101,6 +101,12 @@ class HubCollectionOrToolsRoutingOptimizer {
                 "Time");
         RoutingDimension timeDimension = routing.getMutableDimension("Time");
         timeDimension.setGlobalSpanCostCoefficient(costs.latestArrivalCoefficient());
+        if (problem.latestHubArrivalAt() != null) {
+            long latestHubArrival = Math.max(0, secondsBetween(reference, problem.latestHubArrivalAt()));
+            for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
+                timeDimension.cumulVar(routing.end(vehicle)).setMax(latestHubArrival);
+            }
+        }
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
             routing.addVariableMinimizedByFinalizer(timeDimension.cumulVar(routing.end(vehicle)));
         }

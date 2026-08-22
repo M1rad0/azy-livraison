@@ -203,6 +203,33 @@ class HubCollectionOrToolsRoutingOptimizerTest {
         assertThat(result.droppedTaskIndexes()).containsExactly(0);
     }
 
+    @Test
+    void dropsTheMinimumNumberOfWithdrawalsToMeetAHubDeadline() {
+        HubCollectionProblem problem = new HubCollectionProblem(
+                List.of(courier("livreur-1", "10", DEPARTURE)),
+                List.of(
+                        task("task-1", "retrait-1", "1"),
+                        task("task-2", "retrait-2", "1")),
+                1,
+                new int[]{0},
+                new int[]{2, 3},
+                new int[]{0, 1, 2, 3},
+                matrix(
+                        row(0, 100, 100, 100),
+                        row(100, 0, 100, 100),
+                        row(100, 100, 0, 100),
+                        row(100, 100, 100, 0)),
+                DEPARTURE.plusSeconds(900));
+
+        HubCollectionSolvedOptimization result = optimizer.solve(problem);
+
+        assertThat(result.droppedTaskIndexes()).hasSize(1);
+        assertThat(result.routes()).singleElement().satisfies(route -> {
+            assertThat(route.visits()).hasSize(1);
+            assertThat(route.hubArrivalOffsetSeconds()).isLessThanOrEqualTo(900);
+        });
+    }
+
     private static HubCollectionProblem problem(
             List<Courier> couriers,
             List<HubCollectionTask> tasks,
