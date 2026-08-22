@@ -2,24 +2,91 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : les deux patterns sont utilisables de bout en bout.** Après connexion, le frontend permet de préparer un plan mono-client ou multi-clients, contrôler ses points sur la carte, lancer l'optimisation OR-Tools et examiner les tournées colorées avec leurs capacités, retraits, livraisons, horaires et colis non affectés. Pour un plan multi-clients, l'application compare aussi les tournées directes à une redistribution par un siège commun. Les brouillons sont exportables en JSON et les listes opérationnelles en CSV ou PDF.
+> **État du projet : transition vers la version multi-utilisateur persistante.** Les demandes des clients, les colis, les livreurs, les réglages et les dispatchs sont désormais historisés dans PostgreSQL. Le parcours opérationnel du front-office utilise exclusivement le scénario `VIA_HUB` : collecte, rendez-vous au siège, redistribution, puis livraison. Les anciens outils par fichiers et la comparaison direct/siège sont conservés pour l'historique et l'administration, mais ne constituent plus le parcours client.
 
 ## Objectif
 
-AZY Livraison transforme une liste de colis et une liste de livreurs en tournées cohérentes, en tenant compte des routes et de la capacité réelle de chaque livreur.
+AZY Livraison permet à plusieurs clients de déposer leurs demandes, puis à l'équipe d'exploitation de constituer une file journalière et de répartir les colis entre les livreurs disponibles. L'optimisation tient compte des retraits, des départs réels des livreurs, des capacités, du point de ralliement, des routes et des horaires.
 
-Le premier scénario pris en charge est :
+L'application reste locale-first et déployable en ligne. PostgreSQL est maintenant la source de vérité des opérations courantes et de leur historique ; les fichiers JSON, CSV et PDF restent utiles pour l'échange, l'export et les outils historiques.
 
-- un point unique de récupération ;
-- `n` colis à livrer ;
-- `m` livreurs disponibles ;
-- une capacité maximale et un véhicule pour chaque livreur ;
-- une date et une heure de départ communes ;
-- une fin de tournée configurable : dernier arrêt ou retour au dépôt.
+## Version multi-utilisateur
 
-L'application doit fonctionner principalement en local, tout en restant déployable en ligne. Les plans et les résultats sont d'abord des fichiers partageables ; PostgreSQL ne remplace pas ces fichiers.
+### Rôles et accès
 
-## Fonctionnalités du MVP
+Trois rôles sont prévus et portés par le compte et le JWT :
+
+- `CLIENT` : inscription, gestion du profil et du retrait par défaut, création et consultation de ses demandes ;
+- `ADMIN` : gestion de la file d'attente, des livreurs, des réglages et des dispatchs ;
+- `COURIER` : rôle réservé au futur espace livreur. Les profils opérationnels des livreurs peuvent déjà exister sans compte connecté.
+
+L'inscription publique crée uniquement un compte `CLIENT`. Les comptes existant avant la migration multi-utilisateur sont repris comme `ADMIN`. Les routes `/api/client/**` et `/api/admin/**` sont protégées par rôle côté backend ; masquer une fonction dans l'interface ne remplace jamais ce contrôle.
+
+### Parcours client
+
+Un client peut :
+
+1. créer son compte puis ouvrir une session ;
+2. compléter son nom, son contact et, s'il le souhaite, un point de retrait par défaut ;
+3. créer une demande pour une date, avec un point de retrait confirmé et un ou plusieurs colis ;
+4. enregistrer le retrait saisi comme nouveau retrait par défaut ;
+5. consulter l'historique et l'état de ses demandes.
+
+Chaque colis contient :
+
+- le nom du destinataire ;
+- l'indicateur `faritra` ;
+- une destination confirmée avec libellé et coordonnées ;
+- un contact ;
+- le total à récupérer en ariary, livraison incluse ;
+- l'indicateur de paiement préalable par mobile money ;
+- un poids facultatif.
+
+Lorsque le poids n'est pas fourni, sa valeur effective est copiée depuis `defaultPackageWeightKg` au moment de l'enregistrement. La demande conserve donc le poids réellement utilisé et sa provenance (`PROVIDED` ou `DEFAULT_SETTING`), même si le réglage change ensuite.
+
+### Capacité journalière et confirmation
+
+La limite journalière correspond actuellement à un **nombre de colis**, pas à un nombre de demandes ni à un poids total. Lors de la création, le backend compare les colis déjà en attente pour la date, la limite configurée et les nouveaux colis.
+
+Si la projection dépasse la limite, le premier envoi répond en HTTP `409` avec le code `DAILY_CAPACITY_CONFIRMATION_REQUIRED` et les valeurs `limit`, `current`, `requested` et `projected`. Le client peut alors confirmer explicitement en renvoyant la demande avec `acceptCapacityOverflow: true`. La demande est enregistrée avec l'avertissement et son acceptation afin de conserver la décision dans l'historique ; elle n'est pas rejetée silencieusement.
+
+### Parcours administrateur
+
+L'administrateur peut :
+
+- consulter les demandes et la file d'attente d'une date ;
+- créer, modifier, désactiver et réactiver les profils de livreurs ;
+- choisir le véhicule, le départ habituel, l'heure de départ et les éventuelles valeurs personnalisées de capacité ou de vitesse ;
+- modifier les préréglages `MOTO` et `BICYCLE` ;
+- régler la limite journalière, le poids par défaut, le siège par défaut, les durées de service, les tolérances horaires, le délai OR-Tools et le profil routier ;
+- sélectionner les colis et les livreurs d'une journée, éventuellement remplacer le siège, puis générer un dispatch persistant.
+
+Un dispatch public/opérationnel ne lance que la stratégie `VIA_HUB`. Tous les colis retenus passent par le point de ralliement : les livreurs partent de leurs lieux et heures respectifs, collectent les retraits qui leur sont affectés, attendent le dernier participant au siège, redistribuent les colis, puis livrent. Une seule action administrateur produit un résultat final historisé ; les recalculs internes bornés de l'optimiseur restent un détail d'implémentation.
+
+Le dispatch conserve des snapshots des entrées et des règles, les livreurs sélectionnés, leurs rôles collecte/distribution, les arrêts, les transferts de colis, les heures estimées, les distances, les résultats non affectés et les métriques globales. `Idempotency-Key` empêche la création accidentelle de deux plans identiques lors d'une répétition réseau.
+
+### Statuts persistés
+
+| Objet | Statuts |
+|---|---|
+| Demande | `PENDING`, `PARTIALLY_DISPATCHED`, `DISPATCHED` |
+| Colis | `PENDING`, `DISPATCHED`, `UNASSIGNED` |
+| Dispatch | `GENERATING`, `READY`, `READY_WITH_WARNINGS`, `FAILED` |
+
+Seuls les colis réellement affectés à une livraison passent à `DISPATCHED`. Dans le dispatch courant, un colis que le solveur ne peut pas affecter conserve son issue `UNASSIGNED` dans le résultat mais reste `PENDING` dans la file afin de pouvoir être repris ; sa raison est conservée. Le statut de la demande est recalculé à partir de l'ensemble de ses colis.
+
+### Limite de routage actuelle
+
+OSRM accepte par défaut au maximum `100` points par matrice (`OSRM_MAX_TABLE_SIZE`). Le dispatch contrôle séparément :
+
+- collecte : départs des livreurs sélectionnés + retraits distincts + siège ;
+- distribution : siège + destinations des colis.
+
+Avec le réglage par défaut, une distribution est donc limitée à `99` colis et la collecte peut imposer une limite inférieure si elle contient beaucoup de livreurs et de retraits distincts. Le backend refuse clairement un dispatch trop grand au lieu de tronquer la sélection.
+
+## Outils historiques de préparation et de comparaison
+
+> Cette section décrit le workspace par fichiers et les endpoints techniques conservés pour l'administration, le diagnostic et la comparaison. Elle ne décrit plus le parcours principal d'un client.
 
 ### Parcours de l'utilisateur
 
@@ -36,7 +103,7 @@ Chaque choix ouvre un espace de travail dans lequel :
 4. un fichier JSON précédemment exporté peut être rouvert pour reprendre et modifier le travail ;
 5. le résultat n'est généré qu'après validation du formulaire complet.
 
-PostgreSQL reste réservé aux comptes, sessions et caches techniques. Le fichier de plan est la sauvegarde métier portable de référence.
+Dans ce workspace historique, le fichier de plan reste la sauvegarde portable de référence. Cette règle ne s'applique pas aux demandes et dispatchs du nouveau parcours, qui sont persistés dans PostgreSQL.
 
 ### Préparer un plan
 
@@ -145,25 +212,27 @@ Les durées opérationnelles par défaut sont de 10 minutes par retrait visité,
 
 La recommandation compare les scénarios dans cet ordre : nombre de colis livrés, nombre de livraisons à l'heure, retard cumulé, kilomètres réellement parcourus, heure de fin, puis nombre de livreurs mobilisés. Une égalité complète conserve le scénario direct. Pour le scénario par siège, le résultat fournit également l'heure du rendez-vous, un manifeste par livreur et le transfert de chaque colis entre collecteur et distributeur.
 
-## Architecture cible
+## Architecture
 
 ```text
 Navigateur
   |
   +-- React + TypeScript
-  |     +-- formulaires et imports
+  |     +-- espaces CLIENT et ADMIN
+  |     +-- demandes, file, réglages et dispatchs
   |     +-- Leaflet et affichage cartographique
-  |     +-- visualisation et exports
+  |     +-- outils historiques et exports
   |
   +-- API REST Spring Boot
         +-- comptes et authentification
-        +-- plans et validation
-        +-- imports/exports
+        +-- profils clients et livreurs
+        +-- demandes et file journalière
+        +-- réglages et dispatchs persistants
         +-- géocodage
         +-- calcul des matrices OSRM
         +-- optimisation OR-Tools
         |
-        +-- PostgreSQL          comptes, sessions, cache
+        +-- PostgreSQL          données métier et historique
         +-- Nominatim local     texte -> coordonnées
         +-- OSRM local          distances, durées, tracés
 ```
@@ -172,32 +241,34 @@ Navigateur
 
 | Composant | Technologie | Responsabilité |
 |---|---|---|
-| Frontend | React, TypeScript | Formulaires, carte, imports, résultats et téléchargements |
+| Frontend | React, TypeScript | Parcours client/admin, formulaires, cartes et résultats |
 | Carte | Leaflet | Sélection et affichage des points et tournées |
 | API | Java, Spring Boot | Sécurité, validation, orchestration et formats de fichiers |
 | Optimisation | OR-Tools Java | Affectation et ordre des livraisons avec contraintes |
 | Routage | OSRM local | Matrices routières et géométries des trajets |
 | Géocodage | Nominatim local | Résolution des destinations textuelles |
-| Base métier | PostgreSQL | Comptes, sessions de renouvellement et cache de géocodage |
+| Base métier | PostgreSQL | Comptes, profils, demandes, colis, réglages, dispatchs, sessions et cache |
 | Exécution | Docker Compose | Environnement local reproductible et base du déploiement |
 
 OR-Tools traite nativement les problèmes de tournées avec capacités et visites éventuellement abandonnées. Voir la documentation officielle sur le [Vehicle Routing Problem](https://developers.google.com/optimization/routing) et les [contraintes de capacité](https://developers.google.com/optimization/routing/cvrp).
 
 ### Modules backend
 
-Le backend doit séparer les modules suivants, même si le MVP reste un monolithe Spring Boot :
+Le backend reste un monolithe modulaire Spring Boot :
 
 ```text
-account/        comptes, mots de passe et évolution future vers les rôles
-auth/           login, JWT, renouvellement et révocation
+account/        comptes, rôles, profils clients, login et jetons
+administration/ réglages opérationnels, préréglages et profils livreurs
+delivery/       demandes persistées, colis, file et règles de capacité
+dispatch/       sélection, snapshots et résultats VIA_HUB persistés
 planning/       modèle du plan et règles de validation
-geocoding/      fournisseurs, normalisation, cache et ambiguïtés
+geography/      fournisseurs de géocodage, cache et ambiguïtés
 routing/        OSRM, matrices, profils et géométries
 optimization/   adaptation OR-Tools et explication des résultats
 importexport/   JSON, CSV et PDF
 ```
 
-Cette séparation permet d'ajouter des rôles au module compte et de remplacer Nominatim ou OSRM sans modifier le cœur métier.
+Cette séparation permet notamment de conserver l'optimiseur indépendant de la persistance opérationnelle et de remplacer Nominatim ou OSRM sans modifier le cœur métier.
 
 ### Profils de véhicule et de route
 
@@ -210,7 +281,7 @@ Les valeurs initiales proposées sont des paramètres applicatifs, pas des limit
 | `MOTO` | 30 kg | 25 km/h |
 | `BICYCLE` | 10 kg | 12 km/h |
 
-Elles doivent être validées avec les conditions réelles d'AZY Livraison et restent configurables par environnement. À terme, plusieurs préréglages de routes pourront être préparés si la qualité des données OSM à Madagascar permet de distinguer de manière fiable moto, bicyclette et autres véhicules.
+Elles doivent être validées avec les conditions réelles d'AZY Livraison. Elles sont désormais configurables en base par l'administrateur, avec une surcharge possible sur chaque profil livreur. À terme, plusieurs préréglages de routes pourront être préparés si la qualité des données OSM à Madagascar permet de distinguer de manière fiable moto, bicyclette et autres véhicules.
 
 ## Données OpenStreetMap
 
@@ -260,25 +331,26 @@ Leaflet affiche les données, mais ne fournit pas les tuiles. Le développement 
 
 Les données OpenStreetMap sont soumises à la licence [ODbL](https://www.openstreetmap.org/copyright).
 
-## Persistance : fichiers d'abord
+## Persistance métier et fichiers historiques
 
 ### PostgreSQL
 
-La base conserve uniquement ce qui bénéficie réellement d'une persistance serveur :
+PostgreSQL est la source de vérité du parcours multi-utilisateur. La base conserve notamment :
 
-- les comptes ;
-- les mots de passe hachés ;
-- les sessions ou jetons de renouvellement hachés et révocables ;
-- le cache de géocodage ;
-- éventuellement, plus tard, les métadonnées des fichiers volontairement enregistrés.
+- les comptes, rôles, profils clients et retraits par défaut ;
+- les mots de passe hachés et les sessions de renouvellement révocables ;
+- les réglages opérationnels, préréglages de véhicules et profils livreurs ;
+- les demandes, colis, snapshots de capacité, statuts et événements ;
+- les dispatchs, réservations anti-concurrence, snapshots, arrêts, affectations et métriques ;
+- le cache de géocodage.
 
-Par défaut, les plans et résultats ne sont pas enregistrés en base. Ils sont téléchargés par l'utilisateur. Les fichiers temporaires créés pour un export doivent être supprimés après téléchargement ou expiration.
+Les snapshots rendent un ancien résultat relisible même après la modification d'un livreur ou d'un réglage. Les fichiers temporaires créés pour un export doivent toujours être supprimés après téléchargement ou expiration.
 
 Nominatim utilise son propre stockage technique PostgreSQL/PostGIS et son propre volume Docker. Ce stockage ne fait pas partie de la base métier d'AZY Livraison.
 
 ### Plan JSON partageable
 
-Le JSON est le format canonique. Chaque fichier possède une version de schéma afin de permettre de futures migrations.
+Le JSON reste le format canonique des anciens brouillons partageables et des outils de comparaison. Il ne remplace pas l'enregistrement en base des demandes et dispatchs du front-office. Chaque fichier possède une version de schéma afin de permettre de futures migrations.
 
 ```json
 {
@@ -457,7 +529,7 @@ Une réponse valide contient les éléments normalisés directement compatibles 
 }
 ```
 
-L'interface affiche un aperçu de ces éléments en mémoire. Elle ne les enregistre pas dans PostgreSQL et un rechargement de la page efface cet aperçu.
+L'outil historique affiche un aperçu de ces éléments en mémoire. Cet aperçu d'import n'est pas une demande client persistée et un rechargement de la page l'efface.
 
 ### Résultats
 
@@ -465,42 +537,80 @@ L'export CSV produit une ligne par arrêt/colis et répète les informations né
 
 ## Authentification et sécurité
 
-Le MVP ne propose ni inscription publique ni rôles.
+L'application propose une inscription publique réservée aux clients et une autorisation serveur par rôles.
 
-- Un compte administrateur initial est créé depuis les variables d'environnement au premier démarrage.
+- `POST /api/auth/register` crée toujours un compte `CLIENT` et ouvre sa première session.
+- Un compte `ADMIN` initial est créé depuis les variables d'environnement au premier démarrage.
+- Le rôle `COURIER` existe dans le modèle de sécurité, mais aucun parcours de connexion livreur n'est encore exposé.
 - Les mots de passe sont hachés avec un algorithme adapté fourni par Spring Security ; ils ne sont jamais journalisés.
 - Le frontend garde l'access token JWT de courte durée en mémoire et l'envoie avec `Authorization: Bearer <token>`.
+- Le JWT contient le rôle utilisé par Spring Security pour construire l'autorité `ROLE_CLIENT`, `ROLE_ADMIN` ou `ROLE_COURIER`.
 - Le refresh token est rotatif, révocable, conservé haché en base et transmis dans un cookie `HttpOnly`, `SameSite` et `Secure` en production.
 - Le logout révoque la session de renouvellement.
-- Le module `account` reste distinct afin de recevoir ultérieurement les rôles et permissions.
+- Les clients ne lisent que leurs propres demandes ; les opérations de file, réglages, livreurs et dispatch sont réservées aux administrateurs.
 - Les limites de taille des fichiers, les types MIME, le contenu CSV/JSON et toutes les valeurs numériques sont validés côté backend.
 - Les secrets réels ne sont jamais committés. `.env.example` ne contient que des valeurs factices.
 
 ## API REST
 
-Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
+### Authentification et profil client
 
 | Méthode | Route | Usage |
 |---|---|---|
+| `POST` | `/api/auth/register` | Créer un compte `CLIENT` et ouvrir une session |
 | `POST` | `/api/auth/login` | Obtenir un access token et ouvrir une session |
 | `POST` | `/api/auth/refresh` | Renouveler et faire tourner les jetons |
 | `POST` | `/api/auth/logout` | Révoquer la session |
 | `GET` | `/api/auth/me` | Lire le compte correspondant à l'access token |
-| `GET` | `/api/vehicle-presets` | Lire les valeurs par défaut |
-| `GET` | `/api/geocoding/search?q=...` | Rechercher des candidats dans Madagascar |
-| `POST` | `/api/plans/validate` | Valider et normaliser un plan sans le géocoder ni l'optimiser |
-| `POST` | `/api/plans/optimize` | Affecter et ordonner les colis d'un plan validé avec OSRM et OR-Tools |
-| `POST` | `/api/plans/compare` | Comparer les tournées directes et la redistribution par le siège d'un plan multi-clients `2.1` |
-| `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers le modèle du plan |
-| `POST` | `/api/import/couriers/csv` | Convertir un CSV livreurs vers le modèle du plan |
-| `GET` | `/api/import/packages/template` | Télécharger le modèle CSV colis |
-| `GET` | `/api/import/couriers/template` | Télécharger le modèle CSV livreurs |
-| `POST` | `/api/exports/result/csv` | Produire l'export tabulaire |
-| `POST` | `/api/exports/result/pdf` | Produire les fiches imprimables |
+| `GET` | `/api/client/profile` | Lire le profil et le retrait par défaut du client connecté |
+| `PUT` | `/api/client/profile` | Modifier le profil et le retrait par défaut |
 
-Les opérations métier reçoivent le plan dans la requête et retournent le résultat sans exiger son enregistrement en base. L'optimisation exige des coordonnées confirmées pour le dépôt ; une destination de colis non résolue est conservée dans `unassignedPackages` avec sa raison. Le résultat contient les tournées, l'ordre des arrêts, les heures estimées, les capacités, les totaux et le contexte de calcul. La comparaison ajoute les métriques physiques des deux scénarios, la recommandation, les manifestes au siège et les transferts collecteur-distributeur ; l'interface permet d'en télécharger le JSON et le tableau CSV, puis d'utiliser les exports opérationnels du scénario affiché.
+`register`, `login`, `refresh` et `logout`, ainsi que les health checks Docker, sont publics. `/api/auth/me` exige une session authentifiée. Les routes `/api/client/**` exigent `CLIENT` et les routes `/api/admin/**` exigent `ADMIN`.
 
-Les routes d'authentification `login`, `refresh` et `logout`, ainsi que les health checks Docker, sont publiques. Toutes les autres routes exigent `Authorization: Bearer <accessToken>`. Le login et le renouvellement répondent avec :
+### Demandes client et file administrateur
+
+| Méthode | Route | Usage |
+|---|---|---|
+| `GET` | `/api/client/delivery-requests` | Lister les demandes du client connecté |
+| `GET` | `/api/client/delivery-requests/{id}` | Lire une de ses demandes |
+| `POST` | `/api/client/delivery-requests` | Créer une demande persistante ; peut exiger la confirmation du dépassement |
+| `GET` | `/api/admin/delivery-requests?date=&status=` | Filtrer toutes les demandes |
+| `GET` | `/api/admin/queue?date=YYYY-MM-DD` | Lire le backlog encore en attente jusqu'à la date, avec les compteurs opérationnels |
+
+La file inclut aussi les colis demandés pour les jours précédents qui n'ont pas encore été dispatchés. La date initialement demandée reste visible dans l'interface afin de distinguer clairement ces retards des demandes du jour.
+
+### Administration et dispatch
+
+| Méthode | Route | Usage |
+|---|---|---|
+| `GET`, `PUT` | `/api/admin/settings` | Lire ou modifier les réglages opérationnels |
+| `GET`, `PUT` | `/api/admin/vehicle-presets` | Lire ou modifier les préréglages de véhicules |
+| `GET`, `POST` | `/api/admin/couriers` | Lister ou créer les profils livreurs |
+| `GET`, `PUT` | `/api/admin/couriers/{id}` | Lire ou modifier un profil livreur |
+| `POST`, `PATCH` | `/api/admin/couriers/{id}/disable` | Désactiver un profil sans supprimer son historique |
+| `POST` | `/api/admin/dispatch-plans` | Créer un dispatch `VIA_HUB` persistant ; exige `Idempotency-Key` |
+| `GET` | `/api/admin/dispatch-plans?date=` | Lister les dispatchs, éventuellement pour une date |
+| `GET` | `/api/admin/dispatch-plans/{id}` | Relire le résultat détaillé d'un dispatch |
+
+L'absence de `packageIds` lors de la création d'un dispatch sélectionne les colis encore en attente pour la date. Un `hubOverride` peut remplacer le siège par défaut pour cette exécution. Les appels OSRM et OR-Tools sont effectués hors de la transaction longue ; des réservations empêchent qu'un autre dispatch utilise simultanément les mêmes colis ou la même journée.
+
+### Géographie et outils historiques/admin
+
+| Méthode | Route | Usage |
+|---|---|---|
+| `GET` | `/api/geocoding/search?q=...` | Rechercher des candidats dans Madagascar (`CLIENT` ou `ADMIN`) |
+| `GET` | `/api/vehicle-presets` | Lire les anciennes valeurs applicatives (`ADMIN`) |
+| `POST` | `/api/plans/validate` | Valider et normaliser un ancien plan par fichier (`ADMIN`) |
+| `POST` | `/api/plans/optimize` | Optimiser directement un ancien plan (`ADMIN`) |
+| `POST` | `/api/plans/compare` | Comparer direct et siège sur un plan multi-clients `2.1` (`ADMIN`) |
+| `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers l'ancien modèle de plan (`ADMIN`) |
+| `POST` | `/api/import/couriers/csv` | Convertir un CSV livreurs vers l'ancien modèle de plan (`ADMIN`) |
+| `GET` | `/api/import/packages/template` | Télécharger le modèle CSV colis (`ADMIN`) |
+| `GET` | `/api/import/couriers/template` | Télécharger le modèle CSV livreurs (`ADMIN`) |
+
+Le front-office ne doit pas appeler `/api/plans/compare` ni choisir entre les scénarios. Ces endpoints restent disponibles pour l'analyse administrative, la reproductibilité des anciens fichiers et la mesure de l'algorithme. Les exports CSV et PDF actuels sont produits côté frontend à partir des résultats affichés.
+
+Le login, l'inscription et le renouvellement répondent avec :
 
 ```json
 {
@@ -509,12 +619,28 @@ Les routes d'authentification `login`, `refresh` et `logout`, ainsi que les heal
   "expiresIn": 900,
   "account": {
     "id": "00000000-0000-0000-0000-000000000000",
-    "username": "admin"
+    "username": "client-exemple",
+    "role": "CLIENT",
+    "displayName": "Client Exemple",
+    "phone": "+261340000000"
   }
 }
 ```
 
 Le refresh token n'est pas exposé dans ce JSON : il est envoyé dans le cookie `azy_refresh_token`, limité au chemin `/api/auth`. Chaque appel réussi à `/api/auth/refresh` remplace et révoque le précédent token. Sa réutilisation échoue en HTTP `401`.
+
+## Migrations de la version multi-utilisateur
+
+Flyway applique automatiquement les migrations au démarrage, dans l'ordre :
+
+| Migration | Contenu principal |
+|---|---|
+| `V4__add_account_roles_and_client_profiles.sql` | rôles `CLIENT`/`COURIER`/`ADMIN`, identité affichée, téléphone et retrait client par défaut |
+| `V5__create_operational_settings_and_couriers.sql` | réglages globaux, préréglages de véhicules et profils livreurs avec départ habituel |
+| `V6__create_delivery_requests.sql` | demandes, colis, snapshots de dépassement, statuts et journal d'événements |
+| `V7__create_persisted_dispatch_plans.sql` | dispatchs `VIA_HUB`, réservations, snapshots, livreurs retenus, résultats colis et arrêts |
+
+Ne renommez et ne modifiez pas une migration déjà appliquée sur une base partagée : tout changement ultérieur doit utiliser une nouvelle version Flyway. Le passage de `V3` à `V4` attribue le rôle `ADMIN` aux comptes déjà présents afin de préserver l'accès au back-office.
 
 ## Configuration
 
@@ -528,17 +654,18 @@ Le fichier `.env` ne doit jamais être versionné. Les valeurs factices permette
 
 Le compte `INITIAL_ADMIN_USERNAME` est créé uniquement s'il n'existe pas encore. Modifier `INITIAL_ADMIN_PASSWORD` après ce premier démarrage ne réinitialise donc pas silencieusement son mot de passe en base. En local, pour repartir entièrement des valeurs du nouveau fichier `.env`, il faut supprimer volontairement le volume PostgreSQL puis relancer l'application.
 
-Les réglages importants sont :
+Les variables d'environnement couvrent surtout l'infrastructure :
 
 - accès PostgreSQL ;
 - compte initial ;
 - secrets et durées des jetons ;
 - URLs internes OSRM et Nominatim ;
 - chemin et URL de l'extrait OSM ;
-- préréglages des véhicules ;
 - taille maximale des imports ;
 - fournisseur et attribution des tuiles ;
-- limite de temps de l'optimiseur.
+- limites de points OSRM.
+
+Les valeurs susceptibles d'être ajustées au quotidien — capacité journalière, siège, poids par défaut, durées de service, tolérances, délai de l'optimiseur et préréglages des véhicules — sont persistées dans PostgreSQL et modifiées via les endpoints d'administration.
 
 ## Structure du dépôt
 
@@ -696,22 +823,24 @@ docker compose config --quiet
 
 ## Tests d'acceptation prioritaires
 
-Le MVP est considéré conforme lorsque les scénarios suivants réussissent :
+La version multi-utilisateur est considérée conforme lorsque les scénarios suivants réussissent :
 
-1. un plan JSON est exporté, réimporté et conserve toutes ses données ;
-2. un CSV mêlant destinations textuelles et coordonnées est importé correctement ;
-3. les coordonnées ont priorité sur le texte lorsqu'elles sont toutes deux présentes ;
-4. les valeurs personnalisées d'un livreur remplacent son préréglage ;
-5. aucune solution ne dépasse une capacité effective ;
-6. un colis trop lourd est affiché avec une raison et la capacité minimale requise ;
-7. l'optimisation peut affecter tous les colis à un seul livreur lorsque c'est la meilleure solution ;
-8. les tournées restent groupées géographiquement sans objectif artificiel d'équilibrage ;
-9. le retour au dépôt modifie correctement les distances, durées et tracés ;
-10. chaque livreur possède une couleur distincte sur la carte ;
-11. les exports JSON, CSV et PDF correspondent au résultat affiché ;
-12. l'expiration, le renouvellement et la révocation des jetons fonctionnent.
+1. une inscription crée uniquement un compte `CLIENT`, dont le JWT ne donne accès à aucune route administrateur ;
+2. deux clients ne peuvent jamais consulter leurs demandes respectives ;
+3. le retrait par défaut est persisté, modifiable et réutilisable dans une nouvelle demande ;
+4. une demande conserve tous les champs obligatoires du colis et applique le poids administrateur lorsque le poids est omis ;
+5. un dépassement journalier renvoie d'abord `DAILY_CAPACITY_CONFIRMATION_REQUIRED`, puis est enregistré uniquement après confirmation explicite ;
+6. les modifications de réglages et de profils livreurs utilisent leur version afin d'éviter les écrasements concurrents ;
+7. un dispatch concurrent ne peut pas réserver deux fois la même journée ou le même colis ;
+8. le dispatch opérationnel utilise toujours `VIA_HUB` et tient compte des départs réels, des retraits, du siège et des capacités ;
+9. seuls les colis réellement affectés passent à `DISPATCHED`, tandis que les non-affectés restent traçables ;
+10. un dispatch terminé peut être relu avec ses snapshots, ses arrêts, ses affectations et ses métriques ;
+11. l'expiration, le renouvellement et la révocation des jetons fonctionnent ;
+12. la limite de matrice refuse proprement une sélection trop grande.
 
-## Traitement multi-clients
+Les anciens scénarios JSON/CSV, l'optimisation directe et la comparaison direct/siège restent couverts par leurs tests de non-régression.
+
+## Traitement multi-clients historique
 
 Le pattern mono-client reste identifié explicitement par :
 
@@ -729,7 +858,7 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 
 La liste des livreurs est commune à l'ensemble du plan. L'optimiseur répartit les colis de tous les clients entre le même vivier de livreurs, tout en respectant les capacités, les créneaux horaires et l'obligation d'effectuer chaque récupération avant la livraison correspondante. Dans le schéma courant, chaque livreur possède un lieu et une heure de départ confirmés : ce trajet initial est compté jusqu'au premier retrait attribué ou jusqu'au siège lorsqu'il participe uniquement à la distribution.
 
-Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-clients utilisent désormais le schéma `2.1`, une collection `clients` dont chaque élément contient ses `deliveryGroups`, et un point confirmé `redistributionHub`. Les sauvegardes multi-clients `2.0` restent lisibles et sont migrées vers `2.1` à l'ouverture ; l'utilisateur doit ensuite renseigner le siège ainsi que les départs manquants avant de lancer la comparaison.
+Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-clients utilisent le schéma `2.1`, une collection `clients` dont chaque élément contient ses `deliveryGroups`, et un point confirmé `redistributionHub`. Les sauvegardes multi-clients `2.0` restent lisibles et sont migrées vers `2.1` à l'ouverture ; l'administrateur doit ensuite renseigner le siège ainsi que les départs manquants avant de lancer la comparaison historique.
 
 ## Feuille de route
 
@@ -761,18 +890,28 @@ Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-cl
 - [x] optimisation multi-clients avec retraits multiples, précédences et flotte partagée.
 - [x] comparaison des tournées directes et de la collecte/redistribution par un siège commun.
 
-### Phase 4 — Résultats, partage et mise en ligne
+### Phase 4 — Version multi-utilisateur persistante
+
+- [x] rôles `CLIENT`, `COURIER` et `ADMIN` dans les comptes et JWT ;
+- [x] inscription client, profil et retrait par défaut ;
+- [x] demandes, colis, dépassements confirmés, statuts et événements persistants ;
+- [x] réglages opérationnels, préréglages et profils livreurs administrables ;
+- [x] dispatch `VIA_HUB` persistant avec snapshots et protections contre les doubles traitements ;
+- espace client et espace administrateur dédiés dans le frontend ;
+- validation de bout en bout du parcours métier.
+
+### Phase 5 — Résultats, partage et mise en ligne
 
 - [x] export JSON du résultat ;
 - [x] exports CSV et PDF du résultat ;
 - durcissement de la sécurité ;
-- sauvegarde optionnelle de métadonnées ;
+- exports opérationnels depuis les dispatchs persistés ;
 - fournisseur de tuiles adapté au trafic réel ;
 - déploiement en ligne et sauvegardes PostgreSQL.
 
 ### Plus tard
 
 - profils routiers spécialisés ;
-- rôles et permissions ;
-- historique des scénarios ;
+- espace connecté du livreur et suivi de l'exécution réelle ;
+- permissions administratives plus fines ;
 - mise à jour automatisée et contrôlée des données OSM.
