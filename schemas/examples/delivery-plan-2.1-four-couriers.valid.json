@@ -1,0 +1,229 @@
+{
+  "schemaVersion": "2.1",
+  "pattern": "MULTI_CLIENT_MULTI_PICKUP_DELIVERY",
+  "planId": "test-siege-4-livreurs-2026-08-24",
+  "name": "Test siège avec 4 livreurs",
+  "departureAt": "2026-08-24T06:00:00+03:00",
+  "timezone": "Indian/Antananarivo",
+  "settings": {
+    "returnToDepot": false,
+    "routingPreset": "MAIN_ROADS"
+  },
+  "redistributionHub": {
+    "label": "Siège de test - Antanimena",
+    "destinationQuery": "Antanimena, Antananarivo, Madagascar",
+    "latitude": -18.8952,
+    "longitude": 47.5183
+  },
+  "couriers": [
+    {
+      "id": "livreur-001",
+      "name": "Soa",
+      "vehicleType": "MOTO",
+      "maxWeightKg": 2,
+      "averageSpeedKmh": 25,
+      "departureAt": "2026-08-24T06:00:00+03:00",
+      "departureLocation": {
+        "label": "Alasora",
+        "destinationQuery": "Alasora, Antananarivo, Madagascar",
+        "latitude": -18.9553235,
+        "longitude": 47.5674821
+      }
+    },
+    {
+      "id": "livreur-002",
+      "name": "Hery",
+      "vehicleType": "MOTO",
+      "maxWeightKg": 2,
+      "averageSpeedKmh": 25,
+      "departureAt": "2026-08-24T06:00:00+03:00",
+      "departureLocation": {
+        "label": "Itaosy",
+        "destinationQuery": "Andohatanjona Itaosy, Antananarivo, Madagascar",
+        "latitude": -18.9067813,
+        "longitude": 47.4476659
+      }
+    },
+    {
+      "id": "livreur-003",
+      "name": "Fara",
+      "vehicleType": "BICYCLE",
+      "maxWeightKg": 2,
+      "averageSpeedKmh": 12,
+      "departureAt": "2026-08-24T06:00:00+03:00",
+      "departureLocation": {
+        "label": "Ambatobe",
+        "destinationQuery": "Ambatobe, Antananarivo, Madagascar",
+        "latitude": -18.8793892,
+        "longitude": 47.5585948
+      }
+    },
+    {
+      "id": "livreur-004",
+      "name": "Tiana",
+      "vehicleType": "MOTO",
+      "maxWeightKg": 2,
+      "averageSpeedKmh": 25,
+      "departureAt": "2026-08-24T06:00:00+03:00",
+      "departureLocation": {
+        "label": "Andranotapahana",
+        "destinationQuery": "Andranotapahana, Ambohidratrimo, Madagascar",
+        "latitude": -18.8231157,
+        "longitude": 47.453669
+      }
+    }
+  ],
+  "packages": [],
+  "clients": [
+    {
+      "id": "client-001",
+      "name": "Pounie Pounie",
+      "deliveryGroups": [
+        {
+          "id": "retrait-001",
+          "name": "Ampasampito - rond-point",
+          "pickup": {
+            "label": "Institut Supérieur de Technologie Ampasampito",
+            "destinationQuery": "Institut Supérieur de Technologie Ampasampito, Antananarivo, Madagascar",
+            "latitude": -18.8957014,
+            "longitude": 47.545794
+          },
+          "packages": [
+            {
+              "id": "colis-001",
+              "label": "Alasora x3",
+              "weightKg": 1.5,
+              "destination": {
+                "label": "Alasora",
+                "destinationQuery": "Alasora, Antananarivo, Madagascar",
+                "latitude": -18.9553235,
+                "longitude": 47.5674821
+              }
+            },
+            {
+              "id": "colis-002",
+              "label": "Andoharanofotsy Commune",
+              "weightKg": 0.5,
+              "destination": {
+                "label": "Andoharanofotsy",
+                "destinationQuery": "Andoharanofotsy, Antananarivo, Madagascar",
+                "latitude": -18.975240589942548,
+                "longitude": 47.53284217343908
+              }
+            },
+            {
+              "id": "colis-003",
+              "label": "Ankaditoho Tsimbazaza",
+              "weightKg": 0.5,
+              "destination": {
+                "label": "Ankaditoho, Tsimbazaza",
+                "destinationQuery": "Ankaditoho, Tsimbazaza, Antananarivo, Madagascar",
+                "latitude": -18.9385813,
+                "longitude": 47.5281625
+              }
+            },
+            {
+              "id": "colis-004",
+              "label": "Andohatanjona Itaosy",
+              "weightKg": 1,
+              "destination": {
+                "label": "Andohatanjona Itaosy",
+                "destinationQuery": "Andohatanjona Itaosy, Antananarivo, Madagascar",
+                "latitude": -18.9067813,
+                "longitude": 47.4476659
+              }
+            },
+            {
+              "id": "colis-005",
+              "label": "Analamahitsy Ambodimanga",
+              "weightKg": 0.5,
+              "destination": {
+                "label": "Rue d'Ambatobe, Ambodimanga",
+                "destinationQuery": "Rue d'Ambatobe, Ambodimanga, Antananarivo, Madagascar",
+                "latitude": -18.8775872,
+                "longitude": 47.5505675
+              },
+              "deliveryWindow": {
+                "startAt": "2026-08-24T08:00:00+03:00",
+                "endAt": "2026-08-24T10:00:00+03:00"
+              }
+            },
+            {
+              "id": "colis-006",
+              "label": "Tsarasaotra Soavimasoandro",
+              "weightKg": 1,
+              "destination": {
+                "label": "Tsarasaotra, Soavimasoandro",
+                "destinationQuery": "Tsarasaotra, Soavimasoandro, Antananarivo, Madagascar",
+                "latitude": -18.8665134,
+                "longitude": 47.5179941
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "client-002",
+      "name": "Celestin",
+      "deliveryGroups": [
+        {
+          "id": "retrait-002",
+          "name": "Ambatobe - arrêt 183",
+          "pickup": {
+            "label": "Ambatobe",
+            "destinationQuery": "Ambatobe, Antananarivo, Madagascar",
+            "latitude": -18.8793892,
+            "longitude": 47.5585948
+          },
+          "packages": [
+            {
+              "id": "colis-007",
+              "label": "Antaninarenina",
+              "weightKg": 1,
+              "destination": {
+                "label": "Antaninarenina",
+                "destinationQuery": "Antaninarenina, Antananarivo, Madagascar",
+                "latitude": -18.9102957,
+                "longitude": 47.5250179
+              },
+              "deliveryWindow": {
+                "startAt": "2026-08-24T10:30:00+03:00",
+                "endAt": "2026-08-24T12:30:00+03:00"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "client-003",
+      "name": "Elisoa",
+      "deliveryGroups": [
+        {
+          "id": "retrait-003",
+          "name": "Alarobia - Akoufre",
+          "pickup": {
+            "label": "Alarobia",
+            "destinationQuery": "Alarobia, Antananarivo, Madagascar",
+            "latitude": -18.8713408,
+            "longitude": 47.5212985
+          },
+          "packages": [
+            {
+              "id": "colis-008",
+              "label": "Andranotapahana",
+              "weightKg": 1,
+              "destination": {
+                "label": "Lac Andranotapahana",
+                "destinationQuery": "Lac Andranotapahana, Ambohidratrimo, Madagascar",
+                "latitude": -18.8231157,
+                "longitude": 47.453669
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
