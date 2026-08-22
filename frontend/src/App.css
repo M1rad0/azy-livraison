@@ -5726,7 +5726,7 @@ tbody tr:last-child td {
 /* Multi-user portals */
 .role-dashboard,
 .legacy-tools-bar {
-  width: min(100%, 1200px);
+  width: min(100%, var(--portal-content-width, 1200px));
   margin-inline: auto;
 }
 

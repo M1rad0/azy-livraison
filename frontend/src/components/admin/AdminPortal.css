@@ -7,7 +7,7 @@
   --admin-ink-soft: #657889;
   --admin-line: #dce5ec;
   --admin-paper: #fff;
-  width: min(1480px, calc(100% - clamp(1rem, 4vw, 4rem)));
+  width: 100%;
   margin: 0 auto;
   padding: 1.4rem 0 5rem;
   color: var(--admin-navy);
@@ -1067,7 +1067,7 @@
 }
 
 @media (max-width: 760px) {
-  .admin-portal { width: min(100% - 1rem, 1480px); padding-top: .6rem; }
+  .admin-portal { padding-top: .6rem; }
   .admin-portal__intro { grid-template-columns: auto 1fr; border-radius: 1.15rem; }
   .admin-portal__today { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: .5rem; }
   .admin-portal__today strong { margin-left: auto; }
