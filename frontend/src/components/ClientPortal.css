@@ -2,7 +2,7 @@
 .client-request-builder,
 .client-profile-page {
   width: 100%;
-  max-width: 1500px;
+  max-width: var(--portal-content-width, 1500px);
   margin: 0 auto;
   padding: 1rem 0 2.5rem;
 }
