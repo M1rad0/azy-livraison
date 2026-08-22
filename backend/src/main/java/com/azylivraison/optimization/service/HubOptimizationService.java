@@ -18,6 +18,7 @@ import java.util.Set;
 
 import com.azylivraison.optimization.config.OptimizationProperties;
 import com.azylivraison.optimization.domain.OperationalPolicy;
+import com.azylivraison.optimization.domain.ViaHubRunPolicy;
 import com.azylivraison.optimization.domain.OptimizationComparisonResult.CourierHubManifest;
 import com.azylivraison.optimization.domain.OptimizationComparisonResult.HubExecution;
 import com.azylivraison.optimization.domain.OptimizationComparisonResult.HubRole;
@@ -60,7 +61,7 @@ class HubOptimizationService {
     private final HubCollectionTaskFactory taskFactory;
     private final HubCollectionOrToolsRoutingOptimizer collectionOptimizer;
     private final HubDistributionOrToolsRoutingOptimizer distributionOptimizer;
-    private final OperationalPolicy operationalPolicy;
+    private final ViaHubRunPolicy defaultRunPolicy;
     private final OptimizationScenarioEvaluator scenarioEvaluator = new OptimizationScenarioEvaluator();
 
     HubOptimizationService(
@@ -73,27 +74,33 @@ class HubOptimizationService {
         this.taskFactory = taskFactory;
         this.collectionOptimizer = collectionOptimizer;
         this.distributionOptimizer = distributionOptimizer;
-        this.operationalPolicy = properties.operationalPolicy();
+        this.defaultRunPolicy = new ViaHubRunPolicy(properties.operationalPolicy(), properties.timeLimit());
     }
 
     HubOptimizationOutcome optimize(DeliveryPlan plan) {
+        return optimize(plan, defaultRunPolicy);
+    }
+
+    HubOptimizationOutcome optimize(DeliveryPlan plan, ViaHubRunPolicy runPolicy) {
+        OperationalPolicy policy = Objects.requireNonNull(runPolicy, "runPolicy must not be null")
+                .operationalPolicy();
         requireHubInputs(plan);
         List<MultiClientOptimizationJob> allJobs = jobs(plan);
         List<HubCollectionTask> tasks = taskFactory.create(plan.clients(), plan.couriers());
         if (tasks.isEmpty()) {
-            return emptyOutcome(plan, allJobs);
+            return emptyOutcome(plan, allJobs, policy);
         }
 
         CollectionSetup collectionSetup = collectionSetup(plan, tasks);
         List<PhaseSolution> candidates = new ArrayList<>();
-        PhaseSolution current = solvePhases(plan, allJobs, collectionSetup);
+        PhaseSolution current = solvePhases(plan, allJobs, collectionSetup, runPolicy);
         candidates.add(current);
         Set<java.time.Instant> attemptedDeadlines = new HashSet<>();
         for (int attempt = 0; attempt < MAX_COLLECTION_FEEDBACK_ATTEMPTS; attempt++) {
-            OffsetDateTime deadline = feedbackDeadline(plan, current);
+            OffsetDateTime deadline = feedbackDeadline(plan, current, policy);
             if (deadline == null || !attemptedDeadlines.add(deadline.toInstant())) break;
             CollectionSetup constrainedSetup = withCollectionDeadline(collectionSetup, deadline);
-            current = solvePhases(plan, allJobs, constrainedSetup);
+            current = solvePhases(plan, allJobs, constrainedSetup, runPolicy);
             candidates.add(current);
         }
 
@@ -104,7 +111,12 @@ class HubOptimizationService {
                 .reduce(0L, Math::addExact);
         HubOptimizationOutcome best = null;
         for (PhaseSolution candidate : candidates) {
-            HubOptimizationOutcome outcome = buildOutcome(plan, allJobs, candidate, totalComputationMillis);
+            HubOptimizationOutcome outcome = buildOutcome(
+                    plan,
+                    allJobs,
+                    candidate,
+                    totalComputationMillis,
+                    policy);
             if (best == null || isBetter(outcome.metrics(), best.metrics())) {
                 best = outcome;
             }
@@ -115,8 +127,12 @@ class HubOptimizationService {
     private PhaseSolution solvePhases(
             DeliveryPlan plan,
             List<MultiClientOptimizationJob> allJobs,
-            CollectionSetup collectionSetup) {
-        HubCollectionSolvedOptimization collection = collectionOptimizer.solve(collectionSetup.problem());
+            CollectionSetup collectionSetup,
+            ViaHubRunPolicy runPolicy) {
+        HubCollectionSolvedOptimization collection = collectionOptimizer.solve(
+                collectionSetup.problem(),
+                runPolicy.operationalPolicy(),
+                runPolicy.optimizationTimeLimit());
         Map<String, HubCollectionSolvedOptimization.SolvedRoute> collectionRouteByCourier =
                 collectionRoutesByCourier(collectionSetup.problem(), collection);
         Map<String, String> collectorByPackage = collectorsByPackage(collectionSetup.problem(), collection);
@@ -132,7 +148,8 @@ class HubOptimizationService {
                 collectionSetup,
                 collection,
                 collectionRouteByCourier,
-                approaches);
+                approaches,
+                runPolicy);
 
         return new PhaseSolution(
                 collectionSetup,
@@ -148,7 +165,8 @@ class HubOptimizationService {
             DeliveryPlan plan,
             List<MultiClientOptimizationJob> allJobs,
             PhaseSolution phase,
-            long totalComputationMillis) {
+            long totalComputationMillis,
+            OperationalPolicy policy) {
         CollectionSetup collectionSetup = phase.collectionSetup();
         HubCollectionSolvedOptimization collection = phase.collection();
         Map<String, HubCollectionSolvedOptimization.SolvedRoute> collectionRouteByCourier =
@@ -177,7 +195,7 @@ class HubOptimizationService {
 
         OffsetDateTime redistributionCompletedAt = distribution.meetingAt() == null
                 ? null
-                : distribution.meetingAt().plus(operationalPolicy.hubTransferDuration());
+                : distribution.meetingAt().plus(policy.hubTransferDuration());
         List<CourierRoute> routes = buildCombinedRoutes(
                 plan,
                 collectionSetup.problem(),
@@ -211,7 +229,7 @@ class HubOptimizationService {
                 distributorByPackage,
                 participantIds,
                 redistributionCompletedAt);
-        StrategyMetrics metrics = scenarioEvaluator.evaluate(plan, result, operationalPolicy);
+        StrategyMetrics metrics = scenarioEvaluator.evaluate(plan, result, policy);
         return new HubOptimizationOutcome(result, hubExecution, metrics);
     }
 
@@ -233,7 +251,10 @@ class HubOptimizationService {
                 setup.hubMatrixPoint());
     }
 
-    private OffsetDateTime feedbackDeadline(DeliveryPlan plan, PhaseSolution phase) {
+    private OffsetDateTime feedbackDeadline(
+            DeliveryPlan plan,
+            PhaseSolution phase,
+            OperationalPolicy policy) {
         StabilizedDistribution distribution = phase.distribution();
         if (distribution.problem() == null
                 || distribution.solved() == null
@@ -246,8 +267,8 @@ class HubOptimizationService {
             MultiClientOptimizationJob job = distribution.problem().jobs().get(droppedIndex);
             if (job.deliveryPackage().deliveryWindow() == null) continue;
             OffsetDateTime latestServiceStart = job.deliveryPackage().deliveryWindow().endAt()
-                    .plus(operationalPolicy.deliveryWindowLateTolerance());
-            addFeedbackDeadline(plan, distribution, droppedIndex, latestServiceStart, deadlines);
+                    .plus(policy.deliveryWindowLateTolerance());
+            addFeedbackDeadline(plan, distribution, droppedIndex, latestServiceStart, deadlines, policy);
         }
         for (HubDistributionSolvedOptimization.SolvedRoute route : distribution.solved().routes()) {
             for (HubDistributionSolvedOptimization.SolvedVisit visit : route.visits()) {
@@ -259,7 +280,8 @@ class HubOptimizationService {
                         distribution,
                         visit.jobIndex(),
                         job.deliveryPackage().deliveryWindow().endAt(),
-                        deadlines);
+                        deadlines,
+                        policy);
             }
         }
         return deadlines.stream()
@@ -273,7 +295,8 @@ class HubOptimizationService {
             StabilizedDistribution distribution,
             int jobIndex,
             OffsetDateTime latestServiceStart,
-            List<OffsetDateTime> deadlines) {
+            List<OffsetDateTime> deadlines,
+            OperationalPolicy policy) {
         MultiClientOptimizationJob job = distribution.problem().jobs().get(jobIndex);
         Double distance = distribution.problem().distancesMeters()
                 .get(distribution.problem().hubNode())
@@ -286,7 +309,7 @@ class HubOptimizationService {
                 .orElse(Long.MAX_VALUE);
         if (fastestTravel == Long.MAX_VALUE) return;
         deadlines.add(latestServiceStart
-                .minus(operationalPolicy.hubTransferDuration())
+                .minus(policy.hubTransferDuration())
                 .minusSeconds(fastestTravel));
     }
 
@@ -387,7 +410,9 @@ class HubOptimizationService {
             CollectionSetup collectionSetup,
             HubCollectionSolvedOptimization collection,
             Map<String, HubCollectionSolvedOptimization.SolvedRoute> collectionRoutes,
-            Map<String, CourierApproach> approaches) {
+            Map<String, CourierApproach> approaches,
+            ViaHubRunPolicy runPolicy) {
+        OperationalPolicy policy = runPolicy.operationalPolicy();
         Map<String, OffsetDateTime> arrivals = participantArrivals(
                 plan,
                 collection,
@@ -427,14 +452,17 @@ class HubOptimizationService {
                     .filter(courier -> !arrivals.get(courier.id()).toInstant().isAfter(iterationMeeting.toInstant()))
                     .toList();
             HubDistributionProblem problem = new HubDistributionProblem(
-                    iterationMeeting.plus(operationalPolicy.hubTransferDuration()),
+                    iterationMeeting.plus(policy.hubTransferDuration()),
                     eligible,
                     jobs,
                     distributionMatrix.hubNode(),
                     distributionMatrix.deliveryNodes(),
                     distributionMatrix.matrix().distancesMeters(),
                     distributionActivationCosts(eligible, collectionRoutes, approaches));
-            HubDistributionSolvedOptimization solved = distributionOptimizer.solve(problem);
+            HubDistributionSolvedOptimization solved = distributionOptimizer.solve(
+                    problem,
+                    policy,
+                    runPolicy.optimizationTimeLimit());
             computationMillis = Math.addExact(computationMillis, solved.computationTimeMillis());
             Set<String> usedDistributors = solved.routes().stream()
                     .map(route -> problem.couriers().get(route.courierIndex()).id())
@@ -455,7 +483,7 @@ class HubOptimizationService {
         }
         return new StabilizedDistribution(
                 finalProblem == null ? collectorMeeting : finalProblem.distributionDepartureAt()
-                        .minus(operationalPolicy.hubTransferDuration()),
+                        .minus(policy.hubTransferDuration()),
                 stable,
                 iterations,
                 finalProblem,
@@ -987,7 +1015,10 @@ class HubOptimizationService {
         return List.copyOf(jobs);
     }
 
-    private HubOptimizationOutcome emptyOutcome(DeliveryPlan plan, List<MultiClientOptimizationJob> jobs) {
+    private HubOptimizationOutcome emptyOutcome(
+            DeliveryPlan plan,
+            List<MultiClientOptimizationJob> jobs,
+            OperationalPolicy policy) {
         List<UnassignedPackage> unassigned = jobs.stream()
                 .map(job -> !hasCoordinates(job.deliveryPackage().destination())
                         ? unassigned(job, UnassignedReason.DESTINATION_UNRESOLVED,
@@ -1016,7 +1047,7 @@ class HubOptimizationService {
         return new HubOptimizationOutcome(
                 result,
                 execution,
-                scenarioEvaluator.evaluate(plan, result, operationalPolicy));
+                scenarioEvaluator.evaluate(plan, result, policy));
     }
 
     private RoutingPoint point(String id, Location location) {
