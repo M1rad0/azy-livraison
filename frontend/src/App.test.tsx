@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import type { AuthSession } from './api/auth'
+import { LegacyPlanningTools } from './components/LegacyPlanningTools'
 
 vi.mock('react-leaflet', () => {
   const map = { fitBounds: vi.fn(), setView: vi.fn() }
@@ -90,7 +91,7 @@ function authenticatedFetch(
 }
 
 async function openHistoricalTools() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir les outils historiques' }))
+  render(<LegacyPlanningTools accessToken={session.accessToken} onClose={() => undefined} />)
   await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })
 }
 
@@ -119,7 +120,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Piloter les livraisons' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Demandes en attente' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ouvrir les outils historiques' })).toBeInTheDocument()
+    expect(screen.queryByText('Outils historiques')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByText('Administration').length).toBeGreaterThan(0))
     expect(screen.getByText('Équipe AZY')).toBeInTheDocument()
   })

@@ -1,14 +1,10 @@
-import { useState } from 'react'
 import {
-  ArrowRight,
   Bike,
-  History,
   Settings2,
 } from 'lucide-react'
 import type { AuthSession } from '../api/auth'
 import { AdminPortal } from './admin/AdminPortal'
 import { ClientPortal } from './ClientPortal'
-import { LegacyPlanningTools } from './LegacyPlanningTools'
 
 interface DashboardProps {
   session: AuthSession
@@ -19,28 +15,7 @@ export function ClientDashboard({ session }: DashboardProps) {
 }
 
 export function AdminDashboard({ session }: DashboardProps) {
-  const [showLegacyTools, setShowLegacyTools] = useState(false)
-
-  if (showLegacyTools) {
-    return <LegacyPlanningTools accessToken={session.accessToken} onClose={() => setShowLegacyTools(false)} />
-  }
-
-  return (
-    <div className="role-dashboard">
-      <AdminPortal accessToken={session.accessToken} />
-      <aside className="legacy-access" aria-labelledby="legacy-access-title">
-        <span className="legacy-access__icon" aria-hidden="true"><History /></span>
-        <div>
-          <p className="eyebrow">Transition</p>
-          <h2 id="legacy-access-title">Outils historiques</h2>
-          <p>Retrouvez temporairement la planification locale et les fichiers de l’ancien back-office.</p>
-        </div>
-        <button className="button button--secondary" type="button" onClick={() => setShowLegacyTools(true)}>
-          Ouvrir les outils historiques<ArrowRight aria-hidden="true" />
-        </button>
-      </aside>
-    </div>
-  )
+  return <div className="role-dashboard"><AdminPortal accessToken={session.accessToken} /></div>
 }
 
 export function CourierDashboard({ session }: DashboardProps) {

@@ -5867,7 +5867,6 @@ tbody tr:last-child td {
 }
 
 .portal-card__icon,
-.legacy-access__icon,
 .legacy-tools-bar__icon {
   display: grid;
   width: 3rem;
@@ -5880,7 +5879,6 @@ tbody tr:last-child td {
 }
 
 .portal-card__icon svg,
-.legacy-access__icon svg,
 .legacy-tools-bar__icon svg {
   width: 1.35rem;
   height: 1.35rem;
@@ -5900,32 +5898,11 @@ tbody tr:last-child td {
 }
 
 .portal-card p,
-.legacy-access p,
 .courier-coming-soon p {
   margin: 0.65rem 0 0;
   color: var(--ink-soft);
   font-size: 0.8rem;
   line-height: 1.6;
-}
-
-.legacy-access {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 1rem;
-  padding: 1rem;
-  background: #f3f7fa;
-  border: 1px dashed #c7d4de;
-  border-radius: 1.2rem;
-}
-
-.legacy-access .eyebrow {
-  margin-bottom: 0.25rem;
-}
-
-.legacy-access p:last-child {
-  margin-top: 0.3rem;
 }
 
 .legacy-tools-bar {
@@ -6069,15 +6046,6 @@ tbody tr:last-child td {
 
   .portal-card {
     min-height: 190px;
-  }
-
-  .legacy-access {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .legacy-access .button {
-    grid-column: 1 / -1;
-    width: 100%;
   }
 
   .login-panel {
