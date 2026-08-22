@@ -3,6 +3,18 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 export interface Account {
   id: string
   username: string
+  role: AccountRole
+  displayName: string
+  phone: string | null
+}
+
+export type AccountRole = 'CLIENT' | 'COURIER' | 'ADMIN'
+
+export interface RegisterInput {
+  username: string
+  password: string
+  displayName: string
+  phone: string
 }
 
 export interface AuthSession {
@@ -54,6 +66,14 @@ export function login(username: string, password: string): Promise<AuthSession> 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
+  })
+}
+
+export function register(input: RegisterInput): Promise<AuthSession> {
+  return authRequest('register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
   })
 }
 

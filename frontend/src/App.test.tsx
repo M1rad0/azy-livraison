@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import type { AuthSession } from './api/auth'
 
 vi.mock('react-leaflet', () => {
   const map = { fitBounds: vi.fn(), setView: vi.fn() }
@@ -17,12 +18,49 @@ vi.mock('react-leaflet', () => {
   }
 })
 
+vi.mock('./components/ClientPortal', () => ({
+  ClientPortal: ({ accessToken }: { accessToken: string }) => (
+    <section data-access-token={accessToken}>
+      <p>Espace client</p>
+      <h1>Bonjour, Soa Rakoto</h1>
+      <h2>Nouvelle demande</h2>
+    </section>
+  ),
+}))
+
+vi.mock('./components/admin/AdminPortal', () => ({
+  AdminPortal: ({ accessToken }: { accessToken: string }) => (
+    <section data-access-token={accessToken}>
+      <p>Administration</p>
+      <h1>Piloter les livraisons</h1>
+      <h2>Demandes en attente</h2>
+    </section>
+  ),
+}))
+
 const session = {
   tokenType: 'Bearer',
   accessToken: 'test-access-token',
   expiresIn: 900,
-  account: { id: '9ac90f82-9f3e-4ccb-b11f-d2cf804f3a1e', username: 'admin' },
-}
+  account: {
+    id: '9ac90f82-9f3e-4ccb-b11f-d2cf804f3a1e',
+    username: 'admin',
+    role: 'ADMIN',
+    displayName: 'Équipe AZY',
+    phone: '+261340000000',
+  },
+} satisfies AuthSession
+
+const clientSession = {
+  ...session,
+  account: {
+    id: 'cb10572f-9c2b-4efd-9731-4bc138dd70aa',
+    username: 'soa.client',
+    role: 'CLIENT',
+    displayName: 'Soa Rakoto',
+    phone: '+261341234567',
+  },
+} satisfies AuthSession
 
 const systemStatus = {
   service: 'UP',
@@ -38,9 +76,12 @@ function jsonResponse(body: unknown, status = 200) {
   }
 }
 
-function authenticatedFetch(handler?: (input: string, init?: RequestInit) => unknown) {
+function authenticatedFetch(
+  handler?: (input: string, init?: RequestInit) => unknown,
+  activeSession: AuthSession = session,
+) {
   return vi.fn().mockImplementation((input: string, init?: RequestInit) => {
-    if (input === '/api/auth/refresh') return Promise.resolve(jsonResponse(session))
+    if (input === '/api/auth/refresh') return Promise.resolve(jsonResponse(activeSession))
     if (input === '/api/system/status') return Promise.resolve(jsonResponse(systemStatus))
     const handled = handler?.(input, init)
     if (handled) return Promise.resolve(handled)
@@ -48,7 +89,13 @@ function authenticatedFetch(handler?: (input: string, init?: RequestInit) => unk
   })
 }
 
+async function openHistoricalTools() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir les outils historiques' }))
+  await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })
+}
+
 async function openWorkspace() {
+  await openHistoricalTools()
   fireEvent.click(await screen.findByRole('button', { name: 'Choisir ce mode' }))
   await screen.findByRole('heading', { name: 'Construisez votre tournée.' })
 }
@@ -64,17 +111,28 @@ describe('App', () => {
     vi.unstubAllGlobals()
   })
 
-  it('restores the session and displays the pattern choice', async () => {
+  it('restores an admin session on the new administration dashboard', async () => {
     const fetchMock = authenticatedFetch()
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Un retrait, plusieurs livraisons' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Plusieurs retraits' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Session active')).toBeInTheDocument())
-    expect(screen.getByText('admin')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Piloter les livraisons' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Demandes en attente' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ouvrir les outils historiques' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByText('Administration').length).toBeGreaterThan(0))
+    expect(screen.getByText('Équipe AZY')).toBeInTheDocument()
+  })
+
+  it('routes a client session to a separate client dashboard', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch(undefined, clientSession))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: /Bonjour,? Soa/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Nouvelle demande' })).toBeInTheDocument()
+    expect(screen.getAllByText('Espace client').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Ouvrir les outils historiques' })).not.toBeInTheDocument()
   })
 
   it('keeps file actions above the workspace and changes the sidebar with the active step', async () => {
@@ -100,6 +158,7 @@ describe('App', () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
 
+    await openHistoricalTools()
     fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
     expect(await screen.findByRole('heading', { name: 'Préparez tous les retraits.' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute('aria-selected', 'true')
@@ -139,6 +198,7 @@ describe('App', () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
 
+    await openHistoricalTools()
     fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
     expect(await screen.findByRole('heading', { name: 'Siège / point de rencontre' })).toBeInTheDocument()
     expect(screen.getByText('Siège à confirmer')).toBeInTheDocument()
@@ -159,6 +219,7 @@ describe('App', () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
 
+    await openHistoricalTools()
     fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
     await screen.findByRole('heading', { name: 'Préparez tous les retraits.' })
     selectWorkspaceTab('Retraits')
@@ -217,6 +278,7 @@ describe('App', () => {
     Object.defineProperty(file, 'text', { value: async () => JSON.stringify(draft) })
 
     render(<App />)
+    await openHistoricalTools()
     fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
     fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
     expect(await screen.findByText('plan-historique.json chargé : 2 retraits et 0 colis.')).toBeInTheDocument()
@@ -250,6 +312,7 @@ describe('App', () => {
     }))
 
     render(<App />)
+    await openHistoricalTools()
     fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
     selectWorkspaceTab('Livreurs')
     fireEvent.click(screen.getByRole('button', { name: 'Valider le plan' }))
@@ -279,7 +342,39 @@ describe('App', () => {
     expect(screen.getByLabelText('Mot de passe')).toHaveAttribute('type', 'password')
   })
 
-  it('logs in and opens the pattern choice', async () => {
+  it('registers a client and opens the client dashboard', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 'INVALID_REFRESH_TOKEN' }, 401))
+      .mockResolvedValueOnce(jsonResponse(clientSession, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Créer un compte' }))
+    fireEvent.change(screen.getByLabelText('Nom affiché'), { target: { value: 'Soa Rakoto' } })
+    fireEvent.change(screen.getByLabelText('Téléphone'), { target: { value: '+261341234567' } })
+    fireEvent.change(screen.getByLabelText('Identifiant'), { target: { value: 'soa.client' } })
+    fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'secret-password' } })
+    fireEvent.change(screen.getByLabelText('Confirmer le mot de passe'), { target: { value: 'secret-password' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Créer mon compte' }))
+
+    expect(await screen.findByRole('heading', { name: /Bonjour,? Soa/ })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/auth/register',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          username: 'soa.client',
+          password: 'secret-password',
+          displayName: 'Soa Rakoto',
+          phone: '+261341234567',
+        }),
+      }),
+    )
+  })
+
+  it('logs in and opens the dashboard matching the account role', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ code: 'INVALID_REFRESH_TOKEN' }, 401))
       .mockResolvedValueOnce(jsonResponse(session))
@@ -291,7 +386,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'secret-password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Se connecter' }))
 
-    await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })
+    await screen.findByRole('heading', { name: 'Piloter les livraisons' })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/auth/login',
