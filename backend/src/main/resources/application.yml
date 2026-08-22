@@ -62,7 +62,7 @@ app:
     accept-language: ${GEOCODING_ACCEPT_LANGUAGE:fr,mg,en}
     result-limit: ${GEOCODING_RESULT_LIMIT:5}
     connect-timeout: ${GEOCODING_CONNECT_TIMEOUT:2s}
-    read-timeout: ${GEOCODING_READ_TIMEOUT:5s}
+    read-timeout: ${GEOCODING_READ_TIMEOUT:30s}
     cache-ttl: ${GEOCODING_CACHE_TTL:30d}
   routing:
     base-url: ${OSRM_BASE_URL:http://localhost:8083}

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, LoaderCircle, MapPin, MapPinned, Search, X } from 'lucide-react'
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
@@ -55,6 +55,7 @@ function LocationPickerDialog({
   const [candidates, setCandidates] = useState<GeocodingCandidate[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
+  const searchRequest = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -64,25 +65,43 @@ function LocationPickerDialog({
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => {
+      searchRequest.current?.abort()
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [onClose])
 
   async function search() {
-    if (query.trim().length < 3) return
+    const searchedQuery = query.trim()
+    if (searchedQuery.length < 3 || searchRequest.current) return
+    const controller = new AbortController()
+    searchRequest.current = controller
     setBusy(true)
     setMessage(undefined)
     setCandidates([])
     try {
-      const result = await searchAddress(query, accessToken)
+      const result = await searchAddress(searchedQuery, accessToken, controller.signal)
+      if (controller.signal.aborted) return
       setCandidates(result.candidates)
       if (result.candidates.length === 0) setMessage('Aucun lieu trouvé à Madagascar.')
     } catch (error) {
+      if (controller.signal.aborted) return
       setMessage(error instanceof Error ? error.message : 'Recherche impossible.')
     } finally {
-      setBusy(false)
+      if (searchRequest.current === controller) {
+        searchRequest.current = null
+        setBusy(false)
+      }
     }
+  }
+
+  function updateQuery(nextQuery: string) {
+    searchRequest.current?.abort()
+    searchRequest.current = null
+    setBusy(false)
+    setQuery(nextQuery)
+    setCandidates([])
+    setMessage(undefined)
   }
 
   function selectCandidate(candidate: GeocodingCandidate) {
@@ -132,11 +151,7 @@ function LocationPickerDialog({
                 value={query}
                 minLength={3}
                 placeholder="Adresse, quartier ou point de repère"
-                onChange={(event) => {
-                  setQuery(event.target.value)
-                  setCandidates([])
-                  setMessage(undefined)
-                }}
+                onChange={(event) => updateQuery(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault()
@@ -189,7 +204,7 @@ function LocationPickerDialog({
               <MapPositionController location={selection} />
               <MapClickHandler onPick={selectMapPoint} />
               {hasCoordinates(selection) && (
-                <CircleMarker center={[selection.latitude as number, selection.longitude as number]} radius={10} pathOptions={{ color: '#fff', fillColor: '#1f6a54', fillOpacity: 1, weight: 4 }}>
+                <CircleMarker center={[selection.latitude as number, selection.longitude as number]} radius={10} pathOptions={{ color: '#fff', fillColor: '#f45b0b', fillOpacity: 1, weight: 4 }}>
                   <Popup>{selection.destinationQuery || 'Point sélectionné'}</Popup>
                 </CircleMarker>
               )}

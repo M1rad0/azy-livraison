@@ -473,6 +473,42 @@ describe('App', () => {
     expect(screen.getByText('Analakely, Antananarivo, Madagascar')).toBeInTheDocument()
   })
 
+  it('does not duplicate a location search while the first request is pending', async () => {
+    let resolveSearch!: (response: ReturnType<typeof jsonResponse>) => void
+    const pendingSearch = new Promise<ReturnType<typeof jsonResponse>>((resolve) => {
+      resolveSearch = resolve
+    })
+    const searchUrl = '/api/geocoding/search?q=Analakely%2C+Antananarivo'
+    const fetchMock = authenticatedFetch((input) => input === searchUrl ? pendingSearch : undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    await openWorkspace()
+    selectWorkspaceTab('Livraisons')
+    fireEvent.click(screen.getByRole('button', { name: 'Choisir sur la carte' }))
+    const searchInput = screen.getByRole('textbox', { name: /Rechercher un lieu/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
+    fireEvent.keyDown(searchInput, { key: 'Enter' })
+
+    expect(fetchMock.mock.calls.filter(([input]) => input === searchUrl)).toHaveLength(1)
+
+    resolveSearch(jsonResponse({
+      query: 'Analakely, Antananarivo',
+      provider: 'NOMINATIM',
+      cached: false,
+      resultCount: 1,
+      candidates: [{
+        id: 'N12345',
+        osmType: 'NODE',
+        osmId: 12345,
+        displayName: 'Analakely, Antananarivo, Madagascar',
+        latitude: -18.9089,
+        longitude: 47.5212,
+      }],
+    }))
+    expect(await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ })).toBeInTheDocument()
+  })
+
   it('searches and selects a destination from a package card', async () => {
     const fetchMock = authenticatedFetch((input) => {
       if (input === '/api/geocoding/search?q=Ankorondrano%2C+Antananarivo') {

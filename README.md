@@ -727,6 +727,8 @@ Le premier lancement importe Madagascar et peut prendre du temps. Le volume `nom
 docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --build --detach
 ```
 
+`NOMINATIM_WARMUP_ON_STARTUP=true` préchauffe l'index avant que le service soit déclaré prêt. Cela allonge le démarrage de Nominatim, mais évite que les premières recherches interactives expirent pendant le chargement des index. Le backend attend jusqu'à `GEOCODING_READ_TIMEOUT=30s` pour absorber les recherches locales plus lentes qui ne sont pas encore dans son cache.
+
 La recherche applicative est disponible dans l'interface et via `GET /api/geocoding/search?q=Analakely`. Elle est limitée à `mg`, renvoie plusieurs candidats à confirmer et met les réponses en cache dans PostgreSQL pendant 30 jours par défaut.
 
 ### Routage local avec OSRM
