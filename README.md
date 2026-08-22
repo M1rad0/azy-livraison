@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : les deux patterns sont utilisables de bout en bout.** Après connexion, le frontend permet de préparer un plan mono-client ou multi-clients, contrôler ses points sur la carte, lancer l'optimisation OR-Tools et examiner les tournées colorées avec leurs capacités, retraits, livraisons, horaires et colis non affectés. Les brouillons sont exportables en JSON et les listes opérationnelles en CSV ou PDF.
+> **État du projet : les deux patterns sont utilisables de bout en bout.** Après connexion, le frontend permet de préparer un plan mono-client ou multi-clients, contrôler ses points sur la carte, lancer l'optimisation OR-Tools et examiner les tournées colorées avec leurs capacités, retraits, livraisons, horaires et colis non affectés. Pour un plan multi-clients, l'application compare aussi les tournées directes à une redistribution par un siège commun. Les brouillons sont exportables en JSON et les listes opérationnelles en CSV ou PDF.
 
 ## Objectif
 
@@ -134,6 +134,16 @@ Un colis non affecté doit recevoir l'une des raisons suivantes, extensibles par
 - `SOLVER_TIMEOUT` : aucune affectation acceptable trouvée dans le temps imparti.
 
 Le système ne contourne jamais silencieusement une capacité. Il indique le dépassement, la capacité minimale nécessaire et les livreurs candidats. Un responsable peut alors corriger explicitement la capacité du livreur et relancer le calcul. Un futur mode de dérogation devra conserver un avertissement visible et une trace de la décision.
+
+### Comparaison avec redistribution par un siège
+
+Pour un plan multi-clients `2.1`, l'application calcule et conserve deux scénarios : les tournées directes et une organisation en quatre phases **collecte → rendez-vous au siège → redistribution → livraison**. Chaque livreur utilisé part de son lieu à son heure de départ, les colis collectés passent obligatoirement par `redistributionHub`, puis la livraison repart du siège après l'arrivée du dernier participant et la redistribution des charges.
+
+Le choix d'un distributeur inclut son trajet réel origine → siège lorsqu'il n'a effectué aucune collecte. Si une collecte trop tardive empêche ensuite plusieurs livraisons, une boucle bornée recalcule la collecte avec une heure maximale d'arrivée au siège et conserve la meilleure solution complète trouvée ; les colis écartés restent explicitement non affectés.
+
+Les durées opérationnelles par défaut sont de 10 minutes par retrait visité, 15 minutes pour la redistribution commune et 5 minutes par colis livré. Les créneaux acceptent par défaut 0 minute d'avance et jusqu'à 30 minutes de retard ; ces valeurs sont configurables.
+
+La recommandation compare les scénarios dans cet ordre : nombre de colis livrés, nombre de livraisons à l'heure, retard cumulé, kilomètres réellement parcourus, heure de fin, puis nombre de livreurs mobilisés. Une égalité complète conserve le scénario direct. Pour le scénario par siège, le résultat fournit également l'heure du rendez-vous, un manifeste par livreur et le transfert de chaque colis entre collecteur et distributeur.
 
 ## Architecture cible
 
@@ -480,6 +490,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `GET` | `/api/geocoding/search?q=...` | Rechercher des candidats dans Madagascar |
 | `POST` | `/api/plans/validate` | Valider et normaliser un plan sans le géocoder ni l'optimiser |
 | `POST` | `/api/plans/optimize` | Affecter et ordonner les colis d'un plan validé avec OSRM et OR-Tools |
+| `POST` | `/api/plans/compare` | Comparer les tournées directes et la redistribution par le siège d'un plan multi-clients `2.1` |
 | `POST` | `/api/import/packages/csv` | Convertir un CSV colis vers le modèle du plan |
 | `POST` | `/api/import/couriers/csv` | Convertir un CSV livreurs vers le modèle du plan |
 | `GET` | `/api/import/packages/template` | Télécharger le modèle CSV colis |
@@ -487,7 +498,7 @@ Le contrat exact sera publié avec OpenAPI, mais le découpage initial est :
 | `POST` | `/api/exports/result/csv` | Produire l'export tabulaire |
 | `POST` | `/api/exports/result/pdf` | Produire les fiches imprimables |
 
-Les opérations métier reçoivent le plan dans la requête et retournent le résultat sans exiger son enregistrement en base. L'optimisation exige des coordonnées confirmées pour le dépôt ; une destination de colis non résolue est conservée dans `unassignedPackages` avec sa raison. Le résultat contient les tournées, l'ordre des arrêts, les heures estimées, les capacités, les totaux et le contexte de calcul.
+Les opérations métier reçoivent le plan dans la requête et retournent le résultat sans exiger son enregistrement en base. L'optimisation exige des coordonnées confirmées pour le dépôt ; une destination de colis non résolue est conservée dans `unassignedPackages` avec sa raison. Le résultat contient les tournées, l'ordre des arrêts, les heures estimées, les capacités, les totaux et le contexte de calcul. La comparaison ajoute les métriques physiques des deux scénarios, la recommandation, les manifestes au siège et les transferts collecteur-distributeur ; l'interface permet d'en télécharger le JSON et le tableau CSV, puis d'utiliser les exports opérationnels du scénario affiché.
 
 Les routes d'authentification `login`, `refresh` et `logout`, ainsi que les health checks Docker, sont publiques. Toutes les autres routes exigent `Authorization: Bearer <accessToken>`. Le login et le renouvellement répondent avec :
 
@@ -716,9 +727,9 @@ MULTI_CLIENT_MULTI_PICKUP_DELIVERY
 
 Ce second pattern ne représente pas une simple liste de courses point à point. Un plan contient plusieurs clients ; chaque client peut lui-même posséder plusieurs groupes de livraison. Chaque groupe est une occurrence complète du pattern principal : un point de récupération suivi de plusieurs points de livraison.
 
-La liste des livreurs est commune à l'ensemble du plan. L'optimiseur répartit les colis de tous les clients entre le même vivier de livreurs, tout en respectant les capacités, les créneaux horaires et l'obligation d'effectuer chaque récupération avant la livraison correspondante. Un départ personnalisé est compté jusqu'au premier retrait attribué ; sans départ renseigné, la tournée commence au premier retrait.
+La liste des livreurs est commune à l'ensemble du plan. L'optimiseur répartit les colis de tous les clients entre le même vivier de livreurs, tout en respectant les capacités, les créneaux horaires et l'obligation d'effectuer chaque récupération avant la livraison correspondante. Dans le schéma courant, chaque livreur possède un lieu et une heure de départ confirmés : ce trajet initial est compté jusqu'au premier retrait attribué ou jusqu'au siège lorsqu'il participe uniquement à la distribution.
 
-Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-clients utilisent le schéma `2.0` et une collection `clients`, chaque client contenant ses propres `deliveryGroups`. Les anciennes sauvegardes restent donc compatibles.
+Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-clients utilisent désormais le schéma `2.1`, une collection `clients` dont chaque élément contient ses `deliveryGroups`, et un point confirmé `redistributionHub`. Les sauvegardes multi-clients `2.0` restent lisibles et sont migrées vers `2.1` à l'ouverture ; l'utilisateur doit ensuite renseigner le siège ainsi que les départs manquants avant de lancer la comparaison.
 
 ## Feuille de route
 
@@ -748,6 +759,7 @@ Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-cl
 - [x] affichage comparatif et carte colorée des tournées ;
 - [x] heures de départ et créneaux horaires facultatifs.
 - [x] optimisation multi-clients avec retraits multiples, précédences et flotte partagée.
+- [x] comparaison des tournées directes et de la collecte/redistribution par un siège commun.
 
 ### Phase 4 — Résultats, partage et mise en ligne
 
@@ -762,5 +774,5 @@ Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-cl
 
 - profils routiers spécialisés ;
 - rôles et permissions ;
-- historique et comparaison de scénarios ;
+- historique des scénarios ;
 - mise à jour automatisée et contrôlée des données OSM.
