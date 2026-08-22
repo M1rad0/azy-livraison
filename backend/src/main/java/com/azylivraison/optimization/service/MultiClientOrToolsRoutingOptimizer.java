@@ -43,6 +43,12 @@ class MultiClientOrToolsRoutingOptimizer {
     }
 
     MultiClientSolvedOptimization solve(MultiClientOptimizationProblem problem) {
+        return solve(problem, properties.vehicleActivationPenaltyMeters());
+    }
+
+    MultiClientSolvedOptimization solve(
+            MultiClientOptimizationProblem problem,
+            long vehicleActivationPenaltyMeters) {
         long startedAt = System.nanoTime();
         int actualNodeCount = problem.matrixPointByNode().length;
         int vehicleCount = problem.couriers().size();
@@ -69,7 +75,12 @@ class MultiClientOrToolsRoutingOptimizer {
         RoutingModel routing = new RoutingModel(manager);
         long maxArcDistance = maximumFiniteDistance(problem.distancesMeters());
         OperationalPolicy policy = properties.operationalPolicy();
-        long dropPenalty = safeDropPenalty(maxArcDistance, problem.jobs().size(), vehicleCount, policy);
+        long dropPenalty = safeDropPenalty(
+                maxArcDistance,
+                problem.jobs().size(),
+                vehicleCount,
+                vehicleActivationPenaltyMeters,
+                policy);
 
         int distanceCallback = routing.registerTransitCallback((fromIndex, toIndex) -> distanceCost(
                 problem,
@@ -80,7 +91,7 @@ class MultiClientOrToolsRoutingOptimizer {
                 manager.indexToNode(toIndex)));
         routing.setArcCostEvaluatorOfAllVehicles(distanceCallback);
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
-            routing.setFixedCostOfVehicle(properties.vehicleActivationPenaltyMeters(), vehicle);
+            routing.setFixedCostOfVehicle(vehicleActivationPenaltyMeters, vehicle);
         }
 
         Map<Integer, JobNode> jobsByNode = jobsByNode(problem);
@@ -354,11 +365,12 @@ class MultiClientOrToolsRoutingOptimizer {
             long maxArcDistance,
             int jobCount,
             int vehicleCount,
+            long vehicleActivationPenaltyMeters,
             OperationalPolicy policy) {
         long multiplier = Math.max(2, jobCount * 2L + vehicleCount + 1L);
         try {
             long routeUpperBound = Math.multiplyExact(
-                    maxArcDistance + properties.vehicleActivationPenaltyMeters(), multiplier);
+                    maxArcDistance + vehicleActivationPenaltyMeters, multiplier);
             long latenessUpperBound = Math.multiplyExact(
                     Math.multiplyExact(policy.deliveryWindowLateTolerance().toSeconds(), LATENESS_COST_PER_SECOND),
                     Math.max(1, jobCount));

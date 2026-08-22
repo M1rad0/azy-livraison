@@ -24,7 +24,10 @@ import com.azylivraison.planning.domain.DeliveryTimeWindow;
 import com.azylivraison.planning.domain.DeliveryPlan;
 import com.azylivraison.planning.domain.PlanningPattern;
 
+import org.springframework.stereotype.Component;
+
 /** Recomputes physical comparison metrics without relying on an optimizer score. */
+@Component
 final class OptimizationScenarioEvaluator {
 
     StrategyMetrics evaluate(
