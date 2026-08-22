@@ -3,13 +3,13 @@ import {
   Clock3,
   ClipboardList,
   Download,
-  FolderOpen,
+  LoaderCircle,
   MapPin,
   MapPinned,
   PackagePlus,
   Plus,
-  Save,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
   UserPlus,
@@ -26,13 +26,18 @@ import {
 } from '../api/csvImports'
 import {
   isDeliveryPlan,
+  materializeVehicleDefaults,
   PlanValidationFailure,
   validatePlan,
   type DeliveryPlan,
   type PlanningValidationError,
 } from '../api/plans'
+import { optimizePlan, type OptimizationResult } from '../api/optimization'
 import { PlanMapPreview } from './PlanMapPreview'
 import { LocationPicker } from './LocationPicker'
+import { OptimizationResults } from './OptimizationResults'
+import { WorkspaceDraftBar } from './WorkspaceDraftBar'
+import { validationFieldLabel, validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
 
 interface PlanningWorkspaceProps {
   accessToken: string
@@ -88,35 +93,6 @@ function nextId(prefix: string, items: { id: string }[]) {
   return candidate
 }
 
-function validationFieldLabel(path: string) {
-  const packageMatch = path.match(/^packages\[(\d+)](?:\.(.+))?/)
-  if (packageMatch) {
-    const field = packageMatch[2]?.replace('destination.', '')
-    const labels: Record<string, string> = {
-      id: 'référence', label: 'libellé', weightKg: 'poids', phone: 'téléphone',
-      destination: 'destination', destinationQuery: 'destination', latitude: 'latitude', longitude: 'longitude',
-      deliveryWindow: 'créneau de livraison', 'deliveryWindow.startAt': 'début du créneau', 'deliveryWindow.endAt': 'fin du créneau',
-    }
-    return `Colis ${Number(packageMatch[1]) + 1}${field ? ` · ${labels[field] ?? field}` : ''}`
-  }
-  const courierMatch = path.match(/^couriers\[(\d+)](?:\.(.+))?/)
-  if (courierMatch) {
-    const labels: Record<string, string> = {
-      id: 'référence', name: 'nom', vehicleType: 'véhicule', maxWeightKg: 'capacité', averageSpeedKmh: 'vitesse',
-      departureAt: 'heure de départ', departureLocation: 'lieu de départ',
-    }
-    const field = courierMatch[2]
-    return `Livreur ${Number(courierMatch[1]) + 1}${field ? ` · ${labels[field] ?? field}` : ''}`
-  }
-  if (path.startsWith('depot')) return 'Point de récupération'
-  const labels: Record<string, string> = {
-    planId: 'Référence', name: 'Nom de la préparation', departureAt: 'Date et heure de départ',
-    couriers: 'Livreurs', packages: 'Colis', request: 'Fichier de sauvegarde',
-    schemaVersion: 'Fichier de sauvegarde', pattern: 'Mode de livraison', timezone: 'Heure de départ',
-  }
-  return labels[path] ?? 'Préparation'
-}
-
 function InputField({ label, children, wide = false }: {
   label: string
   children: ReactNode
@@ -125,7 +101,7 @@ function InputField({ label, children, wide = false }: {
   return <label className={`workspace-field${wide ? ' workspace-field--wide' : ''}`}><span>{label}</span>{children}</label>
 }
 
-function CsvImportButton<T>({ accessToken, kind, onImported }: {
+export function CsvImportButton<T>({ accessToken, kind, onImported }: {
   accessToken: string
   kind: ImportKind
   onImported: (items: T[], filename: string) => void
@@ -181,8 +157,11 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   const [validationErrors, setValidationErrors] = useState<PlanningValidationError[]>([])
   const [validationMessage, setValidationMessage] = useState<string>()
   const [validating, setValidating] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult>()
   const [fileMessage, setFileMessage] = useState<string>()
   const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('plan')
 
   function replacePlan(nextPlan: DeliveryPlan) {
     setPlan(nextPlan)
@@ -268,8 +247,10 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     setFileMessage(undefined)
     try {
       const parsed: unknown = JSON.parse(await file.text())
-      if (!isDeliveryPlan(parsed)) throw new Error('Ce fichier ne correspond pas à une sauvegarde AZY Livraison valide.')
-      replacePlan(parsed)
+      if (!isDeliveryPlan(parsed) || parsed.pattern !== 'SINGLE_PICKUP_MULTI_DELIVERY') {
+        throw new Error('Cette sauvegarde ne correspond pas au mode un retrait, plusieurs livraisons.')
+      }
+      replacePlan(materializeVehicleDefaults(parsed))
       setFileMessage(`${file.name} chargé : ${parsed.packages.length} colis et ${parsed.couriers.length} livreurs.`)
     } catch (error) {
       setFileMessage(error instanceof Error ? error.message : 'Lecture du fichier impossible.')
@@ -282,11 +263,12 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     setValidationMessage(undefined)
     try {
       const response = await validatePlan(plan, accessToken)
-      if (response.plan) replacePlan(response.plan)
+      if (response.plan?.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY') replacePlan(response.plan)
       setValidationMessage('Le plan est valide et prêt pour la génération du résultat.')
     } catch (error) {
       if (error instanceof PlanValidationFailure) {
         setValidationErrors(error.errors)
+        if (error.errors[0]) setActiveTab(validationPathTab(error.errors[0].path))
         setValidationMessage(error.message)
       } else {
         setValidationMessage(error instanceof Error ? error.message : 'Validation impossible.')
@@ -296,7 +278,49 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
     }
   }
 
+  async function handleGeneration() {
+    setGenerating(true)
+    setValidationErrors([])
+    setValidationMessage(undefined)
+    try {
+      const validation = await validatePlan(plan, accessToken)
+      const normalizedPlan = validation.plan?.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? validation.plan : plan
+      setPlan(normalizedPlan)
+      setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      if (error instanceof PlanValidationFailure) {
+        setValidationErrors(error.errors)
+        if (error.errors[0]) setActiveTab(validationPathTab(error.errors[0].path))
+        setValidationMessage(error.message)
+      } else {
+        setValidationMessage(error instanceof Error ? error.message : 'Génération impossible.')
+      }
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   const totalWeight = plan.packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0)
+  const tabErrorCounts = validationErrors.reduce<Partial<Record<WorkspaceTab, number>>>((counts, error) => {
+    const tab = validationPathTab(error.path)
+    counts[tab] = (counts[tab] ?? 0) + 1
+    return counts
+  }, {})
+
+  if (optimizationResult) {
+    return (
+      <OptimizationResults
+        result={optimizationResult}
+        plan={plan}
+        accessToken={accessToken}
+        onBack={() => {
+          setOptimizationResult(undefined)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
+    )
+  }
 
   return (
     <div className="planning-workspace">
@@ -313,9 +337,28 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
         </div>
       </section>
 
+      <WorkspaceDraftBar inputId={jsonInputId} message={fileMessage} onImport={importJson} onExport={exportJson} />
+
+      <WorkspaceTabs
+        activeTab={activeTab}
+        deliveryMeta={`${plan.packages.length} colis`}
+        courierCount={plan.couriers.length}
+        errorCounts={tabErrorCounts}
+        onChange={setActiveTab}
+      />
+
+      {validationMessage && validationErrors.length > 0 && activeTab !== 'couriers' && (
+        <div className="workspace-feedback" role="alert">
+          <strong>{validationMessage}</strong>
+          <ul className="validation-errors">
+            {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}
+          </ul>
+        </div>
+      )}
+
       <div className="planning-layout">
-        <div className="planning-form">
-          <section className="workspace-section" aria-labelledby="plan-general-title">
+        <div className="planning-form" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
+          {activeTab === 'plan' && <section className="workspace-section" aria-labelledby="plan-general-title">
             <div className="workspace-section__heading">
               <div><span><ClipboardList aria-hidden="true" /></span><div><p className="eyebrow">Brouillon</p><h2 id="plan-general-title">Informations générales</h2></div></div>
             </div>
@@ -334,9 +377,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                 <span><strong>Retour au point de récupération</strong><small>Ajouter le trajet retour à chaque tournée.</small></span>
               </label>
             </div>
-          </section>
+          </section>}
 
-          <section className="workspace-section" aria-labelledby="depot-title">
+          {activeTab === 'deliveries' && <section className="workspace-section" aria-labelledby="depot-title">
             <div className="workspace-section__heading">
               <div><span><MapPin aria-hidden="true" /></span><div><p className="eyebrow">Origine commune</p><h2 id="depot-title">Point de récupération</h2></div></div>
               <span className="section-badge">1 point</span>
@@ -353,9 +396,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
               description="Recherchez le lieu commun de récupération, puis confirmez-le sur la carte."
               onChange={(location) => updateDepot(location)}
             />
-          </section>
+          </section>}
 
-          <section className="workspace-section" aria-labelledby="packages-title">
+          {activeTab === 'deliveries' && <section className="workspace-section" aria-labelledby="packages-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
               <div><span><PackagePlus aria-hidden="true" /></span><div><p className="eyebrow">Destinations</p><h2 id="packages-title">Colis</h2></div></div>
               <div className="workspace-section__actions">
@@ -416,9 +459,9 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                 ))}
               </div>
             )}
-          </section>
+          </section>}
 
-          <section className="workspace-section" aria-labelledby="couriers-title">
+          {activeTab === 'couriers' && <section className="workspace-section" aria-labelledby="couriers-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
               <div><span><Users aria-hidden="true" /></span><div><p className="eyebrow">Équipe</p><h2 id="couriers-title">Livreurs</h2></div></div>
               <div className="workspace-section__actions">
@@ -484,51 +527,14 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                 ))}
               </div>
             )}
-          </section>
+          </section>}
         </div>
-
         <aside className="plan-sidebar">
-          <div className="plan-sidebar__card">
-            <p className="eyebrow">Plan en cours</p>
-            <h2>{plan.name || 'Sans titre'}</h2>
-            <dl className="plan-summary">
-              <div><dt>Colis</dt><dd>{plan.packages.length}</dd></div>
-              <div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div>
-              <div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div>
-              <div><dt>Retour dépôt</dt><dd>{plan.settings.returnToDepot ? 'Oui' : 'Non'}</dd></div>
-            </dl>
-          </div>
-
-          <div className="plan-sidebar__card plan-files">
-            <div><p className="eyebrow">Reprendre plus tard</p><h3>Sauvegarde du brouillon</h3></div>
-            <p>Téléchargez votre préparation pour la partager ou la reprendre plus tard, même sur un autre ordinateur.</p>
-            <input id={jsonInputId} type="file" accept=".json,application/json" onChange={(event) => void importJson(event)} />
-            <label className="button button--secondary" htmlFor={jsonInputId}><FolderOpen aria-hidden="true" />Ouvrir une sauvegarde</label>
-            <button className="button button--secondary" type="button" onClick={exportJson}><Save aria-hidden="true" />Télécharger la sauvegarde</button>
-            {fileMessage && <span className="inline-message" role="status">{fileMessage}</span>}
-          </div>
-
-          <div className="plan-sidebar__card plan-validation">
-            <p className="eyebrow">Contrôle métier</p>
-            <h3>Prêt à continuer ?</h3>
-            <p>Nous vérifions les informations, les destinations et les capacités avant de préparer les tournées.</p>
-            <button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}>
-              <MapPinned aria-hidden="true" />Visualiser les trajets
-            </button>
-            <button className="button button--wide" type="button" disabled={validating} onClick={() => void handleValidation()}>
-              <ShieldCheck aria-hidden="true" />{validating ? 'Validation…' : 'Valider le plan'}
-            </button>
-            {validationMessage && (
-              <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>
-                {validationMessage}
-              </p>
-            )}
-            {validationErrors.length > 0 && (
-              <ul className="validation-errors">
-                {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}
-              </ul>
-            )}
-          </div>
+          {activeTab !== 'couriers' ? (
+            <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Colis</dt><dd>{plan.packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div><div><dt>Retour dépôt</dt><dd>{plan.settings.returnToDepot ? 'Oui' : 'Non'}</dd></div></dl></div>
+          ) : (
+            <div className="plan-sidebar__card plan-validation"><p className="eyebrow">Finaliser le plan</p><h3>Prêt à préparer les tournées ?</h3><p>Vérifiez les trajets, puis lancez la répartition entre les livreurs.</p><button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}><MapPinned aria-hidden="true" />Visualiser les trajets</button><button className="button button--wide" type="button" disabled={validating} onClick={() => void handleValidation()}><ShieldCheck aria-hidden="true" />{validating ? 'Validation…' : 'Valider le plan'}</button><button className="button button--wide button--generate" type="button" disabled={generating || validating} onClick={() => void handleGeneration()}>{generating ? <LoaderCircle className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}{generating ? 'Optimisation en cours…' : 'Générer les tournées'}</button>{validationMessage && <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>{validationMessage}</p>}{validationErrors.length > 0 && <ul className="validation-errors">{validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}</ul>}</div>
+          )}
         </aside>
       </div>
       {mapPreviewOpen && <PlanMapPreview plan={plan} accessToken={accessToken} onClose={() => setMapPreviewOpen(false)} />}

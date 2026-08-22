@@ -43,17 +43,18 @@ public record DeliveryPlanRequest(
         @Valid
         PlanSettingsRequest settings,
 
-        @NotNull(message = "Le dépôt est obligatoire.")
         @Valid
         LocationRequest depot,
 
-        @NotEmpty(message = "Au moins un livreur est obligatoire.")
+        @NotEmpty(message = "Ajouter au moins un livreur.")
         @Size(max = 200, message = "Un plan ne peut pas contenir plus de 200 livreurs.")
         List<@NotNull(message = "Un livreur ne peut pas être nul.") @Valid CourierRequest> couriers,
 
-        @NotEmpty(message = "Au moins un colis est obligatoire.")
         @Size(max = 2_000, message = "Un plan ne peut pas contenir plus de 2 000 colis.")
-        List<@NotNull(message = "Un colis ne peut pas être nul.") @Valid DeliveryPackageRequest> packages) {
+        List<@NotNull(message = "Un colis ne peut pas être nul.") @Valid DeliveryPackageRequest> packages,
+
+        @Size(max = 200, message = "Un plan ne peut pas contenir plus de 200 clients.")
+        List<@NotNull(message = "Un client ne peut pas être nul.") @Valid DeliveryClientRequest> clients) {
 
     public record PlanSettingsRequest(
             @NotNull(message = "Le choix du retour au dépôt est obligatoire.")
@@ -138,5 +139,39 @@ public record DeliveryPlanRequest(
 
             @Valid
             DeliveryTimeWindowRequest deliveryWindow) {
+    }
+
+    public record DeliveryGroupRequest(
+            @NotBlank(message = "L'identifiant du groupe de livraison est obligatoire.")
+            @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9_-]{0,99}",
+                    message = "L'identifiant du groupe doit contenir uniquement lettres, chiffres, _ ou -.")
+            String id,
+
+            @NotBlank(message = "Le nom du groupe de livraison est obligatoire.")
+            @Size(max = 200, message = "Le nom du groupe ne peut pas dépasser 200 caractères.")
+            String name,
+
+            @NotNull(message = "Le point de récupération du groupe est obligatoire.")
+            @Valid
+            LocationRequest pickup,
+
+            @NotEmpty(message = "Un groupe doit contenir au moins un colis.")
+            @Size(max = 2_000, message = "Un groupe ne peut pas contenir plus de 2 000 colis.")
+            List<@NotNull(message = "Un colis ne peut pas être nul.") @Valid DeliveryPackageRequest> packages) {
+    }
+
+    public record DeliveryClientRequest(
+            @NotBlank(message = "L'identifiant du client est obligatoire.")
+            @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9_-]{0,99}",
+                    message = "L'identifiant du client doit contenir uniquement lettres, chiffres, _ ou -.")
+            String id,
+
+            @NotBlank(message = "Le nom du client est obligatoire.")
+            @Size(max = 200, message = "Le nom du client ne peut pas dépasser 200 caractères.")
+            String name,
+
+            @NotEmpty(message = "Un client doit contenir au moins un groupe de livraison.")
+            @Size(max = 200, message = "Un client ne peut pas contenir plus de 200 groupes.")
+            List<@NotNull(message = "Un groupe ne peut pas être nul.") @Valid DeliveryGroupRequest> deliveryGroups) {
     }
 }

@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : préparation complète des plans, services géographiques locaux et moteur d'optimisation backend en place.** Après connexion, le frontend permet de choisir le pattern MVP, remplir un brouillon unique, y injecter les imports CSV, l'importer ou l'exporter en JSON et le valider avec Spring Boot. Nominatim résout les adresses de Madagascar, OSRM calcule les distances routières et OR-Tools affecte puis ordonne les colis. L'écran cartographique du résultat et ses exports restent à implémenter.
+> **État du projet : les deux patterns sont utilisables de bout en bout.** Après connexion, le frontend permet de préparer un plan mono-client ou multi-clients, contrôler ses points sur la carte, lancer l'optimisation OR-Tools et examiner les tournées colorées avec leurs capacités, retraits, livraisons, horaires et colis non affectés. Les brouillons sont exportables en JSON et les listes opérationnelles en CSV ou PDF.
 
 ## Objectif
 
@@ -23,7 +23,12 @@ L'application doit fonctionner principalement en local, tout en restant déploya
 
 ### Parcours de l'utilisateur
 
-Après la connexion, l'utilisateur choisit un pattern de planification. Le MVP n'en propose qu'un : **un point de récupération vers plusieurs points de livraison**. Ce choix ouvre un espace de travail unique dans lequel :
+Après la connexion, l'utilisateur choisit l'un des deux patterns de planification :
+
+- **un retrait, plusieurs livraisons** pour traiter une demande avec une origine commune ;
+- **plusieurs clients** pour regrouper plusieurs clients, chacun possédant un ou plusieurs retraits et plusieurs colis, avec une équipe de livreurs partagée.
+
+Chaque choix ouvre un espace de travail dans lequel :
 
 1. le formulaire constitue la source visible du plan en cours ;
 2. les imports CSV de colis et de livreurs alimentent ce même formulaire, sans créer un parcours séparé ;
@@ -695,21 +700,25 @@ Le MVP est considéré conforme lorsque les scénarios suivants réussissent :
 11. les exports JSON, CSV et PDF correspondent au résultat affiché ;
 12. l'expiration, le renouvellement et la révocation des jetons fonctionnent.
 
-## Évolution vers plusieurs groupes de livraison
+## Traitement multi-clients
 
-Le modèle interne ne doit pas supposer qu'une tournée est définitivement composée d'un seul dépôt et de simples destinations. Le pattern du MVP est identifié explicitement par :
+Le pattern mono-client reste identifié explicitement par :
 
 ```text
 SINGLE_PICKUP_MULTI_DELIVERY
 ```
 
-Le domaine utilisera des concepts génériques tels que `Location`, `DeliveryGroup`, `Shipment`, `RouteStop`, `Vehicle` et `DeliveryPlan`. Dans le MVP, le dépôt commun est le point de récupération implicite de tous les colis. Une version ultérieure pourra ajouter :
+Le second pattern disponible est :
 
 ```text
-MULTI_PICKUP_MULTI_DELIVERY
+MULTI_CLIENT_MULTI_PICKUP_DELIVERY
 ```
 
-Ce second pattern ne représente pas une simple liste de courses point à point. Il regroupe plusieurs occurrences du pattern principal dans un même fichier : chaque groupe possède un point de récupération et plusieurs points de livraison. La version du schéma JSON permettra d'ajouter une collection `deliveryGroups`, de migrer les fichiers existants sans casser le pattern principal et d'imposer qu'une récupération précède toutes les livraisons de son groupe.
+Ce second pattern ne représente pas une simple liste de courses point à point. Un plan contient plusieurs clients ; chaque client peut lui-même posséder plusieurs groupes de livraison. Chaque groupe est une occurrence complète du pattern principal : un point de récupération suivi de plusieurs points de livraison.
+
+La liste des livreurs est commune à l'ensemble du plan. L'optimiseur répartit les colis de tous les clients entre le même vivier de livreurs, tout en respectant les capacités, les créneaux horaires et l'obligation d'effectuer chaque récupération avant la livraison correspondante. Un départ personnalisé est compté jusqu'au premier retrait attribué ; sans départ renseigné, la tournée commence au premier retrait.
+
+Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-clients utilisent le schéma `2.0` et une collection `clients`, chaque client contenant ses propres `deliveryGroups`. Les anciennes sauvegardes restent donc compatibles.
 
 ## Feuille de route
 
@@ -728,19 +737,22 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 - [x] téléchargement guidé de l'extrait Madagascar ;
 - [x] Nominatim local, cache et confirmation des recherches ambiguës ;
 - [x] OSRM local avec le préréglage `MAIN_ROADS` ;
-- carte Leaflet et sélection par clic.
+- [x] carte Leaflet et sélection par clic.
 
 ### Phase 3 — Optimisation
 
 - [x] matrice routière ;
-- capacités et paramètres effectifs des véhicules ;
-- objectif orienté zones et coût total ;
-- colis non affectés expliqués ;
-- affichage comparatif des tournées.
+- [x] capacités et paramètres effectifs des véhicules ;
+- [x] objectif orienté zones et coût total ;
+- [x] colis non affectés expliqués ;
+- [x] affichage comparatif et carte colorée des tournées ;
+- [x] heures de départ et créneaux horaires facultatifs.
+- [x] optimisation multi-clients avec retraits multiples, précédences et flotte partagée.
 
 ### Phase 4 — Résultats, partage et mise en ligne
 
-- exports JSON, CSV et PDF du résultat ;
+- [x] export JSON du résultat ;
+- [x] exports CSV et PDF du résultat ;
 - durcissement de la sécurité ;
 - sauvegarde optionnelle de métadonnées ;
 - fournisseur de tuiles adapté au trafic réel ;
@@ -748,9 +760,7 @@ Ce second pattern ne représente pas une simple liste de courses point à point.
 
 ### Plus tard
 
-- plusieurs groupes possédant chacun une récupération et plusieurs destinations ;
 - profils routiers spécialisés ;
 - rôles et permissions ;
-- créneaux horaires ;
 - historique et comparaison de scénarios ;
 - mise à jour automatisée et contrôlée des données OSM.

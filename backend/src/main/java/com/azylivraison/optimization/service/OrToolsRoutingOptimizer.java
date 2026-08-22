@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,6 +45,8 @@ class OrToolsRoutingOptimizer {
         int vehicleCount = problem.couriers().size();
         int nodeCount = actualNodeCount + (problem.returnToDepot() ? 0 : vehicleCount);
         int[] ends = new int[vehicleCount];
+        int[] starts = new int[vehicleCount];
+        Arrays.fill(starts, problem.depotNode());
         for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
             ends[vehicle] = problem.returnToDepot() ? problem.depotNode() : actualNodeCount + vehicle;
         }
@@ -51,7 +54,7 @@ class OrToolsRoutingOptimizer {
         RoutingIndexManager manager = new RoutingIndexManager(
                 nodeCount,
                 vehicleCount,
-                problem.courierStartNodes(),
+                starts,
                 ends);
         RoutingModel routing = new RoutingModel(manager);
 
@@ -63,7 +66,12 @@ class OrToolsRoutingOptimizer {
                 manager.indexToNode(fromIndex),
                 manager.indexToNode(toIndex)));
         routing.setArcCostEvaluatorOfAllVehicles(distanceCallback);
-        routing.setFixedCostOfAllVehicles(properties.vehicleActivationPenaltyMeters());
+        for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
+            long approachDistance = Math.max(0, Math.round(approachDistance(problem, vehicle)));
+            routing.setFixedCostOfVehicle(
+                    Math.min(PROHIBITIVE_ARC_COST, properties.vehicleActivationPenaltyMeters() + approachDistance),
+                    vehicle);
+        }
 
         Map<Integer, Integer> packageByNode = packageIndexByNode(problem);
         int demandCallback = routing.registerUnaryTransitCallback(fromIndex -> {
@@ -74,6 +82,11 @@ class OrToolsRoutingOptimizer {
                 .mapToLong(courier -> grams(courier.maxWeightKg()))
                 .toArray();
         routing.addDimensionWithVehicleCapacity(demandCallback, 0, capacities, true, "Capacity");
+
+        Arrays.stream(problem.courierStartNodes())
+                .filter(node -> node != problem.depotNode())
+                .distinct()
+                .forEach(node -> routing.addDisjunction(new long[]{manager.nodeToIndex(node)}, 0));
 
         OffsetDateTime reference = timeReference(problem);
         long horizon = timeHorizon(problem, reference, maxArcDistance);
@@ -102,7 +115,10 @@ class OrToolsRoutingOptimizer {
                     ? problem.planDepartureAt()
                     : problem.couriers().get(vehicle).departureAt();
             long departure = secondsBetween(reference, departureAt);
-            timeDimension.cumulVar(routing.start(vehicle)).setRange(departure, departure);
+            long pickupArrival = departure + Math.round(travelSeconds(
+                    approachDistance(problem, vehicle),
+                    problem.couriers().get(vehicle)));
+            timeDimension.cumulVar(routing.start(vehicle)).setRange(pickupArrival, pickupArrival);
             routing.addVariableMinimizedByFinalizer(timeDimension.cumulVar(routing.end(vehicle)));
         }
 
@@ -165,8 +181,11 @@ class OrToolsRoutingOptimizer {
         List<SolvedOptimization.SolvedRoute> routes = new ArrayList<>();
         for (int vehicle = 0; vehicle < problem.couriers().size(); vehicle++) {
             long index = routing.start(vehicle);
-            long departure = solution.min(timeDimension.cumulVar(index));
-            double totalDistance = 0;
+            OffsetDateTime departureAt = problem.couriers().get(vehicle).departureAt() == null
+                    ? problem.planDepartureAt()
+                    : problem.couriers().get(vehicle).departureAt();
+            long departure = secondsBetween(timeReference(problem), departureAt);
+            double totalDistance = approachDistance(problem, vehicle);
             List<SolvedOptimization.SolvedVisit> visits = new ArrayList<>();
             while (!routing.isEnd(index)) {
                 int fromNode = manager.indexToNode(index);
@@ -260,6 +279,9 @@ class OrToolsRoutingOptimizer {
             int fromNode,
             int toNode) {
         if (toNode >= actualNodeCount || fromNode >= actualNodeCount) return 0;
+        if (isCourierOriginNode(problem, fromNode) || isCourierOriginNode(problem, toNode)) {
+            return PROHIBITIVE_ARC_COST;
+        }
         Double distance = problem.distancesMeters().get(fromNode).get(toNode);
         return distance == null ? PROHIBITIVE_ARC_COST : Math.max(0, Math.round(distance));
     }
@@ -270,6 +292,7 @@ class OrToolsRoutingOptimizer {
             int fromNode,
             int toNode) {
         if (toNode >= actualNodeCount || fromNode >= actualNodeCount) return 0;
+        if (isCourierOriginNode(problem, fromNode) || isCourierOriginNode(problem, toNode)) return 0;
         Double distance = problem.distancesMeters().get(fromNode).get(toNode);
         return distance == null ? 0 : distance;
     }
@@ -281,12 +304,27 @@ class OrToolsRoutingOptimizer {
             int toNode,
             Courier courier) {
         if (toNode >= actualNodeCount || fromNode >= actualNodeCount) return 0;
+        if (isCourierOriginNode(problem, fromNode) || isCourierOriginNode(problem, toNode)) {
+            return PROHIBITIVE_ARC_COST;
+        }
         Double distance = problem.distancesMeters().get(fromNode).get(toNode);
         return distance == null ? PROHIBITIVE_ARC_COST : Math.round(travelSeconds(distance, courier));
     }
 
     private double travelSeconds(double distanceMeters, Courier courier) {
         return distanceMeters * 3.6 / courier.averageSpeedKmh().doubleValue();
+    }
+
+    private double approachDistance(OptimizationProblem problem, int vehicle) {
+        return problem.courierApproachDistancesMeters()[vehicle];
+    }
+
+    private boolean isCourierOriginNode(OptimizationProblem problem, int node) {
+        if (node == problem.depotNode()) return false;
+        for (int startNode : problem.courierStartNodes()) {
+            if (startNode == node) return true;
+        }
+        return false;
     }
 
     private long maximumFiniteDistance(List<List<Double>> distances) {

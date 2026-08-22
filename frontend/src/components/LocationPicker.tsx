@@ -218,15 +218,21 @@ export function LocationPicker({
 }) {
   const [open, setOpen] = useState(false)
   const confirmed = hasCoordinates(value)
+  const locationQuery = value.destinationQuery?.trim()
+  const locationName = value.label?.trim()
+  const distinctLocationName = locationName && locationQuery && locationName !== locationQuery
+    ? locationName
+    : undefined
 
   return (
     <>
       <div className={`location-picker${confirmed ? ' is-confirmed' : ''}`}>
         <span className="location-picker__icon" aria-hidden="true"><MapPin /></span>
-        <div>
+        <div className="location-picker__details">
           <small>{confirmed ? 'Lieu confirmé' : 'Lieu à confirmer'}</small>
-          <strong>{value.destinationQuery || 'Aucun lieu sélectionné'}</strong>
-          {confirmed && <span>{value.latitude?.toFixed(6)}, {value.longitude?.toFixed(6)}</span>}
+          <strong>{locationQuery || locationName || (confirmed ? 'Point sélectionné sur la carte' : 'Aucun lieu sélectionné')}</strong>
+          {distinctLocationName && <span className="location-picker__label">Libellé : {distinctLocationName}</span>}
+          {confirmed && <span className="location-picker__coordinates">Coordonnées : {value.latitude?.toFixed(6)}, {value.longitude?.toFixed(6)}</span>}
         </div>
         <button className="button button--secondary" type="button" onClick={() => setOpen(true)}>
           <MapPinned aria-hidden="true" />{confirmed ? 'Modifier' : 'Choisir sur la carte'}

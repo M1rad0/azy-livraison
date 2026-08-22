@@ -1,0 +1,48 @@
+AZY Livraison - Politique actuelle d'optimisation
+================================================
+
+La distance routière totale est le critère principal, mais il ne s'agit pas d'une minimisation pure.
+
+Pour le mode avec plusieurs retraits, OR-Tools minimise approximativement :
+
+    distance totale parcourue
+    + 1 km par livreur utilisé
+    + une très forte pénalité par colis non affecté
+
+En pratique, l'algorithme :
+
+- cherche d'abord à affecter tous les colis possibles ;
+- minimise ensuite la somme des distances parcourues par tous les livreurs ;
+- évite légèrement d'ouvrir une tournée supplémentaire ;
+- ne cherche pas à équilibrer artificiellement le nombre de colis ou le temps de travail entre les livreurs.
+
+Répartition par axe géographique
+--------------------------------
+
+La répartition par axe est naturellement favorisée, mais elle n'est pas explicitement programmée.
+
+Par exemple, avec des livraisons à l'est et à l'ouest :
+
+- mélanger les deux axes dans une même tournée augmente généralement la distance ;
+- OR-Tools aura donc tendance à attribuer l'axe est à un livreur et l'axe ouest à un autre ;
+- le deuxième livreur ne sera toutefois utilisé que si cela économise environ plus de 1 km au total, ou si la capacité et les créneaux horaires l'imposent.
+
+Un livreur peut donc recevoir 80 % des colis et un autre 20 % si cette répartition est géographiquement plus efficace. La priorité est donnée aux zones et à la distance plutôt qu'à un équilibrage strict entre les livreurs.
+
+Autres règles actuelles
+-----------------------
+
+- La capacité maximale de chaque livreur est une contrainte stricte.
+- Les créneaux horaires doivent être respectés.
+- La vitesse moyenne influence les horaires et la faisabilité, mais pas directement le coût kilométrique.
+- Lorsqu'un lieu de départ est renseigné pour un livreur, le trajet jusqu'au premier retrait est compté.
+- Sans lieu de départ renseigné, le calcul commence au premier retrait.
+- La tournée s'arrête au dernier arrêt : aucun trajet de retour n'est compté.
+- Les colis d'un même retrait peuvent être répartis entre plusieurs livreurs si leurs destinations partent sur des axes différents.
+
+Limite actuelle
+---------------
+
+Il n'existe pas encore de notion formelle d'axe, de secteur ou de zone. Le regroupement géographique apparaît naturellement grâce à la minimisation des distances, mais il n'est pas garanti par une règle dédiée.
+
+Le solveur cherche une bonne solution pendant 5 secondes. La solution obtenue est donc la meilleure trouvée pendant ce délai, sans garantie mathématique qu'il s'agisse de l'optimum absolu.

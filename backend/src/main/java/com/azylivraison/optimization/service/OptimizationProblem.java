@@ -13,6 +13,7 @@ record OptimizationProblem(
         List<Courier> couriers,
         List<DeliveryPackage> packages,
         int[] courierStartNodes,
+        double[] courierApproachDistancesMeters,
         int[] packageNodes,
         List<List<Double>> distancesMeters) {
 
@@ -20,6 +21,7 @@ record OptimizationProblem(
         couriers = List.copyOf(couriers);
         packages = List.copyOf(packages);
         courierStartNodes = courierStartNodes.clone();
+        courierApproachDistancesMeters = courierApproachDistancesMeters.clone();
         packageNodes = packageNodes.clone();
         distancesMeters = distancesMeters.stream().map(List::copyOf).toList();
     }

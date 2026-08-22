@@ -23,6 +23,7 @@ import com.azylivraison.planning.domain.Courier;
 import com.azylivraison.planning.domain.DeliveryPackage;
 import com.azylivraison.planning.domain.DeliveryPlan;
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.planning.domain.PlanningPattern;
 import com.azylivraison.routing.domain.RoutingPoint;
 import com.azylivraison.routing.service.RoutingMatrixResult;
 import com.azylivraison.routing.service.RoutingService;
@@ -39,13 +40,21 @@ public class OptimizationService {
 
     private final RoutingService routingService;
     private final OrToolsRoutingOptimizer optimizer;
+    private final MultiClientOptimizationService multiClientOptimizationService;
 
-    public OptimizationService(RoutingService routingService, OrToolsRoutingOptimizer optimizer) {
+    public OptimizationService(
+            RoutingService routingService,
+            OrToolsRoutingOptimizer optimizer,
+            MultiClientOptimizationService multiClientOptimizationService) {
         this.routingService = routingService;
         this.optimizer = optimizer;
+        this.multiClientOptimizationService = multiClientOptimizationService;
     }
 
     public OptimizationResult optimize(DeliveryPlan plan) {
+        if (plan.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY) {
+            return multiClientOptimizationService.optimize(plan);
+        }
         requireCoordinates(plan.depot(), "Le point de récupération doit être confirmé sur la carte.");
 
         List<String> warnings = new ArrayList<>();
@@ -108,6 +117,38 @@ public class OptimizationService {
         }
 
         RoutingMatrixResult matrix = routingService.matrix(points);
+        List<Courier> couriersReachingDepot = new ArrayList<>();
+        List<Integer> reachableStartNodes = new ArrayList<>();
+        for (int index = 0; index < activeCouriers.size(); index++) {
+            Courier courier = activeCouriers.get(index);
+            int startNode = courierStartNodes[index];
+            if (startNode != 0 && matrix.distancesMeters().get(startNode).get(0) == null) {
+                warnings.add("Le livreur " + courier.name()
+                        + " ne peut pas rejoindre le point de récupération par la route ; il est exclu du calcul.");
+            } else {
+                couriersReachingDepot.add(courier);
+                reachableStartNodes.add(startNode);
+            }
+        }
+        activeCouriers = List.copyOf(couriersReachingDepot);
+        courierStartNodes = reachableStartNodes.stream().mapToInt(Integer::intValue).toArray();
+        if (activeCouriers.isEmpty()) {
+            for (DeliveryPackage deliveryPackage : eligiblePackages) {
+                preliminaryUnassigned.add(unassigned(
+                        deliveryPackage,
+                        UnassignedReason.NO_FEASIBLE_ASSIGNMENT,
+                        "Aucun livreur ne peut rejoindre le point de récupération.",
+                        null));
+            }
+            return resultWithoutSolver(plan, preliminaryUnassigned, warnings, "NO_COURIER_REACHES_DEPOT");
+        }
+        double[] courierApproachDistances = new double[courierStartNodes.length];
+        for (int index = 0; index < courierStartNodes.length; index++) {
+            int startNode = courierStartNodes[index];
+            courierApproachDistances[index] = startNode == 0
+                    ? 0
+                    : matrix.distancesMeters().get(startNode).get(0);
+        }
         OptimizationProblem problem = new OptimizationProblem(
                 plan.departureAt(),
                 plan.settings().returnToDepot(),
@@ -115,6 +156,7 @@ public class OptimizationService {
                 activeCouriers,
                 eligiblePackages,
                 courierStartNodes,
+                courierApproachDistances,
                 packageNodes,
                 matrix.distancesMeters());
         SolvedOptimization solved = optimizer.solve(problem);
