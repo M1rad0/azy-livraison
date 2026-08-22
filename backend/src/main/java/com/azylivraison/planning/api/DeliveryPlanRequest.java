@@ -46,6 +46,9 @@ public record DeliveryPlanRequest(
         @Valid
         LocationRequest depot,
 
+        @Valid
+        LocationRequest redistributionHub,
+
         @NotEmpty(message = "Ajouter au moins un livreur.")
         @Size(max = 200, message = "Un plan ne peut pas contenir plus de 200 livreurs.")
         List<@NotNull(message = "Un livreur ne peut pas être nul.") @Valid CourierRequest> couriers,
@@ -55,6 +58,33 @@ public record DeliveryPlanRequest(
 
         @Size(max = 200, message = "Un plan ne peut pas contenir plus de 200 clients.")
         List<@NotNull(message = "Un client ne peut pas être nul.") @Valid DeliveryClientRequest> clients) {
+
+    public DeliveryPlanRequest(
+            String schemaVersion,
+            PlanningPattern pattern,
+            String planId,
+            String name,
+            OffsetDateTime departureAt,
+            String timezone,
+            PlanSettingsRequest settings,
+            LocationRequest depot,
+            List<CourierRequest> couriers,
+            List<DeliveryPackageRequest> packages,
+            List<DeliveryClientRequest> clients) {
+        this(
+                schemaVersion,
+                pattern,
+                planId,
+                name,
+                departureAt,
+                timezone,
+                settings,
+                depot,
+                null,
+                couriers,
+                packages,
+                clients);
+    }
 
     public record PlanSettingsRequest(
             @NotNull(message = "Le choix du retour au dépôt est obligatoire.")

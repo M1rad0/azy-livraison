@@ -33,6 +33,10 @@ import org.springframework.stereotype.Service;
 public class PlanValidationService {
 
     public static final String CURRENT_SCHEMA_VERSION = "1.0";
+    /** Historical multi-withdrawal files stay in 2.0 and remain direct plans without a hub. */
+    public static final String LEGACY_MULTI_SCHEMA_VERSION = "2.0";
+    /** Version 2.1 introduces a confirmed redistribution hub and confirmed courier departures. */
+    public static final String CURRENT_MULTI_SCHEMA_VERSION = "2.1";
     public static final String MVP_TIMEZONE = "Indian/Antananarivo";
 
     private final VehiclePresetService vehiclePresetService;
@@ -53,6 +57,9 @@ public class PlanValidationService {
         validateUniquePackageIds(packageRequests, clientRequests, errors);
 
         Location depot = request.depot() == null ? null : normalizeLocation(request.depot(), "depot", errors);
+        Location redistributionHub = request.redistributionHub() == null
+                ? null
+                : normalizeLocation(request.redistributionHub(), "redistributionHub", errors);
         List<Courier> couriers = normalizeCouriers(request.couriers(), errors);
         List<DeliveryPackage> packages = normalizePackages(packageRequests, "packages", errors);
         List<DeliveryClient> clients = normalizeClients(clientRequests, errors);
@@ -62,7 +69,7 @@ public class PlanValidationService {
         }
 
         return new DeliveryPlan(
-                request.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY ? "2.0" : CURRENT_SCHEMA_VERSION,
+                request.schemaVersion().trim(),
                 request.pattern(),
                 request.planId().trim(),
                 request.name().trim(),
@@ -72,6 +79,7 @@ public class PlanValidationService {
                         request.settings().returnToDepot(),
                         request.settings().routingPreset()),
                 depot,
+                redistributionHub,
                 couriers,
                 packages,
                 clients);
@@ -80,14 +88,25 @@ public class PlanValidationService {
     private void validateVersionAndPattern(
             DeliveryPlanRequest request,
             List<PlanningValidationError> errors) {
-        String expectedVersion = request.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY
-                ? "2.0"
-                : CURRENT_SCHEMA_VERSION;
-        if (!expectedVersion.equals(request.schemaVersion().trim())) {
+        String schemaVersion = request.schemaVersion().trim();
+        if (request.pattern() == PlanningPattern.MULTI_CLIENT_MULTI_PICKUP_DELIVERY) {
+            if (LEGACY_MULTI_SCHEMA_VERSION.equals(schemaVersion)
+                    || CURRENT_MULTI_SCHEMA_VERSION.equals(schemaVersion)) {
+                return;
+            }
             errors.add(error(
                     "schemaVersion",
                     "UNSUPPORTED_SCHEMA_VERSION",
-                    "Ce mode utilise la version de fichier " + expectedVersion + "."));
+                    "Ce mode utilise la version de fichier " + CURRENT_MULTI_SCHEMA_VERSION
+                            + ". Les fichiers historiques " + LEGACY_MULTI_SCHEMA_VERSION + " restent acceptés."));
+            return;
+        }
+
+        if (!CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
+            errors.add(error(
+                    "schemaVersion",
+                    "UNSUPPORTED_SCHEMA_VERSION",
+                    "Ce mode utilise la version de fichier " + CURRENT_SCHEMA_VERSION + "."));
         }
     }
 
@@ -105,6 +124,12 @@ public class PlanValidationService {
             }
             if (!clients.isEmpty()) {
                 errors.add(error("clients", "FIELD_NOT_ALLOWED", "Les clients appartiennent au mode multi-clients."));
+            }
+            if (request.redistributionHub() != null) {
+                errors.add(error(
+                        "redistributionHub",
+                        "FIELD_NOT_ALLOWED",
+                        "Le siège de redistribution appartient au mode multi-retraits 2.1."));
             }
             return;
         }
@@ -124,6 +149,59 @@ public class PlanValidationService {
                     "RETURN_NOT_SUPPORTED",
                     "Le retour commun n'est pas disponible lorsqu'il existe plusieurs points de récupération."));
         }
+
+        String schemaVersion = request.schemaVersion().trim();
+        if (CURRENT_MULTI_SCHEMA_VERSION.equals(schemaVersion)) {
+            validateHubRequirements(request, errors);
+        } else if (LEGACY_MULTI_SCHEMA_VERSION.equals(schemaVersion)
+                && request.redistributionHub() != null) {
+            errors.add(error(
+                    "redistributionHub",
+                    "FIELD_NOT_ALLOWED",
+                    "Un fichier historique 2.0 ne contient pas de siège. Utilisez la version 2.1."));
+        }
+    }
+
+    private void validateHubRequirements(
+            DeliveryPlanRequest request,
+            List<PlanningValidationError> errors) {
+        if (request.redistributionHub() == null) {
+            errors.add(error(
+                    "redistributionHub",
+                    "REDISTRIBUTION_HUB_REQUIRED",
+                    "Ajoutez et confirmez le siège de redistribution."));
+        } else if (!hasConfirmedCoordinates(request.redistributionHub())) {
+            errors.add(error(
+                    "redistributionHub",
+                    "CONFIRMED_LOCATION_REQUIRED",
+                    "Confirmez le siège de redistribution sur la carte."));
+        }
+
+        for (int index = 0; index < request.couriers().size(); index++) {
+            CourierRequest courier = request.couriers().get(index);
+            String path = "couriers[" + index + "]";
+            if (courier.departureAt() == null) {
+                errors.add(error(
+                        path + ".departureAt",
+                        "COURIER_DEPARTURE_TIME_REQUIRED",
+                        "Renseignez l'heure de départ de ce livreur pour le passage au siège."));
+            }
+            if (courier.departureLocation() == null) {
+                errors.add(error(
+                        path + ".departureLocation",
+                        "COURIER_DEPARTURE_LOCATION_REQUIRED",
+                        "Ajoutez et confirmez le point de départ de ce livreur."));
+            } else if (!hasConfirmedCoordinates(courier.departureLocation())) {
+                errors.add(error(
+                        path + ".departureLocation",
+                        "CONFIRMED_LOCATION_REQUIRED",
+                        "Confirmez le point de départ de ce livreur sur la carte."));
+            }
+        }
+    }
+
+    private boolean hasConfirmedCoordinates(LocationRequest location) {
+        return location.latitude() != null && location.longitude() != null;
     }
 
     private void validateTimezoneAndOffset(

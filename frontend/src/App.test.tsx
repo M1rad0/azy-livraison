@@ -135,6 +135,26 @@ describe('App', () => {
     expect(screen.getByText('Plan · Plusieurs retraits')).toBeInTheDocument()
   })
 
+  it('starts new multi-withdrawal plans with a hub and required courier departures', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch())
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
+    expect(await screen.findByRole('heading', { name: 'Siège / point de rencontre' })).toBeInTheDocument()
+    expect(screen.getByText('Siège à confirmer')).toBeInTheDocument()
+    const planDeparture = screen.getByLabelText('Départ · heure d’Antananarivo') as HTMLInputElement
+
+    selectWorkspaceTab('Livreurs')
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }))
+
+    const courierDeparture = screen.getByLabelText('Heure de départ')
+    expect(courierDeparture).toHaveValue(planDeparture.value)
+    expect(courierDeparture).toBeRequired()
+    expect(screen.getByText('Départ du livreur')).toBeInTheDocument()
+    expect(screen.getByText(/Requis · le trajet jusqu’au premier retrait ou au siège/)).toBeInTheDocument()
+    expect(screen.queryByText(/sinon la tournée commence au premier retrait/)).not.toBeInTheDocument()
+  })
+
   it('keeps two withdrawals for the same client independent', async () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)

@@ -1491,6 +1491,77 @@ tbody tr:last-child td {
   grid-template-columns: 1fr 1.5fr 0.75fr 0.75fr;
 }
 
+.hub-location-card {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: linear-gradient(145deg, #f4f8fb, #f8faf9);
+  border: 1px solid #ccdae3;
+  border-radius: 1rem;
+}
+
+.hub-location-card.is-confirmed {
+  background: linear-gradient(145deg, #f2faf5, #f8faf9);
+  border-color: #b9dfc9;
+}
+
+.hub-location-card__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.hub-location-card__heading > span {
+  display: grid;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  background: var(--forest);
+  border-radius: 0.8rem;
+}
+
+.hub-location-card__heading > span svg {
+  width: 1.25rem;
+}
+
+.hub-location-card__heading > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.12rem;
+}
+
+.hub-location-card__heading h3 {
+  font-size: 1rem;
+}
+
+.hub-location-card__heading small {
+  color: var(--ink-soft);
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.hub-location-card__heading > strong {
+  flex: 0 0 auto;
+  padding: 0.42rem 0.62rem;
+  color: #76502e;
+  background: #fff3e8;
+  border-radius: 999px;
+  font-size: 0.62rem;
+}
+
+.hub-location-card.is-confirmed .hub-location-card__heading > strong {
+  color: var(--forest);
+  background: #e5f5eb;
+}
+
+.hub-location-card .location-picker {
+  margin-top: 0;
+}
+
 .workspace-field {
   display: grid;
   min-width: 0;
@@ -2152,6 +2223,25 @@ tbody tr:last-child td {
   color: var(--forest);
   font-size: 0.86rem;
   font-weight: 820;
+}
+
+.plan-summary > .plan-summary__hub {
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  background: #fff3e8;
+}
+
+.plan-summary > .plan-summary__hub.is-confirmed {
+  background: #e9f6ee;
+}
+
+.plan-summary__hub dd {
+  color: #9a571d;
+}
+
+.plan-summary__hub.is-confirmed dd {
+  color: var(--forest);
 }
 
 .plan-validation {
@@ -3859,6 +3949,19 @@ tbody tr:last-child td {
     flex-direction: column;
   }
 
+  .hub-location-card__heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .hub-location-card__heading > div {
+    flex-basis: calc(100% - 3.4rem);
+  }
+
+  .hub-location-card__heading > strong {
+    margin-left: 3.4rem;
+  }
+
   .workspace-section__actions .button,
   .workspace-import-action,
   .workspace-import-action label {
@@ -4677,6 +4780,59 @@ tbody tr:last-child td {
 .planning-summary__totals strong {
   color: var(--forest-deep);
   font-size: 1.05rem;
+}
+
+.planning-summary__hub {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: #fff3e8;
+  border: 1px solid #f4d4b8;
+  border-radius: 0.9rem;
+}
+
+.planning-summary__hub.is-confirmed {
+  background: #edf8f1;
+  border-color: #c7e4d2;
+}
+
+.planning-summary__hub > svg {
+  width: 1.25rem;
+  color: var(--lime);
+}
+
+.planning-summary__hub.is-confirmed > svg {
+  color: var(--forest);
+}
+
+.planning-summary__hub > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.planning-summary__hub small {
+  color: var(--ink-soft);
+  font-size: 0.62rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.planning-summary__hub strong {
+  overflow-wrap: anywhere;
+  color: var(--forest-deep);
+}
+
+.planning-summary__hub > span {
+  color: #9a571d;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.planning-summary__hub.is-confirmed > span {
+  color: var(--forest);
 }
 
 .planning-summary__clients {

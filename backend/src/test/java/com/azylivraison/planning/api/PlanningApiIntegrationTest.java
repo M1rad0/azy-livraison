@@ -176,10 +176,105 @@ class PlanningApiIntegrationTest {
                 .andExpect(jsonPath("$.plan.schemaVersion").value("2.0"))
                 .andExpect(jsonPath("$.plan.pattern").value("MULTI_CLIENT_MULTI_PICKUP_DELIVERY"))
                 .andExpect(jsonPath("$.plan.depot").doesNotExist())
+                .andExpect(jsonPath("$.plan.redistributionHub").doesNotExist())
                 .andExpect(jsonPath("$.plan.packages").isEmpty())
                 .andExpect(jsonPath("$.plan.clients.length()").value(2))
                 .andExpect(jsonPath("$.plan.clients[0].deliveryGroups[0].pickup.label").value("Retrait Alpha"))
                 .andExpect(jsonPath("$.plan.clients[1].deliveryGroups[0].packages[0].id").value("colis-beta"));
+    }
+
+    @Test
+    void validatesAndNormalizesACurrentHubPlan() throws Exception {
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(hubMultiClientPlan()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.plan.schemaVersion").value("2.1"))
+                .andExpect(jsonPath("$.plan.redistributionHub.label").value("Siège Antanimena"))
+                .andExpect(jsonPath("$.plan.redistributionHub.latitude").value(-18.8952))
+                .andExpect(jsonPath("$.plan.redistributionHub.longitude").value(47.5183))
+                .andExpect(jsonPath("$.plan.couriers[0].departureAt")
+                        .value("2026-08-05T07:15:00+03:00"))
+                .andExpect(jsonPath("$.plan.couriers[0].departureLocation.latitude").value(-18.9186))
+                .andExpect(jsonPath("$.plan.couriers[0].departureLocation.longitude").value(47.5561));
+    }
+
+    @Test
+    void keepsLegacyMultiClientFilesCompatibleWithoutInventingAHub() throws Exception {
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(multiClientPlan()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.plan.schemaVersion").value("2.0"))
+                .andExpect(jsonPath("$.plan.redistributionHub").doesNotExist())
+                .andExpect(jsonPath("$.plan.couriers[0].departureAt").doesNotExist())
+                .andExpect(jsonPath("$.plan.couriers[0].departureLocation").doesNotExist());
+    }
+
+    @Test
+    void rejectsAHubPlanWithoutHubOrCourierDepartureDetails() throws Exception {
+        String incompleteHubPlan = multiClientPlan()
+                .replace("\"schemaVersion\": \"2.0\"", "\"schemaVersion\": \"2.1\"");
+
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(incompleteHubPlan))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.errors[?(@.path == 'redistributionHub' && @.code == 'REDISTRIBUTION_HUB_REQUIRED')]")
+                        .exists())
+                .andExpect(jsonPath("$.errors[?(@.path == 'couriers[0].departureAt' && @.code == 'COURIER_DEPARTURE_TIME_REQUIRED')]")
+                        .exists())
+                .andExpect(jsonPath("$.errors[?(@.path == 'couriers[0].departureLocation' && @.code == 'COURIER_DEPARTURE_LOCATION_REQUIRED')]")
+                        .exists());
+    }
+
+    @Test
+    void requiresConfirmedCoordinatesForTheHubAndCourierDepartures() throws Exception {
+        String unconfirmedHubPlan = hubMultiClientPlan()
+                .replace(
+                        "{ \"label\": \"Siège Antanimena\", \"latitude\": -18.8952, \"longitude\": 47.5183 }",
+                        "{ \"label\": \"Siège Antanimena\", \"destinationQuery\": \"Antanimena\" }")
+                .replace(
+                        "{ \"label\": \"Alasora\", \"latitude\": -18.9186, \"longitude\": 47.5561 }",
+                        "{ \"label\": \"Alasora\", \"destinationQuery\": \"Alasora\" }");
+
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unconfirmedHubPlan))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.path == 'redistributionHub' && @.code == 'CONFIRMED_LOCATION_REQUIRED')]")
+                        .exists())
+                .andExpect(jsonPath("$.errors[?(@.path == 'couriers[0].departureLocation' && @.code == 'CONFIRMED_LOCATION_REQUIRED')]")
+                        .exists());
+    }
+
+    @Test
+    void rejectsAHubInSchemaOneAndLegacySchemaTwoFiles() throws Exception {
+        String singlePlanWithHub = readResource("plans/valid-plan.json")
+                .replace(
+                        "\"couriers\": [",
+                        "\"redistributionHub\": { \"latitude\": -18.8952, \"longitude\": 47.5183 }, \"couriers\": [");
+        String legacyMultiPlanWithHub = multiClientPlan()
+                .replace(
+                        "\"couriers\": [{",
+                        "\"redistributionHub\": { \"latitude\": -18.8952, \"longitude\": 47.5183 }, \"couriers\": [{");
+
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(singlePlanWithHub))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.path == 'redistributionHub' && @.code == 'FIELD_NOT_ALLOWED')]")
+                        .exists());
+
+        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(legacyMultiPlanWithHub))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.path == 'redistributionHub' && @.code == 'FIELD_NOT_ALLOWED')]")
+                        .exists());
     }
 
     @Test
@@ -236,5 +331,18 @@ class PlanningApiIntegrationTest {
                   ]
                 }
                 """;
+    }
+
+    private String hubMultiClientPlan() {
+        return multiClientPlan()
+                .replace("\"schemaVersion\": \"2.0\"", "\"schemaVersion\": \"2.1\"")
+                .replace(
+                        "\"couriers\": [{",
+                        "\"redistributionHub\": { \"label\": \"Siège Antanimena\", \"latitude\": -18.8952, \"longitude\": 47.5183 }, \"couriers\": [{")
+                .replace(
+                        "\"maxWeightKg\": 10, \"averageSpeedKmh\": 25",
+                        "\"maxWeightKg\": 10, \"averageSpeedKmh\": 25, "
+                                + "\"departureAt\": \"2026-08-05T07:15:00+03:00\", "
+                                + "\"departureLocation\": { \"label\": \"Alasora\", \"latitude\": -18.9186, \"longitude\": 47.5561 }");
     }
 }
