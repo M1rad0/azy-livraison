@@ -153,7 +153,7 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
               <small>Mode actif</small>
               <strong>{selectedPattern === 'SINGLE_PICKUP_MULTI_DELIVERY'
                 ? 'Un retrait · plusieurs livraisons'
-                : 'Plusieurs clients · plusieurs retraits'}</strong>
+                : 'Plusieurs retraits · plusieurs livraisons'}</strong>
             </div>
             <button type="button" onClick={() => setSelectedPattern(undefined)}>
               <ArrowLeft aria-hidden="true" />Changer de mode
@@ -209,9 +209,9 @@ function Dashboard({ session, onLogout }: { session: AuthSession; onLogout: () =
                 </div>
                 <div className="pattern-card__content">
                   <span className="section-badge"><CheckCircle2 aria-hidden="true" />Disponible</span>
-                  <h3>Plusieurs clients</h3>
-                  <p>Chaque client peut avoir plusieurs retraits avec leurs livraisons, répartis entre une même équipe de livreurs.</p>
-                  <button className="button button--wide" type="button" onClick={() => setSelectedPattern('MULTI_CLIENT_MULTI_PICKUP_DELIVERY')}><Layers3 aria-hidden="true" />Choisir le mode multi-clients <ArrowRight aria-hidden="true" /></button>
+                  <h3>Plusieurs retraits</h3>
+                  <p>Ajoutez directement chaque point de récupération, le client concerné et ses colis, puis répartissez l’ensemble entre les livreurs.</p>
+                  <button className="button button--wide" type="button" onClick={() => setSelectedPattern('MULTI_CLIENT_MULTI_PICKUP_DELIVERY')}><Layers3 aria-hidden="true" />Choisir le mode plusieurs retraits <ArrowRight aria-hidden="true" /></button>
                 </div>
               </article>
             </div>

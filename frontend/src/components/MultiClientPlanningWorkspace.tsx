@@ -1,6 +1,5 @@
 import { useId, useState, type ChangeEvent, type ReactNode } from 'react'
 import {
-  Building2,
   ClipboardList,
   Clock3,
   Eye,
@@ -35,7 +34,7 @@ import { OptimizationResults } from './OptimizationResults'
 import { PlanMapPreview } from './PlanMapPreview'
 import { CsvImportButton } from './PlanningWorkspace'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
-import { validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
+import { validationFieldLabel, validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
 
 interface Props {
   accessToken: string
@@ -76,13 +75,37 @@ function defaultPlan(): MultiClientDeliveryPlan {
     schemaVersion: '2.0',
     pattern: 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY',
     planId: `multi-${localDeparture.slice(0, 10)}`,
-    name: `Livraisons multi-clients du ${localDeparture.slice(0, 10)}`,
+    name: `Plan de retraits du ${localDeparture.slice(0, 10)}`,
     departureAt: `${localDeparture}:00+03:00`,
     timezone: 'Indian/Antananarivo',
     settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
     couriers: [],
     clients: [],
   }
+}
+
+function normalizeWithdrawalPlan(plan: MultiClientDeliveryPlan): MultiClientDeliveryPlan {
+  const usedClientIds: string[] = []
+  const usedGroupIds = plan.clients.flatMap((client) => client.deliveryGroups.map((group) => group.id))
+  const clients: DeliveryClient[] = []
+
+  plan.clients.forEach((client) => {
+    const deliveryGroups = client.deliveryGroups.length > 0
+      ? client.deliveryGroups
+      : [{ id: nextId('retrait', usedGroupIds), name: '', pickup: { destinationQuery: '' }, packages: [] }]
+
+    deliveryGroups.forEach((group, groupIndex) => {
+      if (!usedGroupIds.includes(group.id)) usedGroupIds.push(group.id)
+      const preservedId = groupIndex === 0 && client.id.trim() && !usedClientIds.includes(client.id)
+        ? client.id
+        : undefined
+      const clientId = preservedId ?? nextId('client', usedClientIds)
+      usedClientIds.push(clientId)
+      clients.push({ id: clientId, name: client.name, deliveryGroups: [{ ...group }] })
+    })
+  })
+
+  return { ...plan, clients }
 }
 
 function InputField({ label, children }: { label: string; children: ReactNode }) {
@@ -126,10 +149,17 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     setMessage(undefined)
   }
 
-  function addClient() {
+  function addWithdrawal() {
     updatePlan((current) => {
-      const id = nextId('client', current.clients.map((client) => client.id))
-      return { ...current, clients: [...current.clients, { id, name: '', deliveryGroups: [] }] }
+      const clientId = nextId('client', current.clients.map((client) => client.id))
+      const groupIds = current.clients.flatMap((client) => client.deliveryGroups.map((group) => group.id))
+      const group: DeliveryGroup = {
+        id: nextId('retrait', groupIds),
+        name: '',
+        pickup: { destinationQuery: '' },
+        packages: [],
+      }
+      return { ...current, clients: [...current.clients, { id: clientId, name: '', deliveryGroups: [group] }] }
     })
   }
 
@@ -150,22 +180,9 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     }))
   }
 
-  function addGroup(clientIndex: number) {
-    updatePlan((current) => {
-      const groupIds = current.clients.flatMap((client) => client.deliveryGroups.map((group) => group.id))
-      return {
-        ...current,
-        clients: current.clients.map((client, index) => index !== clientIndex ? client : {
-          ...client,
-          deliveryGroups: [...client.deliveryGroups, {
-            id: nextId('course', groupIds),
-            name: '',
-            pickup: { destinationQuery: '' },
-            packages: [],
-          }],
-        }),
-      }
-    })
+  function removeWithdrawal(clientIndex: number) {
+    setEditor(undefined)
+    updatePlan((current) => ({ ...current, clients: current.clients.filter((_, index) => index !== clientIndex) }))
   }
 
   function addPackage(clientIndex: number, groupIndex: number) {
@@ -240,14 +257,14 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     try {
       const parsed: unknown = JSON.parse(await file.text())
       if (!isDeliveryPlan(parsed) || parsed.pattern !== 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY') {
-        throw new Error('Cette sauvegarde ne correspond pas au mode multi-clients.')
+        throw new Error('Cette sauvegarde ne correspond pas au mode plusieurs retraits.')
       }
-      const loaded = materializeVehicleDefaults(parsed)
+      const loaded = normalizeWithdrawalPlan(materializeVehicleDefaults(parsed))
       setPlan(loaded)
       setValidationErrors([])
-      const packageCount = loaded.clients.reduce((sum, client) => sum
-        + client.deliveryGroups.reduce((groupSum, group) => groupSum + group.packages.length, 0), 0)
-      setFileMessage(`${file.name} chargé : ${loaded.clients.length} clients et ${packageCount} colis.`)
+      const withdrawals = loaded.clients.flatMap((client) => client.deliveryGroups)
+      const packageCount = withdrawals.reduce((sum, group) => sum + group.packages.length, 0)
+      setFileMessage(`${file.name} chargé : ${withdrawals.length} retraits et ${packageCount} colis.`)
     } catch (error) {
       setFileMessage(error instanceof Error ? error.message : 'Lecture du fichier impossible.')
     }
@@ -260,12 +277,13 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     try {
       const response = await validatePlan(plan, accessToken)
       if (!response.plan || response.plan.pattern !== 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY') return
-      setPlan(response.plan)
+      const normalizedPlan = normalizeWithdrawalPlan(response.plan)
+      setPlan(normalizedPlan)
       if (generate) {
-        setOptimizationResult(await optimizePlan(response.plan, accessToken))
+        setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
-        setMessage('Le plan multi-clients est valide et prêt pour l’optimisation.')
+        setMessage('Le plan est valide et prêt pour l’optimisation.')
       }
     } catch (error) {
       if (error instanceof PlanValidationFailure) {
@@ -281,8 +299,13 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     }
   }
 
-  const groups = plan.clients.flatMap((client) => client.deliveryGroups)
-  const packages = groups.flatMap((group) => group.packages)
+  const withdrawals = plan.clients.flatMap((client, clientIndex) => client.deliveryGroups.map((group, groupIndex) => ({
+    client,
+    clientIndex,
+    group,
+    groupIndex,
+  })))
+  const packages = withdrawals.flatMap((withdrawal) => withdrawal.group.packages)
   const totalWeight = packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0)
   const tabErrorCounts = validationErrors.reduce<Partial<Record<WorkspaceTab, number>>>((counts, error) => {
     const tab = validationPathTab(error.path)
@@ -305,9 +328,9 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
     <div className="planning-workspace planning-workspace--multi">
       <section className="workspace-hero" aria-labelledby="multi-workspace-title">
         <div>
-          <p className="eyebrow">Plan · Plusieurs clients et retraits</p>
-          <h1 id="multi-workspace-title">Rassemblez toutes les courses.</h1>
-          <p>Chaque client peut fournir plusieurs retraits. La même équipe de livreurs prend en charge l’ensemble.</p>
+          <p className="eyebrow">Plan · Plusieurs retraits</p>
+          <h1 id="multi-workspace-title">Préparez tous les retraits.</h1>
+          <p>Ajoutez chaque point de récupération avec le nom du client et ses colis. Un même client peut apparaître sur plusieurs retraits.</p>
         </div>
         <div className="workspace-progress"><span className="is-complete">1 <small>Mode</small></span><span className="is-active">2 <small>Préparation</small></span><span>3 <small>Résultat</small></span></div>
       </section>
@@ -316,7 +339,8 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
 
       <WorkspaceTabs
         activeTab={activeTab}
-        deliveryMeta={`${plan.clients.length} client${plan.clients.length > 1 ? 's' : ''} · ${packages.length} colis`}
+        deliveryLabel="Retraits"
+        deliveryMeta={`${withdrawals.length} retrait${withdrawals.length > 1 ? 's' : ''} · ${packages.length} colis`}
         courierCount={plan.couriers.length}
         errorCounts={tabErrorCounts}
         onChange={setActiveTab}
@@ -326,13 +350,13 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
         <div className="workspace-feedback" role="alert">
           <strong>{message}</strong>
           <ul className="validation-errors">
-            {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{error.path}</strong>{error.message}</li>)}
+            {validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}
           </ul>
         </div>
       )}
 
       <div className="planning-layout">
-        <div className="planning-form" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Livraisons' : 'Livreurs'}>
+        <div className="planning-form" role="tabpanel" aria-label={activeTab === 'plan' ? 'Plan' : activeTab === 'deliveries' ? 'Retraits' : 'Livreurs'}>
           {activeTab === 'plan' && <section className="workspace-section">
             <div className="workspace-section__heading"><div><span><ClipboardList /></span><div><p className="eyebrow">Brouillon commun</p><h2>Informations générales</h2></div></div></div>
             <div className="workspace-fields">
@@ -342,77 +366,63 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
             </div>
           </section>}
 
-          {activeTab === 'deliveries' && <section className="workspace-section multi-clients-section">
+          {activeTab === 'deliveries' && <section className="workspace-section withdrawals-section" aria-labelledby="withdrawals-title">
             <div className="workspace-section__heading workspace-section__heading--actions">
-              <div><span><Building2 /></span><div><p className="eyebrow">Demandes à traiter</p><h2>Clients</h2></div></div>
+              <div><span><Layers3 /></span><div><p className="eyebrow">Points à desservir</p><h2 id="withdrawals-title">Retraits</h2></div></div>
               <div className="workspace-section__actions">
                 <button className="button button--secondary" type="button" onClick={() => setEditor({ kind: 'summary' })}><Eye />Résumé</button>
-                <button className="button" type="button" onClick={addClient}><Plus />Ajouter un client</button>
+                <button className="button" type="button" onClick={addWithdrawal}><Plus />Ajouter un retrait</button>
               </div>
             </div>
-            {plan.clients.length === 0 ? (
-              <button className="workspace-empty" type="button" onClick={addClient}><span><Building2 /></span><strong>Ajouter votre premier client</strong><small>puis créez ses retraits et ses colis</small></button>
-            ) : <div className="multi-client-list">{plan.clients.map((client, clientIndex) => (
-              <article className="multi-client-card" key={`${client.id}-${clientIndex}`}>
-                <header>
-                  <span className="multi-client-card__number">{String(clientIndex + 1).padStart(2, '0')}</span>
-                  <div className="multi-client-card__identity">
-                    <InputField label="Identifiant"><input value={client.id} onChange={(event) => updateClient(clientIndex, { id: event.target.value })} /></InputField>
-                    <InputField label="Nom du client"><input value={client.name} onChange={(event) => updateClient(clientIndex, { name: event.target.value })} /></InputField>
+            {withdrawals.length === 0 ? (
+              <button className="workspace-empty" type="button" onClick={addWithdrawal}><span><Layers3 /></span><strong>Ajouter votre premier retrait</strong><small>un client, un point de récupération et ses colis</small></button>
+            ) : <div className="withdrawal-list">{withdrawals.map(({ client, clientIndex, group, groupIndex }, withdrawalIndex) => (
+              <article className="delivery-group-card delivery-group-card--compact withdrawal-card" aria-label={`Retrait ${withdrawalIndex + 1}`} key={`${client.id}-${group.id}`}>
+                <div className="delivery-group-card__heading">
+                  <div><Layers3 /><span><small>Retrait {String(withdrawalIndex + 1).padStart(2, '0')}</small><strong>{group.name || client.name || 'Nouveau retrait'}</strong></span></div>
+                  <div className="compact-actions">
+                    {client.name && <span className="withdrawal-client-label">{client.name}</span>}
+                    <button type="button" aria-label={`Supprimer le retrait ${withdrawalIndex + 1}`} onClick={() => removeWithdrawal(clientIndex)}><Trash2 />Supprimer</button>
                   </div>
-                  <div className="multi-client-card__actions">
-                    <span>{client.deliveryGroups.length} retrait{client.deliveryGroups.length > 1 ? 's' : ''}</span>
-                    <button className="text-button" type="button" onClick={() => updatePlan((current) => ({ ...current, clients: current.clients.filter((_, index) => index !== clientIndex) }))}><Trash2 />Supprimer</button>
+                </div>
+                <div className="delivery-group-inline-editor">
+                  <div className="workspace-fields">
+                    <InputField label="Client"><input placeholder="Nom ou libellé du client" value={client.name} onChange={(event) => updateClient(clientIndex, { name: event.target.value })} /></InputField>
+                    <InputField label="Libellé"><input placeholder="Ex. Boutique Analakely" value={group.name} onChange={(event) => updateGroup(clientIndex, groupIndex, { name: event.target.value })} /></InputField>
                   </div>
-                </header>
-                <div className="delivery-groups">
-                  {client.deliveryGroups.map((group, groupIndex) => (
-                    <section className="delivery-group-card delivery-group-card--compact" key={`${group.id}-${groupIndex}`}>
-                      <div className="delivery-group-card__heading">
-                        <div><Layers3 /><span><small>Retrait {groupIndex + 1} · {group.id}</small><strong>{group.name || 'Nouvelle course'}</strong></span></div>
-                        <div className="compact-actions">
-                          <button type="button" onClick={() => updateClient(clientIndex, { deliveryGroups: client.deliveryGroups.filter((_, index) => index !== groupIndex) })}><Trash2 />Retirer</button>
-                        </div>
+                  <div className="delivery-group-pickup">
+                    <div className="delivery-group-pickup__heading">
+                      <span><MapPin />Point de récupération</span>
+                      <small>Lieu où les colis de ce retrait seront récupérés</small>
+                    </div>
+                    <LocationPicker accessToken={accessToken} value={group.pickup} title={`Retrait · ${group.name || client.name || withdrawalIndex + 1}`} description="Recherchez et confirmez le lieu où récupérer les colis." onChange={(pickup) => updateGroup(clientIndex, groupIndex, { pickup })} />
+                  </div>
+                  <dl className="delivery-group-inline-stats">
+                    <div><dt>Colis</dt><dd>{group.packages.length}</dd></div>
+                    <div><dt>Poids</dt><dd>{group.packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0).toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div>
+                  </dl>
+                </div>
+                <div className="delivery-group-packages delivery-group-packages--compact">
+                  <div className="delivery-group-packages__heading">
+                    <div><strong>Liste des colis</strong><small>Une ligne par destination</small></div>
+                    <div>
+                      <CsvImportButton<DeliveryPackage> accessToken={accessToken} kind="packages" onImported={(items, filename) => { updateGroup(clientIndex, groupIndex, { packages: items }); setFileMessage(`${filename} a rempli le retrait ${group.name || group.id}.`) }} />
+                      <button className="button button--secondary" type="button" onClick={() => addPackage(clientIndex, groupIndex)}><PackagePlus />Ajouter un colis</button>
+                    </div>
+                  </div>
+                  {group.packages.length > 0 ? <div className="compact-package-list">{group.packages.map((item, packageIndex) => (
+                    <article className="compact-package-row" key={`${item.id}-${packageIndex}`}>
+                      <span className="compact-package-row__number">{packageIndex + 1}</span>
+                      <div className="compact-package-row__identity"><strong>{item.label || `Colis ${packageIndex + 1}`}</strong><small>{item.id}</small></div>
+                      <div className="compact-package-row__destination"><MapPin /><span>{locationLabel(item.destination)}</span></div>
+                      <strong className="compact-package-row__weight">{Number(item.weightKg || 0).toLocaleString('fr-MG')} kg</strong>
+                      <small className="compact-package-row__window">{deliveryWindowLabel(item)}</small>
+                      <div className="compact-package-row__actions">
+                        <button type="button" aria-label={`Modifier ${item.label || `colis ${packageIndex + 1}`}`} onClick={() => setEditor({ kind: 'package', clientIndex, groupIndex, packageIndex })}><Pencil /></button>
+                        <button type="button" aria-label={`Supprimer ${item.label || `colis ${packageIndex + 1}`}`} onClick={() => updateGroup(clientIndex, groupIndex, { packages: group.packages.filter((_, index) => index !== packageIndex) })}><Trash2 /></button>
                       </div>
-                      <div className="delivery-group-inline-editor">
-                        <div className="workspace-fields">
-                          <InputField label="Identifiant"><input value={group.id} onChange={(event) => updateGroup(clientIndex, groupIndex, { id: event.target.value })} /></InputField>
-                          <InputField label="Nom de la course"><input value={group.name} onChange={(event) => updateGroup(clientIndex, groupIndex, { name: event.target.value })} /></InputField>
-                        </div>
-                        <div className="delivery-group-pickup">
-                          <span><MapPin />Point de récupération</span>
-                          <LocationPicker accessToken={accessToken} value={group.pickup} title={`Retrait · ${group.name || client.name || `client ${clientIndex + 1}`}`} description="Recherchez et confirmez le lieu où récupérer les colis de cette course." onChange={(pickup) => updateGroup(clientIndex, groupIndex, { pickup })} />
-                        </div>
-                        <dl className="delivery-group-inline-stats">
-                          <div><dt>Colis</dt><dd>{group.packages.length}</dd></div>
-                          <div><dt>Poids</dt><dd>{group.packages.reduce((sum, item) => sum + (Number(item.weightKg) || 0), 0).toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div>
-                        </dl>
-                      </div>
-                      <div className="delivery-group-packages delivery-group-packages--compact">
-                        <div className="delivery-group-packages__heading">
-                          <div><strong>Liste des colis</strong><small>Une ligne par destination</small></div>
-                          <div>
-                            <CsvImportButton<DeliveryPackage> accessToken={accessToken} kind="packages" onImported={(items, filename) => { updateGroup(clientIndex, groupIndex, { packages: items }); setFileMessage(`${filename} a rempli la course ${group.name || group.id}.`) }} />
-                            <button className="button button--secondary" type="button" onClick={() => addPackage(clientIndex, groupIndex)}><PackagePlus />Ajouter</button>
-                          </div>
-                        </div>
-                        {group.packages.length > 0 ? <div className="compact-package-list">{group.packages.map((item, packageIndex) => (
-                          <article className="compact-package-row" key={`${item.id}-${packageIndex}`}>
-                            <span className="compact-package-row__number">{packageIndex + 1}</span>
-                            <div className="compact-package-row__identity"><strong>{item.label || `Colis ${packageIndex + 1}`}</strong><small>{item.id}</small></div>
-                            <div className="compact-package-row__destination"><MapPin /><span>{locationLabel(item.destination)}</span></div>
-                            <strong className="compact-package-row__weight">{Number(item.weightKg || 0).toLocaleString('fr-MG')} kg</strong>
-                            <small className="compact-package-row__window">{deliveryWindowLabel(item)}</small>
-                            <div className="compact-package-row__actions">
-                              <button type="button" aria-label={`Modifier ${item.label || `colis ${packageIndex + 1}`}`} onClick={() => setEditor({ kind: 'package', clientIndex, groupIndex, packageIndex })}><Pencil /></button>
-                              <button type="button" aria-label={`Supprimer ${item.label || `colis ${packageIndex + 1}`}`} onClick={() => updateGroup(clientIndex, groupIndex, { packages: group.packages.filter((_, index) => index !== packageIndex) })}><Trash2 /></button>
-                            </div>
-                          </article>
-                        ))}</div> : <button className="workspace-empty workspace-empty--compact" type="button" onClick={() => addPackage(clientIndex, groupIndex)}><PackagePlus /><strong>Ajouter les colis de ce retrait</strong></button>}
-                      </div>
-                    </section>
-                  ))}
-                  <button className="add-group-button" type="button" onClick={() => addGroup(clientIndex)}><Plus /><span><strong>Ajouter un retrait</strong><small>Une origine avec une ou plusieurs livraisons</small></span></button>
+                    </article>
+                  ))}</div> : <button className="workspace-empty workspace-empty--compact" type="button" onClick={() => addPackage(clientIndex, groupIndex)}><PackagePlus /><strong>Ajouter les colis de ce retrait</strong></button>}
                 </div>
               </article>
             ))}</div>}
@@ -423,7 +433,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
               <div><span><Users /></span><div><p className="eyebrow">Équipe partagée</p><h2>Livreurs</h2></div></div>
               <div className="workspace-section__actions"><CsvImportButton<Courier> accessToken={accessToken} kind="couriers" onImported={(items, filename) => { updatePlan((current) => ({ ...current, couriers: items })); setFileMessage(`${filename} a remplacé la liste des livreurs.`) }} /><button className="button" type="button" onClick={addCourier}><UserPlus />Ajouter</button></div>
             </div>
-            {plan.couriers.length === 0 ? <button className="workspace-empty" type="button" onClick={addCourier}><span><UserPlus /></span><strong>Ajouter votre premier livreur</strong><small>l’équipe sera utilisée pour tous les clients</small></button> : <div className="editable-list">{plan.couriers.map((courier, index) => (
+            {plan.couriers.length === 0 ? <button className="workspace-empty" type="button" onClick={addCourier}><span><UserPlus /></span><strong>Ajouter votre premier livreur</strong><small>l’équipe sera utilisée pour tous les retraits</small></button> : <div className="editable-list">{plan.couriers.map((courier, index) => (
               <article className="editable-card" key={`${courier.id}-${index}`}>
                 <div className="editable-card__topline"><strong>Livreur {String(index + 1).padStart(2, '0')}</strong><button type="button" onClick={() => updatePlan((current) => ({ ...current, couriers: current.couriers.filter((_, courierIndex) => courierIndex !== index) }))}><Trash2 />Supprimer</button></div>
                 <div className="editable-card__grid">
@@ -442,9 +452,9 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
         </div>
         <aside className="plan-sidebar">
           {activeTab !== 'couriers' ? (
-            <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Clients</dt><dd>{plan.clients.length}</dd></div><div><dt>Retraits</dt><dd>{groups.length}</dd></div><div><dt>Colis</dt><dd>{packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div></dl></div>
+            <div className="plan-sidebar__card plan-overview"><p className="eyebrow">Plan en cours</p><h2>{plan.name || 'Sans titre'}</h2><dl className="plan-summary"><div><dt>Retraits</dt><dd>{withdrawals.length}</dd></div><div><dt>Colis</dt><dd>{packages.length}</dd></div><div><dt>Livreurs</dt><dd>{plan.couriers.length}</dd></div><div><dt>Poids total</dt><dd>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</dd></div></dl></div>
           ) : (
-            <div className="plan-sidebar__card plan-validation"><p className="eyebrow">Finaliser le plan</p><h3>Prêt à répartir les courses ?</h3><p>Vérifiez les liaisons, puis lancez la répartition entre l’équipe commune.</p><button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}><MapPinned />Visualiser les liaisons</button><button className="button button--wide" type="button" disabled={validating || generating} onClick={() => void handleValidation(false)}><ShieldCheck />{validating ? 'Validation…' : 'Valider le plan'}</button><button className="button button--wide button--generate" type="button" disabled={validating || generating} onClick={() => void handleValidation(true)}>{generating ? <LoaderCircle className="spin" /> : <Sparkles />}{generating ? 'Optimisation en cours…' : 'Générer les tournées'}</button>{message && <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>{message}</p>}{validationErrors.length > 0 && <ul className="validation-errors">{validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{error.path}</strong>{error.message}</li>)}</ul>}</div>
+            <div className="plan-sidebar__card plan-validation"><p className="eyebrow">Finaliser le plan</p><h3>Prêt à répartir les courses ?</h3><p>Vérifiez les liaisons, puis lancez la répartition entre l’équipe commune.</p><button className="button button--secondary button--wide button--map-preview" type="button" onClick={() => setMapPreviewOpen(true)}><MapPinned />Visualiser les liaisons</button><button className="button button--wide" type="button" disabled={validating || generating} onClick={() => void handleValidation(false)}><ShieldCheck />{validating ? 'Validation…' : 'Valider le plan'}</button><button className="button button--wide button--generate" type="button" disabled={validating || generating} onClick={() => void handleValidation(true)}>{generating ? <LoaderCircle className="spin" /> : <Sparkles />}{generating ? 'Optimisation en cours…' : 'Générer les tournées'}</button>{message && <p className={`validation-result${validationErrors.length ? ' validation-result--error' : ' validation-result--success'}`} role={validationErrors.length ? 'alert' : 'status'}>{message}</p>}{validationErrors.length > 0 && <ul className="validation-errors">{validationErrors.map((error, index) => <li key={`${error.path}-${error.code}-${index}`}><strong>{validationFieldLabel(error.path)}</strong>{error.message}</li>)}</ul>}</div>
           )}
         </aside>
       </div>
@@ -491,22 +501,22 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
               {editor.kind === 'summary' && (
                 <div className="planning-summary">
                   <div className="planning-summary__totals">
-                    <div><span>Clients</span><strong>{plan.clients.length}</strong></div>
-                    <div><span>Retraits</span><strong>{groups.length}</strong></div>
+                    <div><span>Retraits</span><strong>{withdrawals.length}</strong></div>
                     <div><span>Colis</span><strong>{packages.length}</strong></div>
+                    <div><span>Livreurs</span><strong>{plan.couriers.length}</strong></div>
                     <div><span>Poids</span><strong>{totalWeight.toLocaleString('fr-MG', { maximumFractionDigits: 2 })} kg</strong></div>
                   </div>
-                  {plan.clients.length > 0 ? <div className="planning-summary__clients">{plan.clients.map((client, clientIndex) => (
-                    <article key={`${client.id}-summary-${clientIndex}`}>
-                      <header><span>{String(clientIndex + 1).padStart(2, '0')}</span><div><small>{client.id}</small><h3>{client.name || `Client ${clientIndex + 1}`}</h3></div><strong>{client.deliveryGroups.length} retrait{client.deliveryGroups.length > 1 ? 's' : ''}</strong></header>
-                      {client.deliveryGroups.length > 0 ? <div>{client.deliveryGroups.map((group, groupIndex) => (
-                        <section key={`${group.id}-summary-${groupIndex}`}>
-                          <div className="planning-summary__group"><Layers3 /><span><small>{locationLabel(group.pickup)}</small><strong>{group.name || `Retrait ${groupIndex + 1}`}</strong></span><b>{group.packages.length} colis</b></div>
+                  {withdrawals.length > 0 ? <div className="planning-summary__clients">{withdrawals.map(({ client, group }, withdrawalIndex) => (
+                    <article key={`${client.id}-${group.id}-summary`}>
+                      <header><span>{String(withdrawalIndex + 1).padStart(2, '0')}</span><div><small>Client</small><h3>{client.name || 'Client non renseigné'}</h3></div><strong>{group.name || `Retrait ${withdrawalIndex + 1}`}</strong></header>
+                      <div>
+                        <section>
+                          <div className="planning-summary__group"><Layers3 /><span><small>{locationLabel(group.pickup)}</small><strong>{group.name || `Retrait ${withdrawalIndex + 1}`}</strong></span><b>{group.packages.length} colis</b></div>
                           {group.packages.length > 0 && <ul>{group.packages.map((item, packageIndex) => <li key={`${item.id}-summary-${packageIndex}`}><span>{packageIndex + 1}</span><strong>{item.label || item.id}</strong><small>{locationLabel(item.destination)}</small><b>{Number(item.weightKg || 0).toLocaleString('fr-MG')} kg</b></li>)}</ul>}
                         </section>
-                      ))}</div> : <p>Aucun retrait pour ce client.</p>}
+                      </div>
                     </article>
-                  ))}</div> : <div className="planning-summary__empty"><Building2 /><strong>Aucun client pour le moment</strong><span>Ajoutez un client pour commencer le plan.</span></div>}
+                  ))}</div> : <div className="planning-summary__empty"><Layers3 /><strong>Aucun retrait pour le moment</strong><span>Ajoutez un retrait pour commencer le plan.</span></div>}
                 </div>
               )}
             </div>

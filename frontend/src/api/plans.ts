@@ -104,8 +104,11 @@ export async function validatePlan(
 
   if (!response.ok || !payload?.valid || !payload.plan) {
     const errors = payload?.errors ?? []
+    const validationMessage = errors.length > 0
+      ? 'Validation impossible.'
+      : `La validation a échoué avec le statut ${response.status}.`
     throw new PlanValidationFailure(
-      errors[0]?.message ?? `La validation a échoué avec le statut ${response.status}.`,
+      validationMessage,
       errors,
       response.status,
     )

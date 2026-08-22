@@ -37,7 +37,7 @@ import { PlanMapPreview } from './PlanMapPreview'
 import { LocationPicker } from './LocationPicker'
 import { OptimizationResults } from './OptimizationResults'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
-import { validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
+import { validationFieldLabel, validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
 
 interface PlanningWorkspaceProps {
   accessToken: string
@@ -91,35 +91,6 @@ function nextId(prefix: string, items: { id: string }[]) {
     candidate = `${prefix}-${String(index).padStart(3, '0')}`
   }
   return candidate
-}
-
-function validationFieldLabel(path: string) {
-  const packageMatch = path.match(/^packages\[(\d+)](?:\.(.+))?/)
-  if (packageMatch) {
-    const field = packageMatch[2]?.replace('destination.', '')
-    const labels: Record<string, string> = {
-      id: 'référence', label: 'libellé', weightKg: 'poids', phone: 'téléphone',
-      destination: 'destination', destinationQuery: 'destination', latitude: 'latitude', longitude: 'longitude',
-      deliveryWindow: 'créneau de livraison', 'deliveryWindow.startAt': 'début du créneau', 'deliveryWindow.endAt': 'fin du créneau',
-    }
-    return `Colis ${Number(packageMatch[1]) + 1}${field ? ` · ${labels[field] ?? field}` : ''}`
-  }
-  const courierMatch = path.match(/^couriers\[(\d+)](?:\.(.+))?/)
-  if (courierMatch) {
-    const labels: Record<string, string> = {
-      id: 'référence', name: 'nom', vehicleType: 'véhicule', maxWeightKg: 'capacité', averageSpeedKmh: 'vitesse',
-      departureAt: 'heure de départ', departureLocation: 'lieu de départ',
-    }
-    const field = courierMatch[2]
-    return `Livreur ${Number(courierMatch[1]) + 1}${field ? ` · ${labels[field] ?? field}` : ''}`
-  }
-  if (path.startsWith('depot')) return 'Point de récupération'
-  const labels: Record<string, string> = {
-    planId: 'Référence', name: 'Nom de la préparation', departureAt: 'Date et heure de départ',
-    couriers: 'Livreurs', packages: 'Colis', request: 'Fichier de sauvegarde',
-    schemaVersion: 'Fichier de sauvegarde', pattern: 'Mode de livraison', timezone: 'Heure de départ',
-  }
-  return labels[path] ?? 'Préparation'
 }
 
 function InputField({ label, children, wide = false }: {

@@ -53,7 +53,7 @@ async function openWorkspace() {
   await screen.findByRole('heading', { name: 'Construisez votre tournée.' })
 }
 
-function selectWorkspaceTab(name: 'Plan' | 'Livraisons' | 'Livreurs') {
+function selectWorkspaceTab(name: 'Plan' | 'Livraisons' | 'Retraits' | 'Livreurs') {
   fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }))
 }
 
@@ -72,7 +72,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Quel trajet préparez-vous ?' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Un retrait, plusieurs livraisons' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Plusieurs clients' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Plusieurs retraits' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Session active')).toBeInTheDocument())
     expect(screen.getByText('admin')).toBeInTheDocument()
   })
@@ -96,25 +96,25 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Générer les tournées' })).toBeInTheDocument()
   })
 
-  it('edits withdrawals inline, packages in dialogs, then shows the multi-client summary', async () => {
+  it('edits a flat withdrawal, its packages, then shows the plan summary', async () => {
     vi.stubGlobal('fetch', authenticatedFetch())
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode multi-clients' }))
-    expect(await screen.findByRole('heading', { name: 'Rassemblez toutes les courses.' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
+    expect(await screen.findByRole('heading', { name: 'Préparez tous les retraits.' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute('aria-selected', 'true')
 
-    selectWorkspaceTab('Livraisons')
-    expect(screen.getByRole('tab', { name: /^Livraisons/ })).toHaveAttribute('aria-selected', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un client' }))
-    fireEvent.change(screen.getByLabelText('Nom du client'), { target: { value: 'Client Alpha' } })
-    fireEvent.click(screen.getByRole('button', { name: /Ajouter un retrait/ }))
+    selectWorkspaceTab('Retraits')
+    expect(screen.getByRole('tab', { name: /^Retraits/ })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un retrait' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Nom de la course'), { target: { value: 'Course Alpha' } })
+    const withdrawal = screen.getByRole('article', { name: 'Retrait 1' })
+    fireEvent.change(within(withdrawal).getByLabelText('Client'), { target: { value: 'Client Alpha' } })
+    fireEvent.change(within(withdrawal).getByLabelText('Libellé'), { target: { value: 'Retrait Alpha' } })
 
-    expect(screen.getByText('Course Alpha')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Ajouter les colis de ce retrait/ }))
+    expect(within(withdrawal).getByText('Retrait Alpha')).toBeInTheDocument()
+    fireEvent.click(within(withdrawal).getByRole('button', { name: /Ajouter les colis de ce retrait/ }))
 
     const packageDialog = screen.getByRole('dialog', { name: 'Nouveau colis' })
     fireEvent.change(within(packageDialog).getByLabelText('Libellé'), { target: { value: 'Colis Bureau' } })
@@ -130,9 +130,120 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Résumé' }))
     const summaryDialog = screen.getByRole('dialog', { name: 'Résumé du plan' })
     expect(within(summaryDialog).getByText('Client Alpha')).toBeInTheDocument()
-    expect(within(summaryDialog).getByText('Course Alpha')).toBeInTheDocument()
+    expect(within(summaryDialog).getAllByText('Retrait Alpha').length).toBeGreaterThan(0)
     expect(within(summaryDialog).getByText('Colis Bureau')).toBeInTheDocument()
-    expect(screen.getByText('Plusieurs clients · plusieurs retraits')).toBeInTheDocument()
+    expect(screen.getByText('Plan · Plusieurs retraits')).toBeInTheDocument()
+  })
+
+  it('keeps two withdrawals for the same client independent', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch())
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
+    await screen.findByRole('heading', { name: 'Préparez tous les retraits.' })
+    selectWorkspaceTab('Retraits')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un retrait' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un retrait' }))
+
+    const firstWithdrawal = screen.getByRole('article', { name: 'Retrait 1' })
+    const secondWithdrawal = screen.getByRole('article', { name: 'Retrait 2' })
+    fireEvent.change(within(firstWithdrawal).getByLabelText('Client'), { target: { value: 'Client commun' } })
+    fireEvent.change(within(secondWithdrawal).getByLabelText('Client'), { target: { value: 'Client commun' } })
+    fireEvent.change(within(firstWithdrawal).getByLabelText('Libellé'), { target: { value: 'Retrait Analakely' } })
+    fireEvent.change(within(secondWithdrawal).getByLabelText('Libellé'), { target: { value: 'Retrait Ampasapito' } })
+
+    expect(within(firstWithdrawal).getByLabelText('Client')).toHaveValue('Client commun')
+    expect(within(secondWithdrawal).getByLabelText('Client')).toHaveValue('Client commun')
+    expect(within(firstWithdrawal).getByLabelText('Libellé')).toHaveValue('Retrait Analakely')
+    expect(within(secondWithdrawal).getByLabelText('Libellé')).toHaveValue('Retrait Ampasapito')
+
+    fireEvent.change(within(firstWithdrawal).getByLabelText('Client'), { target: { value: 'Client renommé' } })
+    expect(within(firstWithdrawal).getByLabelText('Client')).toHaveValue('Client renommé')
+    expect(within(secondWithdrawal).getByLabelText('Client')).toHaveValue('Client commun')
+  })
+
+  it('flattens withdrawals grouped under one client in a historical draft', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch())
+    const draft = {
+      schemaVersion: '2.0',
+      pattern: 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY',
+      planId: 'plan-historique-001',
+      name: 'Plan historique',
+      departureAt: '2026-08-05T08:00:00+03:00',
+      timezone: 'Indian/Antananarivo',
+      settings: { returnToDepot: false, routingPreset: 'MAIN_ROADS' },
+      couriers: [],
+      clients: [{
+        id: 'client-001',
+        name: 'Client historique',
+        deliveryGroups: [
+          {
+            id: 'retrait-001',
+            name: 'Retrait Analakely',
+            pickup: {
+              label: 'Boutique historique',
+              destinationQuery: 'Analakely, Antananarivo',
+              latitude: -18.9089,
+              longitude: 47.5212,
+            },
+            packages: [],
+          },
+          { id: 'retrait-002', name: 'Retrait Ampasapito', pickup: { destinationQuery: 'Ampasapito' }, packages: [] },
+        ],
+      }],
+    }
+    const file = new File([JSON.stringify(draft)], 'plan-historique.json', { type: 'application/json' })
+    Object.defineProperty(file, 'text', { value: async () => JSON.stringify(draft) })
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
+    fireEvent.change(screen.getByLabelText('Ouvrir une sauvegarde'), { target: { files: [file] } })
+    expect(await screen.findByText('plan-historique.json chargé : 2 retraits et 0 colis.')).toBeInTheDocument()
+    selectWorkspaceTab('Retraits')
+
+    const firstWithdrawal = screen.getByRole('article', { name: 'Retrait 1' })
+    const secondWithdrawal = screen.getByRole('article', { name: 'Retrait 2' })
+    expect(within(firstWithdrawal).getByLabelText('Client')).toHaveValue('Client historique')
+    expect(within(secondWithdrawal).getByLabelText('Client')).toHaveValue('Client historique')
+    expect(within(firstWithdrawal).getByLabelText('Libellé')).toHaveValue('Retrait Analakely')
+    expect(within(secondWithdrawal).getByLabelText('Libellé')).toHaveValue('Retrait Ampasapito')
+    expect(within(firstWithdrawal).getByText('Lieu confirmé')).toBeInTheDocument()
+    expect(within(firstWithdrawal).getByText('Analakely, Antananarivo')).toBeInTheDocument()
+    expect(within(firstWithdrawal).getByText('Libellé : Boutique historique')).toBeInTheDocument()
+    expect(within(firstWithdrawal).getByText('Coordonnées : -18.908900, 47.521200')).toBeInTheDocument()
+  })
+
+  it('shows validation errors once with stable counters and user-facing labels', async () => {
+    vi.stubGlobal('fetch', authenticatedFetch((input) => {
+      if (input === '/api/plans/validate') {
+        return jsonResponse({
+          valid: false,
+          errors: [{
+            path: 'couriers',
+            code: 'NotEmpty',
+            message: 'Ajouter au moins un livreur.',
+          }],
+        }, 400)
+      }
+      return undefined
+    }))
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Choisir le mode plusieurs retraits' }))
+    selectWorkspaceTab('Livreurs')
+    fireEvent.click(screen.getByRole('button', { name: 'Valider le plan' }))
+
+    expect(await screen.findByText('Validation impossible.')).toBeInTheDocument()
+    expect(screen.getAllByText('Ajouter au moins un livreur.')).toHaveLength(1)
+    const detailedError = screen.getByText('Ajouter au moins un livreur.').closest('li')
+    expect(detailedError).not.toBeNull()
+    expect(within(detailedError as HTMLLIElement).getByText('Livreurs')).toBeInTheDocument()
+    expect(screen.queryByText('couriers')).not.toBeInTheDocument()
+
+    const courierTab = screen.getByRole('tab', { name: 'Livreurs · 1 erreur' })
+    expect(within(courierTab).getByText('0 livreur').parentElement).toHaveClass('workspace-tabs__content')
+    expect(within(courierTab).getByText('1')).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('shows the login form when no refresh session exists', async () => {
@@ -242,7 +353,7 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer ce lieu' }))
 
-    expect(screen.getByText('-18.908900, 47.521200')).toBeInTheDocument()
+    expect(screen.getByText('Coordonnées : -18.908900, 47.521200')).toBeInTheDocument()
     expect(screen.getByText('Analakely, Antananarivo, Madagascar')).toBeInTheDocument()
   })
 
@@ -279,7 +390,7 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Ankorondrano, Antananarivo, Madagascar/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer ce lieu' }))
 
-    expect(screen.getByText('-18.879200, 47.520700')).toBeInTheDocument()
+    expect(screen.getByText('Coordonnées : -18.879200, 47.520700')).toBeInTheDocument()
     expect(screen.getByText('Ankorondrano, Antananarivo, Madagascar')).toBeInTheDocument()
   })
 

@@ -46,7 +46,7 @@ public record DeliveryPlanRequest(
         @Valid
         LocationRequest depot,
 
-        @NotEmpty(message = "Au moins un livreur est obligatoire.")
+        @NotEmpty(message = "Ajouter au moins un livreur.")
         @Size(max = 200, message = "Un plan ne peut pas contenir plus de 200 livreurs.")
         List<@NotNull(message = "Un livreur ne peut pas être nul.") @Valid CourierRequest> couriers,
 
