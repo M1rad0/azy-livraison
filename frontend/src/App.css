@@ -1602,8 +1602,8 @@ tbody tr:last-child td {
 .workspace-field select:focus,
 .location-search__bar input:focus {
   background: #fff;
-  border-color: #55a184;
-  box-shadow: 0 0 0 4px rgba(85, 161, 132, 0.1);
+  border-color: var(--coral);
+  box-shadow: 0 0 0 4px rgba(244, 91, 11, 0.12);
 }
 
 .workspace-field--wide {
@@ -1637,7 +1637,7 @@ tbody tr:last-child td {
 .workspace-toggle input {
   width: 1.1rem;
   height: 1.1rem;
-  accent-color: var(--forest);
+  accent-color: var(--coral);
 }
 
 .workspace-toggle > span {
@@ -1692,9 +1692,9 @@ tbody tr:last-child td {
 }
 
 .location-picker.is-confirmed {
-  background: #f2faf5;
+  background: var(--orange-soft);
   border-style: solid;
-  border-color: #b9dfc9;
+  border-color: #f4aa80;
 }
 
 .location-picker__icon {
@@ -1708,7 +1708,7 @@ tbody tr:last-child td {
 }
 
 .location-picker.is-confirmed .location-picker__icon {
-  color: #236b51;
+  color: var(--orange-deep);
   background: var(--mint);
 }
 
@@ -1867,8 +1867,8 @@ tbody tr:last-child td {
 
 .location-modal__searchbar input:focus {
   background: #fff;
-  border-color: #55a184;
-  box-shadow: 0 0 0 4px rgba(85, 161, 132, 0.1);
+  border-color: var(--coral);
+  box-shadow: 0 0 0 4px rgba(244, 91, 11, 0.12);
 }
 
 .location-modal__searchbar .button {
@@ -1888,9 +1888,9 @@ tbody tr:last-child td {
 }
 
 .location-modal__selection.is-confirmed {
-  color: #276c53;
-  background: #effaf3;
-  border-color: #bde2cb;
+  color: var(--orange-deep);
+  background: var(--orange-soft);
+  border-color: #f4aa80;
 }
 
 .location-modal__selection > svg {
@@ -1978,7 +1978,7 @@ tbody tr:last-child td {
 
 .workspace-candidates button:hover {
   background: #fff;
-  border-color: #68a78e;
+  border-color: var(--coral);
 }
 
 .workspace-candidates small {
@@ -2671,7 +2671,8 @@ tbody tr:last-child td {
 
 .login-intro h1 {
   max-width: 780px;
-  font-size: clamp(2.8rem, 5.8vw, 6rem);
+  font-size: clamp(2.5rem, 4.2vw, 4.5rem);
+  line-height: 1.02;
 }
 
 .login-intro .eyebrow {
@@ -2750,8 +2751,8 @@ tbody tr:last-child td {
 
 .login-form input:focus {
   background: #fff;
-  border-color: #55a184;
-  box-shadow: 0 0 0 4px rgba(85, 161, 132, 0.12);
+  border-color: var(--coral);
+  box-shadow: 0 0 0 4px rgba(244, 91, 11, 0.12);
 }
 
 .form-error {

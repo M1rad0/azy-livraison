@@ -44,6 +44,8 @@
 
 .client-dashboard-hero h1 {
   color: #fff;
+  font-size: clamp(2rem, 3.6vw, 3.5rem);
+  line-height: 1.04;
 }
 
 .client-dashboard-hero p:last-child,
@@ -550,8 +552,8 @@
 
 .client-field input:focus {
   background: #fff;
-  border-color: #638ca9;
-  box-shadow: 0 0 0 4px rgba(38, 91, 128, 0.1);
+  border-color: var(--coral);
+  box-shadow: 0 0 0 4px rgba(244, 91, 11, 0.12);
 }
 
 .client-field--readonly input {
@@ -634,7 +636,7 @@
   height: 1rem;
   flex: 0 0 auto;
   margin: 0.1rem 0 0;
-  accent-color: var(--forest);
+  accent-color: var(--coral);
 }
 
 .client-check-card > span {
