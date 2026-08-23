@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDispatchPlan,
   getAdminQueue,
+  listDeliveryRequests,
   updateOperationalSettings,
   type AdminQueue,
   type DispatchPlan,
@@ -34,6 +35,27 @@ describe('API administrateur', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/queue?date=2026-08-22', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
     }))
+  })
+
+  it('encode les filtres de la file globale en attente', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] })
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    await listDeliveryRequests('admin-token', {
+      from: '2026-08-24',
+      to: '2026-08-30',
+      client: '  Boutique Soa  ',
+      pendingOnly: true,
+    }, controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/delivery-requests?from=2026-08-24&to=2026-08-30&client=Boutique+Soa&pendingOnly=true',
+      expect.objectContaining({
+        signal: controller.signal,
+        headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
+      }),
+    )
   })
 
   it('envoie un dispatch via siège avec une clé d’idempotence', async () => {

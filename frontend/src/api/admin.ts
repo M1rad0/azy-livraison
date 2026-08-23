@@ -245,12 +245,23 @@ export function getAdminQueue(date: string, accessToken: string, signal?: AbortS
 
 export function listDeliveryRequests(
   accessToken: string,
-  filters: { date?: string; status?: DeliveryRequestStatus } = {},
+  filters: {
+    date?: string
+    from?: string
+    to?: string
+    status?: DeliveryRequestStatus
+    client?: string
+    pendingOnly?: boolean
+  } = {},
   signal?: AbortSignal,
 ) {
   const query = new URLSearchParams()
   if (filters.date) query.set('date', filters.date)
+  if (filters.from) query.set('from', filters.from)
+  if (filters.to) query.set('to', filters.to)
   if (filters.status) query.set('status', filters.status)
+  if (filters.client?.trim()) query.set('client', filters.client.trim())
+  if (filters.pendingOnly) query.set('pendingOnly', 'true')
   const suffix = query.size > 0 ? `?${query}` : ''
   return adminRequest<DeliveryRequest[]>(`delivery-requests${suffix}`, accessToken, { signal })
 }

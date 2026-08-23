@@ -1,17 +1,21 @@
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   CalendarDays,
-  CheckSquare2,
   CircleDollarSign,
   Clock3,
+  Filter,
   MapPin,
   PackageOpen,
   Phone,
   RefreshCw,
+  Search,
   Smartphone,
   UserRound,
+  UsersRound,
 } from 'lucide-react'
-import type { AdminQueue } from '../../api/admin'
+import type { DeliveryRequest } from '../../api/admin'
 import {
+  antananarivoToday,
   formatAriary,
   formatDate,
   locationLabel,
@@ -19,12 +23,19 @@ import {
   requestStatusLabel,
 } from './adminHelpers'
 
+export interface PendingQueueFilters {
+  scope: 'ALL' | 'PERIOD'
+  from: string
+  to: string
+  client: string
+}
+
 interface AdminQueuePanelProps {
-  date: string
-  queue?: AdminQueue
+  requests: DeliveryRequest[]
+  filters: PendingQueueFilters
   busy: boolean
   selectedPackageIds: Set<string>
-  onDateChange: (date: string) => void
+  onFiltersChange: (filters: PendingQueueFilters) => void
   onReload: () => void
   onPackageSelectionChange: (packageId: string, selected: boolean) => void
   onSelectAllPending: () => void
@@ -32,64 +43,107 @@ interface AdminQueuePanelProps {
 }
 
 export function AdminQueuePanel({
-  date,
-  queue,
+  requests,
+  filters,
   busy,
   selectedPackageIds,
-  onDateChange,
+  onFiltersChange,
   onReload,
   onPackageSelectionChange,
   onSelectAllPending,
   onOpenDispatch,
 }: AdminQueuePanelProps) {
-  const requests = queue?.requests ?? []
+  const [draft, setDraft] = useState(filters)
+  const [filterError, setFilterError] = useState<string>()
   const pendingPackages = requests.flatMap((request) => request.packages)
     .filter((deliveryPackage) => deliveryPackage.status === 'PENDING')
+  const clientCount = new Set(requests.map((request) => request.ownerAccountId)).size
+  const hasActiveFilters = filters.scope === 'PERIOD' || Boolean(filters.client)
+  const today = antananarivoToday()
+
+  useEffect(() => setDraft(filters), [filters])
+
+  function applyFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (draft.scope === 'PERIOD' && draft.from && draft.to && draft.from > draft.to) {
+      setFilterError('La date de début doit précéder la date de fin.')
+      return
+    }
+    setFilterError(undefined)
+    onFiltersChange({
+      ...draft,
+      from: draft.scope === 'PERIOD' ? draft.from : '',
+      to: draft.scope === 'PERIOD' ? draft.to : '',
+      client: draft.client.trim(),
+    })
+  }
+
+  function clearFilters() {
+    const cleared: PendingQueueFilters = { scope: 'ALL', from: '', to: '', client: '' }
+    setDraft(cleared)
+    setFilterError(undefined)
+    onFiltersChange(cleared)
+  }
 
   return (
     <section className="admin-panel" aria-labelledby="queue-title">
       <header className="admin-panel__heading">
         <div>
-          <p className="admin-eyebrow">Opérations du jour</p>
-          <h2 id="queue-title">File d’attente</h2>
-          <p>Les demandes confirmées par les clients, avec tous les champs utiles au dispatch.</p>
+          <p className="admin-eyebrow">Vue globale</p>
+          <h2 id="queue-title">Livraisons en attente</h2>
+          <p>Retrouvez tous les colis encore à dispatcher, quelle que soit leur date demandée.</p>
         </div>
-        <div className="admin-toolbar">
-          <label className="admin-date-field">
-            <CalendarDays aria-hidden="true" />
-            <span>Date de service</span>
-            <input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} />
-          </label>
-          <button className="admin-icon-button" type="button" onClick={onReload} disabled={busy} aria-label="Actualiser la file">
-            <RefreshCw className={busy ? 'admin-spin' : undefined} aria-hidden="true" />
-          </button>
-        </div>
+        <button className="admin-icon-button" type="button" onClick={onReload} disabled={busy} aria-label="Actualiser les livraisons en attente">
+          <RefreshCw className={busy ? 'admin-spin' : undefined} aria-hidden="true" />
+        </button>
       </header>
 
-      {queue && (
-        <div className="admin-stats" aria-label={`Situation du ${formatDate(queue.date)}`}>
+      <form className="admin-queue-filters" onSubmit={applyFilters}>
+        <div className="admin-queue-filters__scope">
+          <span><Filter aria-hidden="true" />Dates demandées</span>
+          <div className="admin-segmented" role="group" aria-label="Période des livraisons">
+            <button className={draft.scope === 'ALL' ? 'is-active' : undefined} type="button" onClick={() => setDraft((current) => ({ ...current, scope: 'ALL' }))}>Toutes les dates</button>
+            <button className={draft.scope === 'PERIOD' ? 'is-active' : undefined} type="button" onClick={() => setDraft((current) => ({ ...current, scope: 'PERIOD' }))}>Une période</button>
+          </div>
+        </div>
+        {draft.scope === 'PERIOD' && (
+          <div className="admin-queue-filters__period">
+            <label><span>Du</span><input type="date" required value={draft.from} max={draft.to || undefined} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} /></label>
+            <label><span>Au</span><input type="date" required value={draft.to} min={draft.from || undefined} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} /></label>
+          </div>
+        )}
+        <label className="admin-queue-filters__search">
+          <span><Search aria-hidden="true" />Rechercher un client</span>
+          <input type="search" value={draft.client} maxLength={100} placeholder="Nom, identifiant ou téléphone" onChange={(event) => setDraft((current) => ({ ...current, client: event.target.value }))} />
+        </label>
+        <div className="admin-queue-filters__actions">
+          {hasActiveFilters && <button className="admin-button admin-button--ghost" type="button" onClick={clearFilters}>Tout afficher</button>}
+          <button className="admin-button" type="submit" disabled={busy}><Search aria-hidden="true" />Appliquer</button>
+        </div>
+        {filterError && <p className="admin-queue-filters__error" role="alert">{filterError}</p>}
+      </form>
+
+      {!busy || requests.length > 0 ? (
+        <div className="admin-stats" aria-label="Situation globale des livraisons en attente">
           <article>
             <span><PackageOpen aria-hidden="true" /></span>
-            <div><strong>{queue.stats.pendingPackageCount}</strong><small>colis à dispatcher</small></div>
+            <div><strong>{pendingPackages.length}</strong><small>colis en attente</small></div>
           </article>
           <article>
             <span><Clock3 aria-hidden="true" /></span>
-            <div><strong>{queue.stats.pendingRequestCount}</strong><small>demandes en attente</small></div>
+            <div><strong>{requests.length}</strong><small>demande{requests.length > 1 ? 's' : ''} concernée{requests.length > 1 ? 's' : ''}</small></div>
           </article>
-          <article className={queue.stats.capacityExceeded ? 'is-warning' : undefined}>
-            <span><CheckSquare2 aria-hidden="true" /></span>
-            <div>
-              <strong>{queue.stats.remainingCapacity}</strong>
-              <small>places restantes sur {queue.stats.dailyLimit}</small>
-            </div>
+          <article>
+            <span><UsersRound aria-hidden="true" /></span>
+            <div><strong>{clientCount}</strong><small>client{clientCount > 1 ? 's' : ''}</small></div>
           </article>
         </div>
-      )}
+      ) : null}
 
-      {busy && !queue ? (
-        <div className="admin-empty"><RefreshCw className="admin-spin" aria-hidden="true" /><strong>Chargement de la file…</strong></div>
+      {busy && requests.length === 0 ? (
+        <div className="admin-empty"><RefreshCw className="admin-spin" aria-hidden="true" /><strong>Chargement des livraisons…</strong></div>
       ) : requests.length === 0 ? (
-        <div className="admin-empty"><PackageOpen aria-hidden="true" /><strong>Aucun colis en attente pour cette date</strong><span>Les nouvelles demandes apparaîtront ici.</span></div>
+        <div className="admin-empty"><PackageOpen aria-hidden="true" /><strong>{hasActiveFilters ? 'Aucun résultat pour ces filtres' : 'Aucune livraison en attente'}</strong><span>{hasActiveFilters ? 'Modifiez la période ou la recherche client.' : 'Les nouvelles demandes apparaîtront ici.'}</span></div>
       ) : (
         <>
           <div className="admin-selection-bar">
@@ -117,7 +171,7 @@ export function AdminQueuePanel({
                     </div>
                   </div>
                   <div className="admin-request-card__meta">
-                    <span className={`admin-request-date${request.requestedDate < date ? ' is-overdue' : ''}`}>
+                    <span className={`admin-request-date${request.requestedDate < today ? ' is-overdue' : ''}`}>
                       <CalendarDays aria-hidden="true" />Demandée pour le {formatDate(request.requestedDate)}
                     </span>
                     {request.capacity.accepted && <span className="admin-chip admin-chip--warning">Dépassement accepté</span>}
