@@ -6,6 +6,8 @@ import java.util.List;
 import com.azylivraison.delivery.service.CapacityConfirmationRequiredException;
 import com.azylivraison.delivery.service.DeliveryRequestNotFoundException;
 import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
+import com.azylivraison.pricing.service.DestinationOutsidePricingZonesException;
+import com.azylivraison.pricing.service.PricingConfigurationException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = {
         ClientDeliveryRequestController.class,
+        ClientDeliveryPricingController.class,
         AdminDeliveryRequestController.class
 })
 public class DeliveryRequestExceptionHandler {
@@ -29,6 +32,23 @@ public class DeliveryRequestExceptionHandler {
                 exception.current(),
                 exception.requested(),
                 exception.projected()));
+    }
+
+    @ExceptionHandler(DestinationOutsidePricingZonesException.class)
+    ResponseEntity<DeliveryApiErrorResponse> destinationOutsideCoverage(
+            DestinationOutsidePricingZonesException exception) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(new DeliveryApiErrorResponse(
+                "DESTINATION_OUTSIDE_PRICING_ZONES",
+                exception.getMessage(),
+                List.of()));
+    }
+
+    @ExceptionHandler(PricingConfigurationException.class)
+    ResponseEntity<DeliveryApiErrorResponse> invalidPricingRequest(PricingConfigurationException exception) {
+        return ResponseEntity.badRequest().body(new DeliveryApiErrorResponse(
+                "DELIVERY_PRICING_INVALID",
+                exception.getMessage(),
+                List.of()));
     }
 
     @ExceptionHandler(DeliveryRequestNotFoundException.class)

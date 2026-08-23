@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.azylivraison.administration.service.AdministrationConflictException;
 import com.azylivraison.administration.service.AdministrationNotFoundException;
+import com.azylivraison.pricing.service.PricingConfigurationException;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -53,6 +54,13 @@ public class AdministrationExceptionHandler {
             AdministrationConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(AdministrationErrorResponse.of(
                 exception.getCode(), exception.getMessage()));
+    }
+
+    @ExceptionHandler(PricingConfigurationException.class)
+    public ResponseEntity<AdministrationErrorResponse> handlePricingConfiguration(
+            PricingConfigurationException exception) {
+        return ResponseEntity.badRequest().body(AdministrationErrorResponse.of(
+                "PRICING_SETTINGS_INVALID", exception.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

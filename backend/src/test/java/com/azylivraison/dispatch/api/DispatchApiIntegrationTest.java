@@ -122,10 +122,16 @@ class DispatchApiIntegrationTest {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
+                    pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
+                    distance_from_center_meters, pricing_zone_max_distance_meters,
+                    pricing_policy_version,
                     effective_weight_kg, weight_source
                 ) VALUES (?, ?, 1, 'Rakoto', TRUE,
                           'Ampasapito', 'Ampasapito, Antananarivo', -18.8990, 47.5440,
-                          '034 11 222 33', 45000, FALSE, 2.5, 'PROVIDED')
+                          '034 11 222 33', 45000, FALSE,
+                          '71000000-0000-0000-0000-000000000001', 'Centre-ville', 3000,
+                          2448, 2500, 0,
+                          2.5, 'PROVIDED')
                 """, PACKAGE_ID, REQUEST_ID);
         when(optimizationFacade.optimize(any(DeliveryPlan.class), any(ViaHubRunPolicy.class)))
                 .thenAnswer(invocation -> successfulResult(invocation.getArgument(0), invocation.getArgument(1)));
@@ -154,6 +160,9 @@ class DispatchApiIntegrationTest {
                 .andExpect(jsonPath("$.hubExecution.manifests[0].courierName").value("Soa"))
                 .andExpect(jsonPath("$.packages[0].recipientName").value("Rakoto"))
                 .andExpect(jsonPath("$.packages[0].cashToCollectAriary").value(45000))
+                .andExpect(jsonPath("$.packages[0].pricingZoneName").value("Centre-ville"))
+                .andExpect(jsonPath("$.packages[0].deliveryFeeAriary").value(3000))
+                .andExpect(jsonPath("$.packages[0].distanceFromCenterMeters").value(2448))
                 .andReturn();
 
         String id = objectMapper.readTree(first.getResponse().getContentAsString())
@@ -188,6 +197,9 @@ class DispatchApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM dispatch_stop WHERE dispatch_plan_id = ?", Integer.class, UUID.fromString(id)))
                 .isEqualTo(4);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_ariary FROM dispatch_package_outcome WHERE dispatch_plan_id = ?",
+                Long.class, UUID.fromString(id))).isEqualTo(3000L);
     }
 
     @Test

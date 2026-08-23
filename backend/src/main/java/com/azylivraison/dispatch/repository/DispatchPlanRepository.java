@@ -17,6 +17,7 @@ import com.azylivraison.dispatch.domain.DispatchStop;
 import com.azylivraison.dispatch.domain.SelectedCourierSnapshot;
 import com.azylivraison.optimization.domain.ViaHubOptimizationResult;
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -253,10 +254,14 @@ public class DispatchPlanRepository {
                     estimated_delivery_at, delivery_order,
                     unassigned_reason, unassigned_message,
                     recipient_name, faritra, contact,
-                    amount_to_collect_ariary, mobile_money_paid, effective_weight_kg,
+                    amount_to_collect_ariary, mobile_money_paid,
+                    pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
+                    distance_from_center_meters, pricing_zone_max_distance_meters,
+                    pricing_policy_version,
+                    effective_weight_kg,
                     destination_label, destination_query,
                     destination_latitude, destination_longitude
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, outcomes, outcomes.size(), (statement, outcome) -> {
             statement.setObject(1, dispatchPlanId);
             statement.setObject(2, outcome.packageId());
@@ -275,11 +280,17 @@ public class DispatchPlanRepository {
             statement.setString(14, outcome.contact());
             statement.setLong(15, outcome.amountToCollectAriary());
             statement.setBoolean(16, outcome.mobileMoneyPaid());
-            statement.setBigDecimal(17, outcome.effectiveWeightKg());
-            statement.setString(18, outcome.destination().label());
-            statement.setString(19, outcome.destination().destinationQuery());
-            statement.setDouble(20, outcome.destination().latitude());
-            statement.setDouble(21, outcome.destination().longitude());
+            statement.setObject(17, outcome.pricingSnapshot().pricingZoneId());
+            statement.setString(18, outcome.pricingSnapshot().pricingZoneName());
+            statement.setObject(19, outcome.pricingSnapshot().deliveryFeeAriary());
+            statement.setObject(20, outcome.pricingSnapshot().distanceFromCenterMeters());
+            statement.setObject(21, outcome.pricingSnapshot().pricingZoneMaxDistanceMeters());
+            statement.setObject(22, outcome.pricingSnapshot().pricingPolicyVersion());
+            statement.setBigDecimal(23, outcome.effectiveWeightKg());
+            statement.setString(24, outcome.destination().label());
+            statement.setString(25, outcome.destination().destinationQuery());
+            statement.setDouble(26, outcome.destination().latitude());
+            statement.setDouble(27, outcome.destination().longitude());
         });
     }
 
@@ -321,7 +332,11 @@ public class DispatchPlanRepository {
                        estimated_delivery_at, delivery_order,
                        unassigned_reason, unassigned_message,
                        recipient_name, faritra, contact,
-                       amount_to_collect_ariary, mobile_money_paid, effective_weight_kg,
+                       amount_to_collect_ariary, mobile_money_paid,
+                       pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
+                       distance_from_center_meters, pricing_zone_max_distance_meters,
+                       pricing_policy_version,
+                       effective_weight_kg,
                        destination_label, destination_query,
                        destination_latitude, destination_longitude
                 FROM dispatch_package_outcome
@@ -343,6 +358,13 @@ public class DispatchPlanRepository {
                 resultSet.getString("contact"),
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
+                new DeliveryPricingSnapshot(
+                        resultSet.getObject("pricing_zone_id", UUID.class),
+                        resultSet.getString("pricing_zone_name"),
+                        nullableLong(resultSet, "delivery_fee_ariary"),
+                        nullableLong(resultSet, "distance_from_center_meters"),
+                        nullableLong(resultSet, "pricing_zone_max_distance_meters"),
+                        nullableLong(resultSet, "pricing_policy_version")),
                 resultSet.getBigDecimal("effective_weight_kg"),
                 new Location(
                         resultSet.getString("destination_label"),
