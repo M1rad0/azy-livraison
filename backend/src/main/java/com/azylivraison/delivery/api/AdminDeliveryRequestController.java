@@ -25,8 +25,12 @@ public class AdminDeliveryRequestController {
     @GetMapping("/delivery-requests")
     public List<DeliveryRequestResponse> list(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
-            @RequestParam(required = false) DeliveryRequestStatus status) {
-        return service.findForAdministration(date, status);
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) DeliveryRequestStatus status,
+            @RequestParam(required = false) String client,
+            @RequestParam(defaultValue = "false") boolean pendingOnly) {
+        return service.findForAdministration(date, from, to, status, client, pendingOnly);
     }
 
     @GetMapping("/queue")

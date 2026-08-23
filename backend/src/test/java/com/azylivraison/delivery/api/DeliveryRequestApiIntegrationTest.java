@@ -159,6 +159,128 @@ class DeliveryRequestApiIntegrationTest {
     }
 
     @Test
+    void filtersTheGlobalPendingListByPeriodAndClient() throws Exception {
+        MvcResult firstCreation = mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false, true)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String firstRequestId = objectMapper.readTree(firstCreation.getResponse().getContentAsString())
+                .get("id").asText();
+        jdbcTemplate.update("""
+                UPDATE delivery_package
+                SET status = 'DISPATCHED'
+                WHERE delivery_request_id = ? AND sequence_number = 1
+                """, UUID.fromString(firstRequestId));
+        jdbcTemplate.update("UPDATE delivery_request SET status = 'PARTIALLY_DISPATCHED' WHERE id = ?",
+                UUID.fromString(firstRequestId));
+
+        mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client(CLIENT_TWO_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false, false)
+                                .replace("2026-08-24", "2026-08-26")))
+                .andExpect(status().isCreated());
+
+        MvcResult completedCreation = mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false, false)
+                                .replace("2026-08-24", "2026-08-25")))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID completedRequestId = UUID.fromString(objectMapper
+                .readTree(completedCreation.getResponse().getContentAsString()).get("id").asText());
+        jdbcTemplate.update("UPDATE delivery_package SET status = 'DISPATCHED' WHERE delivery_request_id = ?",
+                completedRequestId);
+        jdbcTemplate.update("UPDATE delivery_request SET status = 'DISPATCHED' WHERE id = ?", completedRequestId);
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("pendingOnly", "true")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].requestedDate").value("2026-08-24"))
+                .andExpect(jsonPath("$[1].requestedDate").value("2026-08-26"));
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("from", "2026-08-24")
+                        .param("to", "2026-08-24")
+                        .param("pendingOnly", "true")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].ownerDisplayName").value("Client un"))
+                .andExpect(jsonPath("$[0].status").value("PARTIALLY_DISPATCHED"))
+                .andExpect(jsonPath("$[0].packages.length()").value(1))
+                .andExpect(jsonPath("$[0].packages[0].recipientName").value("Soa"));
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("from", "2026-08-25")
+                        .param("to", "2026-08-27")
+                        .param("client", "  CLIENT-TWO  ")
+                        .param("pendingOnly", "true")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].ownerDisplayName").value("Client deux"))
+                .andExpect(jsonPath("$[0].requestedDate").value("2026-08-26"));
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("client", "nom absent")
+                        .param("pendingOnly", "true")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("client", "Soa")
+                        .param("pendingOnly", "true")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        for (String literalQuery : new String[] {"%", "_", "\\"}) {
+            mockMvc.perform(get("/api/admin/delivery-requests")
+                            .param("client", literalQuery)
+                            .param("pendingOnly", "true")
+                            .with(admin()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(0));
+        }
+    }
+
+    @Test
+    void rejectsAmbiguousOrReversedAdministrationDateFilters() throws Exception {
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("date", "2026-08-24")
+                        .param("from", "2026-08-23")
+                        .with(admin()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DELIVERY_REQUEST_FILTER_INVALID"))
+                .andExpect(jsonPath("$.message").value("Le filtre date ne peut pas être combiné avec une période."));
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("from", "2026-08-27")
+                        .param("to", "2026-08-25")
+                        .with(admin()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DELIVERY_REQUEST_FILTER_INVALID"))
+                .andExpect(jsonPath("$.message").value(
+                        "La date de début doit précéder ou être égale à la date de fin."));
+    }
+
+    @Test
+    void keepsTheGlobalPendingListRestrictedToAdministrators() throws Exception {
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("pendingOnly", "true")
+                        .with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
     void validatesEveryRequiredBusinessField() throws Exception {
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))

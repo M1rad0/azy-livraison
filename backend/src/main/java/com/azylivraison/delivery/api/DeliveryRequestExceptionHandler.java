@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.azylivraison.delivery.service.CapacityConfirmationRequiredException;
 import com.azylivraison.delivery.service.DeliveryRequestNotFoundException;
+import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,14 @@ public class DeliveryRequestExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new DeliveryApiErrorResponse(
                 "DELIVERY_REQUEST_NOT_FOUND",
                 "Cette demande de livraison est introuvable.",
+                List.of()));
+    }
+
+    @ExceptionHandler(InvalidDeliveryRequestFilterException.class)
+    ResponseEntity<DeliveryApiErrorResponse> invalidFilter(InvalidDeliveryRequestFilterException exception) {
+        return ResponseEntity.badRequest().body(new DeliveryApiErrorResponse(
+                "DELIVERY_REQUEST_FILTER_INVALID",
+                exception.getMessage(),
                 List.of()));
     }
 

@@ -104,10 +104,28 @@ public class DeliveryRequestService {
     @Transactional(readOnly = true)
     public List<DeliveryRequestResponse> findForAdministration(
             LocalDate date,
-            DeliveryRequestStatus status) {
-        return repository.findForAdministration(date, status).stream()
-                .map(DeliveryRequestResponse::from)
+            LocalDate from,
+            LocalDate to,
+            DeliveryRequestStatus status,
+            String clientQuery,
+            boolean pendingOnly) {
+        validateAdministrationFilters(date, from, to);
+        return repository.findForAdministration(date, from, to, status, clientQuery, pendingOnly).stream()
+                .map(pendingOnly
+                        ? DeliveryRequestResponse::fromPendingPackages
+                        : DeliveryRequestResponse::from)
                 .toList();
+    }
+
+    private void validateAdministrationFilters(LocalDate date, LocalDate from, LocalDate to) {
+        if (date != null && (from != null || to != null)) {
+            throw new InvalidDeliveryRequestFilterException(
+                    "Le filtre date ne peut pas être combiné avec une période.");
+        }
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new InvalidDeliveryRequestFilterException(
+                    "La date de début doit précéder ou être égale à la date de fin.");
+        }
     }
 
     @Transactional(readOnly = true)

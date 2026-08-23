@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -147,21 +148,65 @@ public class DeliveryRequestRepository {
 
     public List<StoredDeliveryRequest> findForAdministration(
             LocalDate date,
-            DeliveryRequestStatus status) {
+            LocalDate from,
+            LocalDate to,
+            DeliveryRequestStatus status,
+            String clientQuery,
+            boolean pendingOnly) {
         StringBuilder sql = new StringBuilder(REQUEST_SELECT).append(" WHERE 1 = 1");
         List<Object> arguments = new ArrayList<>();
         if (date != null) {
             sql.append(" AND dr.requested_date = ?");
             arguments.add(Date.valueOf(date));
         }
+        if (from != null) {
+            sql.append(" AND dr.requested_date >= ?");
+            arguments.add(Date.valueOf(from));
+        }
+        if (to != null) {
+            sql.append(" AND dr.requested_date <= ?");
+            arguments.add(Date.valueOf(to));
+        }
         if (status != null) {
             sql.append(" AND dr.status = ?");
             arguments.add(status.name());
+        }
+        if (pendingOnly) {
+            sql.append("""
+                     AND EXISTS (
+                         SELECT 1
+                         FROM delivery_package pending_package
+                         WHERE pending_package.delivery_request_id = dr.id
+                           AND pending_package.status = 'PENDING'
+                     )
+                    """);
+        }
+        if (clientQuery != null && !clientQuery.isBlank()) {
+            String pattern = containsPattern(clientQuery);
+            sql.append("""
+                     AND (
+                         LOWER(aa.display_name) LIKE ? ESCAPE '\\'
+                         OR LOWER(aa.username) LIKE ? ESCAPE '\\'
+                         OR LOWER(COALESCE(aa.phone, '')) LIKE ? ESCAPE '\\'
+                     )
+                    """);
+            arguments.add(pattern);
+            arguments.add(pattern);
+            arguments.add(pattern);
         }
         sql.append(" ORDER BY dr.requested_date, dr.created_at, dr.id");
         List<StoredDeliveryRequest> requests = jdbcTemplate.query(
                 sql.toString(), this::mapRequestWithoutPackages, arguments.toArray());
         return withPackages(requests);
+    }
+
+    private String containsPattern(String value) {
+        String escaped = value.strip()
+                .toLowerCase(Locale.ROOT)
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     /**
