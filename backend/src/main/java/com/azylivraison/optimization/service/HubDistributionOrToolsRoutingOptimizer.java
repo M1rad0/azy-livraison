@@ -20,6 +20,7 @@ import com.azylivraison.planning.domain.DeliveryPackage;
 import com.google.ortools.Loader;
 import com.google.ortools.constraintsolver.Assignment;
 import com.google.ortools.constraintsolver.FirstSolutionStrategy;
+import com.google.ortools.constraintsolver.IntVar;
 import com.google.ortools.constraintsolver.LocalSearchMetaheuristic;
 import com.google.ortools.constraintsolver.RoutingDimension;
 import com.google.ortools.constraintsolver.RoutingIndexManager;
@@ -34,6 +35,7 @@ import org.springframework.stereotype.Component;
 class HubDistributionOrToolsRoutingOptimizer {
 
     private static final long PROHIBITIVE_ARC_COST = 1_000_000_000_000L;
+    private static final long MAX_REGULAR_COST = PROHIBITIVE_ARC_COST / 4;
     private static final long LATENESS_COST_PER_SECOND = 10_000L;
 
     private final OptimizationProperties properties;
@@ -89,6 +91,40 @@ class HubDistributionOrToolsRoutingOptimizer {
                 .toArray();
         routing.addDimensionWithVehicleCapacity(demandCallback, 0, capacities, true, "Capacity");
 
+        int maximumUsedCourierCount = maximumFeasibleCourierCount(problem, policy);
+        IntVar[] activeVehicles = new IntVar[vehicleCount];
+        for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
+            activeVehicles[vehicle] = routing.activeVehicleVar(vehicle);
+        }
+        routing.solver().addConstraint(routing.solver().makeSumEquality(
+                activeVehicles,
+                maximumUsedCourierCount));
+
+        int workloadCallback = routing.registerUnaryTransitCallback(fromIndex ->
+                jobByNode.containsKey(manager.indexToNode(fromIndex)) ? 1 : 0);
+        routing.addDimension(
+                workloadCallback,
+                0,
+                Math.max(1, problem.jobs().size()),
+                true,
+                "Workload");
+        RoutingDimension workloadDimension = routing.getMutableDimension("Workload");
+        long workloadBalanceCoefficient = workloadBalanceCoefficient(
+                maximumDistance,
+                problem.jobs().size(),
+                vehicleCount,
+                Arrays.stream(problem.vehicleActivationCostMeters()).max().orElse(0));
+        workloadDimension.setGlobalSpanCostCoefficient(workloadBalanceCoefficient);
+        if (maximumUsedCourierCount > 0) {
+            long fairShareFloor = problem.jobs().size() / maximumUsedCourierCount;
+            for (int vehicle = 0; vehicle < vehicleCount; vehicle++) {
+                workloadDimension.setCumulVarSoftUpperBound(
+                        routing.end(vehicle),
+                        fairShareFloor,
+                        workloadBalanceCoefficient);
+            }
+        }
+
         long deliveryServiceSeconds = policy.deliveryServiceDuration().toSeconds();
         OffsetDateTime reference = timeReference(problem);
         long horizon = timeHorizon(problem, reference, maximumDistance, policy);
@@ -123,6 +159,7 @@ class HubDistributionOrToolsRoutingOptimizer {
                 problem.jobs().size(),
                 vehicleCount,
                 Arrays.stream(problem.vehicleActivationCostMeters()).max().orElse(0),
+                workloadBalanceCoefficient,
                 policy);
         for (int jobIndex = 0; jobIndex < problem.jobs().size(); jobIndex++) {
             long routingIndex = manager.nodeToIndex(problem.deliveryNodes()[jobIndex]);
@@ -305,14 +342,95 @@ class HubDistributionOrToolsRoutingOptimizer {
             int jobCount,
             int vehicleCount,
             long maximumActivationCost,
+            long workloadBalanceCoefficient,
             OperationalPolicy policy) {
         long routeUpperBound = saturatedMultiply(
                 saturatedAdd(maximumDistance, maximumActivationCost),
                 Math.max(2, jobCount + vehicleCount + 1L));
+        long workloadUpperBound = saturatedMultiply(
+                workloadBalanceCoefficient,
+                Math.max(1, jobCount * 2L));
         long latenessUpperBound = saturatedMultiply(
                 saturatedMultiply(policy.deliveryWindowLateTolerance().toSeconds(), LATENESS_COST_PER_SECOND),
                 Math.max(1, jobCount));
-        return Math.min(PROHIBITIVE_ARC_COST / 2, saturatedAdd(1_000_000, saturatedAdd(routeUpperBound, latenessUpperBound)));
+        return Math.min(
+                PROHIBITIVE_ARC_COST / 2,
+                saturatedAdd(
+                        1_000_000,
+                        saturatedAdd(routeUpperBound, saturatedAdd(workloadUpperBound, latenessUpperBound))));
+    }
+
+    private int maximumFeasibleCourierCount(HubDistributionProblem problem, OperationalPolicy policy) {
+        int[] courierByJob = new int[problem.jobs().size()];
+        Arrays.fill(courierByJob, -1);
+        int matchedCouriers = 0;
+        for (int courierIndex = 0; courierIndex < problem.couriers().size(); courierIndex++) {
+            boolean[] visitedJobs = new boolean[problem.jobs().size()];
+            if (matchCourier(courierIndex, problem, policy, courierByJob, visitedJobs)) {
+                matchedCouriers++;
+            }
+        }
+        return matchedCouriers;
+    }
+
+    private boolean matchCourier(
+            int courierIndex,
+            HubDistributionProblem problem,
+            OperationalPolicy policy,
+            int[] courierByJob,
+            boolean[] visitedJobs) {
+        for (int jobIndex = 0; jobIndex < problem.jobs().size(); jobIndex++) {
+            if (visitedJobs[jobIndex] || !canServeDirectly(courierIndex, jobIndex, problem, policy)) {
+                continue;
+            }
+            visitedJobs[jobIndex] = true;
+            int currentCourier = courierByJob[jobIndex];
+            if (currentCourier < 0
+                    || matchCourier(currentCourier, problem, policy, courierByJob, visitedJobs)) {
+                courierByJob[jobIndex] = courierIndex;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean canServeDirectly(
+            int courierIndex,
+            int jobIndex,
+            HubDistributionProblem problem,
+            OperationalPolicy policy) {
+        Courier courier = problem.couriers().get(courierIndex);
+        DeliveryPackage deliveryPackage = problem.jobs().get(jobIndex).deliveryPackage();
+        if (courier.maxWeightKg().compareTo(deliveryPackage.weightKg()) < 0) {
+            return false;
+        }
+        Double distance = problem.distancesMeters()
+                .get(problem.hubNode())
+                .get(problem.deliveryNodes()[jobIndex]);
+        if (distance == null || !Double.isFinite(distance) || distance < 0) {
+            return false;
+        }
+        if (deliveryPackage.deliveryWindow() == null) {
+            return true;
+        }
+        OffsetDateTime directArrival = problem.distributionDepartureAt()
+                .plusSeconds(Math.round(travelSeconds(distance, courier)));
+        OffsetDateTime hardEnd = deliveryPackage.deliveryWindow().endAt()
+                .plus(policy.deliveryWindowLateTolerance());
+        return !directArrival.toInstant().isAfter(hardEnd.toInstant());
+    }
+
+    private long workloadBalanceCoefficient(
+            long maximumDistance,
+            int jobCount,
+            int vehicleCount,
+            long maximumActivationCost) {
+        long routeUpperBound = saturatedAdd(
+                saturatedMultiply(maximumDistance, Math.max(1, jobCount)),
+                saturatedMultiply(maximumActivationCost, Math.max(1, vehicleCount)));
+        long maximumBalanceScore = Math.max(1, jobCount * 2L);
+        long maximumSafeCoefficient = Math.max(1, MAX_REGULAR_COST / maximumBalanceScore);
+        return Math.max(1, Math.min(maximumSafeCoefficient, saturatedAdd(routeUpperBound, 1)));
     }
 
     private long maximumFiniteDistance(List<List<Double>> distances) {

@@ -211,10 +211,12 @@ L'objectif est appliqué selon les priorités suivantes :
 
 1. respecter toutes les contraintes dures, en particulier les capacités ;
 2. affecter le plus grand nombre possible de colis ;
-3. minimiser le coût routier total et conserver des zones de livraison cohérentes ;
-4. éviter la fragmentation inutile entre plusieurs livreurs.
+3. respecter les créneaux et réduire les retards ;
+4. depuis le siège, utiliser le plus grand nombre possible de livreurs capables de prendre au moins un colis ;
+5. équilibrer le nombre de colis entre les livreurs mobilisés ;
+6. minimiser ensuite le coût routier total et conserver des zones de livraison cohérentes.
 
-Le MVP ne cherche pas à équilibrer artificiellement les charges ni à minimiser la tournée la plus longue. Si un seul livreur peut assurer efficacement tous les colis sans dépasser sa capacité, cette solution est acceptable. Une faible pénalité configurable d'activation d'un livreur pourra favoriser cette concentration sans empêcher une meilleure répartition géographique.
+La collecte conserve sa logique géographique : un retrait reste confié à un seul collecteur lorsqu'il tient dans sa capacité. Après la redistribution au siège, les colis sont au contraire répartis au maximum entre les livreurs capables, sans dépasser les capacités ni rendre un créneau impossible. À nombre de livreurs et ponctualité équivalents, l'équilibrage de la charge précède la distance totale.
 
 Les distances du réseau routier constituent le coût géographique. La vitesse effective de chaque livreur transforme ces distances en temps estimés. Les paramètres OR-Tools devront inclure une limite de calcul afin de retourner une bonne solution exploitable même lorsque le problème devient important ; une solution peut être proche de l'optimum sans être mathématiquement prouvée optimale.
 
@@ -236,7 +238,7 @@ Le choix d'un distributeur inclut son trajet réel origine → siège lorsqu'il 
 
 Les durées opérationnelles par défaut sont de 10 minutes par retrait visité, 15 minutes pour la redistribution commune et 5 minutes par colis livré. Les créneaux acceptent par défaut 0 minute d'avance et jusqu'à 30 minutes de retard ; ces valeurs sont configurables.
 
-La recommandation compare les scénarios dans cet ordre : nombre de colis livrés, nombre de livraisons à l'heure, retard cumulé, kilomètres réellement parcourus, heure de fin, puis nombre de livreurs mobilisés. Une égalité complète conserve le scénario direct. Pour le scénario par siège, le résultat fournit également l'heure du rendez-vous, un manifeste par livreur et le transfert de chaque colis entre collecteur et distributeur.
+La recommandation compare les scénarios dans cet ordre : nombre de colis livrés, nombre de livraisons à l'heure, retard cumulé, nombre de livreurs mobilisés, kilomètres réellement parcourus, puis heure de fin. Une égalité complète conserve le scénario direct. Pour le scénario par siège, le résultat fournit également l'heure du rendez-vous, un manifeste par livreur et le transfert de chaque colis entre collecteur et distributeur.
 
 ## Architecture
 

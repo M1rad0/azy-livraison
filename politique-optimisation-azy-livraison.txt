@@ -1,20 +1,23 @@
 AZY Livraison - Politique actuelle d'optimisation
 ================================================
 
-La distance routière totale est le critère principal, mais il ne s'agit pas d'une minimisation pure.
+Le dispatch opérationnel utilise le scénario avec passage obligatoire par le siège.
 
-Pour le mode avec plusieurs retraits, OR-Tools minimise approximativement :
+Les priorités sont désormais les suivantes :
 
-    distance totale parcourue
-    + 1 km par livreur utilisé
-    + une très forte pénalité par colis non affecté
+    affecter le plus grand nombre possible de colis
+    respecter les créneaux et réduire les retards
+    utiliser le plus grand nombre possible de livreurs capables
+    équilibrer le nombre de colis par livreur
+    minimiser ensuite la distance totale
 
 En pratique, l'algorithme :
 
-- cherche d'abord à affecter tous les colis possibles ;
-- minimise ensuite la somme des distances parcourues par tous les livreurs ;
-- évite légèrement d'ouvrir une tournée supplémentaire ;
-- ne cherche pas à équilibrer artificiellement le nombre de colis ou le temps de travail entre les livreurs.
+- ne dépasse jamais la capacité d'un livreur ;
+- ne mobilise pas un livreur incapable de porter au moins un colis ou de rejoindre une destination faisable ;
+- utilise au maximum un livreur par colis lorsqu'il y a plus de livreurs que de colis ;
+- répartit aussi régulièrement que possible le nombre de colis entre les livreurs mobilisés ;
+- utilise la distance et les coûts d'approche pour départager les solutions également réparties.
 
 Répartition par axe géographique
 --------------------------------
@@ -25,9 +28,9 @@ Par exemple, avec des livraisons à l'est et à l'ouest :
 
 - mélanger les deux axes dans une même tournée augmente généralement la distance ;
 - OR-Tools aura donc tendance à attribuer l'axe est à un livreur et l'axe ouest à un autre ;
-- le deuxième livreur ne sera toutefois utilisé que si cela économise environ plus de 1 km au total, ou si la capacité et les créneaux horaires l'imposent.
+- les livreurs disponibles sont d'abord répartis entre les axes, puis OR-Tools minimise les détours à niveau de charge équivalent.
 
-Un livreur peut donc recevoir 80 % des colis et un autre 20 % si cette répartition est géographiquement plus efficace. La priorité est donnée aux zones et à la distance plutôt qu'à un équilibrage strict entre les livreurs.
+Une différence de charge reste possible lorsqu'elle est imposée par les capacités, les créneaux ou l'accessibilité routière. Sans cette contrainte, l'algorithme évite qu'un livreur concentre inutilement la majorité des colis.
 
 Autres règles actuelles
 -----------------------

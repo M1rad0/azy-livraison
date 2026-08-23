@@ -109,6 +109,110 @@ class HubDistributionOrToolsRoutingOptimizerTest {
                 .satisfies(route -> assertThat(problem.couriers().get(route.courierIndex()).id()).isEqualTo("nearby"));
     }
 
+    @Test
+    void usesEveryCapableCourierAndBalancesPackageCounts() {
+        List<Courier> couriers = List.of(
+                courier("c1", 10),
+                courier("c2", 10),
+                courier("c3", 10));
+        List<MultiClientOptimizationJob> jobs = List.of(
+                job("p1", 1, null),
+                job("p2", 1, null),
+                job("p3", 1, null),
+                job("p4", 1, null),
+                job("p5", 1, null),
+                job("p6", 1, null),
+                job("p7", 1, null));
+        HubDistributionProblem problem = problem(couriers, jobs, uniformMatrix(8, 1_000, 100),
+                new long[]{0, 0, 0});
+
+        HubDistributionSolvedOptimization solved = optimizer.solve(problem);
+
+        assertThat(solved.droppedJobIndexes()).isEmpty();
+        assertThat(solved.routes()).hasSize(3);
+        assertThat(solved.routes().stream().map(route -> route.visits().size()).sorted().toList())
+                .containsExactly(2, 2, 3);
+    }
+
+    @Test
+    void usesAtMostOneCourierPerPackageAndKeepsApproachAsTieBreaker() {
+        List<Courier> couriers = List.of(
+                courier("nearby", 10),
+                courier("second", 10),
+                courier("far-away", 10));
+        List<MultiClientOptimizationJob> jobs = List.of(
+                job("p1", 1, null),
+                job("p2", 1, null));
+        HubDistributionProblem problem = problem(couriers, jobs, uniformMatrix(3, 1_000, 100),
+                new long[]{100, 200, 10_000});
+
+        HubDistributionSolvedOptimization solved = optimizer.solve(problem);
+
+        assertThat(solved.droppedJobIndexes()).isEmpty();
+        assertThat(solved.routes()).hasSize(2);
+        assertThat(solved.routes().stream()
+                .map(route -> problem.couriers().get(route.courierIndex()).id())
+                .toList())
+                .containsExactlyInAnyOrder("nearby", "second");
+    }
+
+    @Test
+    void ignoresACourierWhoCannotCarryAnyPackage() {
+        List<Courier> couriers = List.of(
+                courier("c1", 10),
+                courier("c2", 10),
+                courier("too-small", 0.5));
+        List<MultiClientOptimizationJob> jobs = List.of(
+                job("p1", 1, null),
+                job("p2", 1, null),
+                job("p3", 1, null));
+        HubDistributionProblem problem = problem(couriers, jobs, uniformMatrix(4, 1_000, 100),
+                new long[]{0, 0, 0});
+
+        HubDistributionSolvedOptimization solved = optimizer.solve(problem);
+
+        assertThat(solved.droppedJobIndexes()).isEmpty();
+        assertThat(solved.routes()).hasSize(2);
+        assertThat(solved.routes().stream().map(route -> route.visits().size()).sorted().toList())
+                .containsExactly(1, 2);
+        assertThat(solved.routes().stream()
+                .map(route -> problem.couriers().get(route.courierIndex()).id())
+                .toList())
+                .doesNotContain("too-small");
+    }
+
+    @Test
+    void doesNotForceACourierWhoCannotMeetAnyHardWindow() {
+        HubDistributionOrToolsRoutingOptimizer strictOptimizer = new HubDistributionOrToolsRoutingOptimizer(
+                new OptimizationProperties(
+                        Duration.ofSeconds(2),
+                        1_000,
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(15),
+                        Duration.ZERO,
+                        Duration.ZERO,
+                        Duration.ZERO));
+        DeliveryTimeWindow tightWindow = new DeliveryTimeWindow(
+                DEPARTURE,
+                DEPARTURE.plusMinutes(1));
+        List<Courier> couriers = List.of(
+                courier("fast", 10, 36),
+                courier("too-slow", 10, 1));
+        List<MultiClientOptimizationJob> jobs = List.of(
+                job("p1", 1, tightWindow),
+                job("p2", 1, tightWindow));
+        HubDistributionProblem problem = problem(couriers, jobs, uniformMatrix(3, 100, 100),
+                new long[]{0, 0});
+
+        HubDistributionSolvedOptimization solved = strictOptimizer.solve(problem);
+
+        assertThat(solved.droppedJobIndexes()).isEmpty();
+        assertThat(solved.routes()).singleElement().satisfies(route -> {
+            assertThat(problem.couriers().get(route.courierIndex()).id()).isEqualTo("fast");
+            assertThat(route.visits()).hasSize(2);
+        });
+    }
+
     private HubDistributionProblem problem(
             List<MultiClientOptimizationJob> jobs,
             Courier courier,
@@ -116,6 +220,23 @@ class HubDistributionOrToolsRoutingOptimizerTest {
         int[] nodes = new int[jobs.size()];
         for (int index = 0; index < jobs.size(); index++) nodes[index] = index + 1;
         return new HubDistributionProblem(DEPARTURE, List.of(courier), jobs, 0, nodes, distances);
+    }
+
+    private HubDistributionProblem problem(
+            List<Courier> couriers,
+            List<MultiClientOptimizationJob> jobs,
+            List<List<Double>> distances,
+            long[] activationCosts) {
+        int[] nodes = new int[jobs.size()];
+        for (int index = 0; index < jobs.size(); index++) nodes[index] = index + 1;
+        return new HubDistributionProblem(
+                DEPARTURE,
+                couriers,
+                jobs,
+                0,
+                nodes,
+                distances,
+                activationCosts);
     }
 
     private MultiClientOptimizationJob job(String id, double weight, DeliveryTimeWindow window) {
@@ -126,8 +247,12 @@ class HubDistributionOrToolsRoutingOptimizerTest {
     }
 
     private Courier courier(String id, double capacity) {
+        return courier(id, capacity, 36);
+    }
+
+    private Courier courier(String id, double capacity, double speed) {
         return new Courier(
-                id, id, VehicleType.MOTO, BigDecimal.valueOf(capacity), BigDecimal.valueOf(36),
+                id, id, VehicleType.MOTO, BigDecimal.valueOf(capacity), BigDecimal.valueOf(speed),
                 DEPARTURE.minusMinutes(15), location("Origine", -18.89, 47.51));
     }
 
@@ -137,6 +262,18 @@ class HubDistributionOrToolsRoutingOptimizerTest {
 
     private static List<Double> row(double... values) {
         return Arrays.stream(values).boxed().toList();
+    }
+
+    private static List<List<Double>> uniformMatrix(int size, double hubDistance, double interDeliveryDistance) {
+        Double[][] values = new Double[size][size];
+        for (int row = 0; row < size; row++) {
+            for (int column = 0; column < size; column++) {
+                values[row][column] = row == column
+                        ? 0
+                        : row == 0 || column == 0 ? hubDistance : interDeliveryDistance;
+            }
+        }
+        return Arrays.stream(values).map(Arrays::asList).toList();
     }
 
     @SafeVarargs
