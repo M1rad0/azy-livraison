@@ -38,6 +38,12 @@ export interface DeliveryPackage {
   contact: string
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
+  pricingZoneId?: string | null
+  pricingZoneName?: string | null
+  deliveryFeeAriary?: number | null
+  distanceFromCenterMeters?: number | null
+  pricingZoneMaxDistanceMeters?: number | null
+  pricingPolicyVersion?: number | null
   effectiveWeightKg: number
   weightSource: 'PROVIDED' | 'DEFAULT_SETTING'
   status: DeliveryPackageStatus
@@ -131,6 +137,32 @@ export interface OperationalSettings {
   updatedAt: string
 }
 
+export interface DeliveryPricingZone {
+  id: string
+  name: string
+  maxDistanceMeters: number
+  deliveryFeeAriary: number
+}
+
+export interface DeliveryPricingPolicy {
+  version: number
+  center: ConfirmedLocation
+  zones: DeliveryPricingZone[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeliveryPricingPolicyInput {
+  version: number
+  center: ConfirmedLocation
+  zones: Array<{
+    id?: string
+    name: string
+    maxDistanceMeters: number
+    deliveryFeeAriary: number
+  }>
+}
+
 export interface DispatchPlanSummary {
   id: string
   serviceDate: string
@@ -170,6 +202,12 @@ export interface DispatchPackageOutcome {
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
   effectiveWeightKg: number
+  pricingZoneId?: string | null
+  pricingZoneName?: string | null
+  deliveryFeeAriary?: number | null
+  distanceFromCenterMeters?: number | null
+  pricingZoneMaxDistanceMeters?: number | null
+  pricingPolicyVersion?: number | null
   destination: ConfirmedLocation
   cashToCollectAriary?: number
 }
@@ -273,6 +311,14 @@ export function getOperationalSettings(accessToken: string, signal?: AbortSignal
 export function updateOperationalSettings(settings: OperationalSettings, accessToken: string) {
   const { createdAt: _createdAt, updatedAt: _updatedAt, ...input } = settings
   return adminRequest<OperationalSettings>('settings', accessToken, jsonRequest('PUT', input))
+}
+
+export function getDeliveryPricingPolicy(accessToken: string, signal?: AbortSignal) {
+  return adminRequest<DeliveryPricingPolicy>('settings/pricing', accessToken, { signal })
+}
+
+export function updateDeliveryPricingPolicy(input: DeliveryPricingPolicyInput, accessToken: string) {
+  return adminRequest<DeliveryPricingPolicy>('settings/pricing', accessToken, jsonRequest('PUT', input))
 }
 
 export function listVehiclePresets(accessToken: string, signal?: AbortSignal) {

@@ -209,9 +209,9 @@ export function AdminQueuePanel({
                           />
                         </span>
                         <span role="cell"><strong>{deliveryPackage.recipientName}</strong>{deliveryPackage.faritra && <small>Faritra</small>}</span>
-                        <span role="cell"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}</span></span>
+                        <span role="cell"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}<small>{deliveryPackage.pricingZoneName ? `Zone ${deliveryPackage.pricingZoneName}` : 'Tarif non disponible'}</small></span></span>
                         <span role="cell">{deliveryPackage.contact || '—'}</span>
-                        <span role="cell"><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong></span>
+                        <span role="cell"><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong><small>{deliveryPackage.deliveryFeeAriary != null ? `dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : 'Tarif indisponible'}</small></span>
                         <span role="cell">
                           {deliveryPackage.mobileMoneyPaid
                             ? <><Smartphone aria-hidden="true" />Mobile Money</>

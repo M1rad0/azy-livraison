@@ -42,6 +42,12 @@ export interface DeliveryPackageRecord {
   contact: string
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
+  pricingZoneId?: string | null
+  pricingZoneName?: string | null
+  deliveryFeeAriary?: number | null
+  distanceFromCenterMeters?: number | null
+  pricingZoneMaxDistanceMeters?: number | null
+  pricingPolicyVersion?: number | null
   effectiveWeightKg: number
   weightSource: PackageWeightSource
   status: DeliveryPackageStatus
@@ -49,6 +55,15 @@ export interface DeliveryPackageRecord {
   version: number
   createdAt: string
   updatedAt: string
+}
+
+export interface DeliveryPricingQuote {
+  pricingZoneId: string
+  pricingZoneName: string
+  deliveryFeeAriary: number
+  distanceFromCenterMeters: number
+  pricingZoneMaxDistanceMeters: number
+  pricingPolicyVersion: number
 }
 
 export interface CapacitySnapshot {
@@ -191,5 +206,18 @@ export function createDeliveryRequest(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  })
+}
+
+export function quoteDeliveryPrice(
+  destination: ClientLocation,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<DeliveryPricingQuote> {
+  return clientRequest<DeliveryPricingQuote>('delivery-pricing/quote', accessToken, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ destination }),
   })
 }

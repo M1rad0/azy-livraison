@@ -115,8 +115,8 @@ function RequestHistory({ requests }: { requests: DeliveryRequestRecord[] }) {
                   <article role="listitem" key={item.id}>
                     <span className="client-history-packages__number">{item.sequenceNumber}</span>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
-                    <div><strong>{item.destination.label}</strong><small>{item.faritra ? 'Faritra' : 'Zone habituelle'}</small></div>
-                    <div><strong>{formatAriary(item.amountToCollectAriary)}</strong><small>{item.mobileMoneyPaid ? 'Mobile Money' : 'À encaisser'}</small></div>
+                    <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}</small></div>
+                    <div><strong>{formatAriary(item.amountToCollectAriary)}</strong><small>{item.deliveryFeeAriary != null ? `dont ${formatAriary(item.deliveryFeeAriary)} de livraison · ${item.mobileMoneyPaid ? 'Mobile Money' : 'à encaisser'}` : item.mobileMoneyPaid ? 'Mobile Money' : 'À encaisser'}</small></div>
                     <span className={`client-package-status client-package-status--${item.status.toLowerCase()}`}>{PACKAGE_STATUS[item.status]}</span>
                   </article>
                 ))}

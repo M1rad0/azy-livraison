@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDispatchPlan,
+  getDeliveryPricingPolicy,
   getAdminQueue,
   listDeliveryRequests,
   updateOperationalSettings,
+  updateDeliveryPricingPolicy,
   type AdminQueue,
   type DispatchPlan,
   type OperationalSettings,
@@ -121,6 +123,33 @@ describe('API administrateur', () => {
     }))
     expect(JSON.parse(init.body as string)).not.toHaveProperty('createdAt')
     expect(JSON.parse(init.body as string)).not.toHaveProperty('updatedAt')
+  })
+
+  it('charge et remplace atomiquement la politique tarifaire', async () => {
+    const policy = {
+      version: 3,
+      center: { label: 'Centre tarifaire', latitude: -18.9, longitude: 47.52 },
+      zones: [{ id: 'zone-centre', name: 'Centre-ville', maxDistanceMeters: 4_000, deliveryFeeAriary: 3_000 }],
+      createdAt: '2026-08-01T00:00:00Z',
+      updatedAt: '2026-08-23T00:00:00Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => policy })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getDeliveryPricingPolicy('admin-token')
+    await updateDeliveryPricingPolicy({
+      version: policy.version,
+      center: policy.center,
+      zones: policy.zones,
+    }, 'admin-token')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/settings/pricing', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/settings/pricing', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ version: policy.version, center: policy.center, zones: policy.zones }),
+    }))
   })
 
   it('remonte le message métier renvoyé par le backend', async () => {

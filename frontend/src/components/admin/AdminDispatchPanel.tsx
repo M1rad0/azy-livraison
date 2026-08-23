@@ -191,8 +191,8 @@ export function DispatchResult({ plan, couriers }: { plan: DispatchPlan; courier
                     {[...packages].sort((a, b) => (a.deliveryOrder ?? 999) - (b.deliveryOrder ?? 999)).map((deliveryPackage) => (
                       <li key={deliveryPackage.packageId}>
                         <span>{deliveryPackage.deliveryOrder ?? '—'}</span>
-                        <div><strong>{deliveryPackage.recipientName}</strong><small><MapPin aria-hidden="true" />{locationLabel(deliveryPackage.destination)}</small></div>
-                        <div><strong>{formatTime(deliveryPackage.estimatedDeliveryAt)}</strong><small>{formatAriary(deliveryPackage.mobileMoneyPaid ? 0 : deliveryPackage.amountToCollectAriary)} à encaisser</small></div>
+                        <div><strong>{deliveryPackage.recipientName}</strong><small><MapPin aria-hidden="true" />{locationLabel(deliveryPackage.destination)}{deliveryPackage.pricingZoneName ? ` · ${deliveryPackage.pricingZoneName}` : ''}</small></div>
+                        <div><strong>{formatTime(deliveryPackage.estimatedDeliveryAt)}</strong><small>{formatAriary(deliveryPackage.mobileMoneyPaid ? 0 : deliveryPackage.amountToCollectAriary)} à encaisser{deliveryPackage.deliveryFeeAriary != null ? ` · dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : ''}</small></div>
                       </li>
                     ))}
                   </ol>

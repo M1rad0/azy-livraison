@@ -109,7 +109,7 @@
   top: 5.4rem;
   z-index: 700;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.5rem;
   margin: 1rem 0;
   padding: 0.45rem;
@@ -1142,12 +1142,35 @@
 .admin-settings-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .admin-settings-success { grid-column: 1 / -1; margin: 0; padding: .7rem .8rem; color: #11694e; background: #e6f7f0; border: 1px solid #bee5d7; border-radius: .8rem; font-size: .7rem; }
 .admin-settings-form > .admin-callout { grid-column: 1 / -1; }
+.admin-pricing-summary { display: flex; align-items: center; gap: .65rem; min-width: 180px; padding: .7rem .85rem; background: var(--admin-orange-soft); border: 1px solid #ffd5bc; border-radius: .9rem; }
+.admin-pricing-summary > svg { width: 1.15rem; color: var(--admin-orange); }
+.admin-pricing-summary > div { display: flex; flex-direction: column; }
+.admin-pricing-summary small { color: var(--admin-ink-soft); font-size: .6rem; }
+.admin-pricing-summary strong { font-size: .82rem; }
+.admin-pricing-form { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(0, 1.5fr); gap: .85rem; }
+.admin-pricing-center { align-self: start; }
+.admin-pricing-center .location-picker { margin-top: .7rem; }
+.admin-pricing-zones > header { display: grid; grid-template-columns: auto 1fr auto; }
+.admin-pricing-zone-list { display: grid; gap: .55rem; margin-top: .75rem; }
+.admin-pricing-zone-row { display: grid; grid-template-columns: minmax(150px, 1.25fr) minmax(125px, .8fr) minmax(125px, .8fr) auto; align-items: end; gap: .55rem; padding: .68rem; background: #fff; border: 1px solid var(--admin-line); border-radius: .8rem; }
+.admin-pricing-zone-row--header { padding: 0 .68rem; color: var(--admin-ink-soft); background: transparent; border: 0; font-size: .59rem; font-weight: 800; text-transform: uppercase; }
+.admin-pricing-zone-row label { display: flex; min-width: 0; flex-direction: column; gap: .3rem; }
+.admin-pricing-zone-row label > span { color: var(--admin-ink-soft); font-size: .58rem; font-weight: 750; }
+.admin-pricing-zone-row input { min-width: 0; width: 100%; padding: .6rem .65rem; color: var(--admin-navy); background: #f8fafc; border: 1px solid var(--admin-line); border-radius: .68rem; outline: none; }
+.admin-pricing-zone-row input:focus { border-color: var(--admin-orange); box-shadow: 0 0 0 3px rgba(244,91,11,.1); }
+.admin-pricing-zone-row .admin-input-unit { background: #f8fafc; border-radius: .68rem; }
+.admin-pricing-zone-row .admin-input-unit input { border: 0; }
+.admin-pricing-zone-row__range { grid-column: 1 / -1; color: var(--admin-ink-soft); font-size: .58rem; }
+.admin-pricing-form > .admin-callout,
+.admin-pricing-form > .admin-settings-success,
+.admin-pricing-form > .admin-settings-actions { grid-column: 1 / -1; }
 .admin-muted { margin: .5rem 0; color: var(--admin-ink-soft); font-size: .7rem; line-height: 1.5; }
 
 @keyframes admin-rotate { to { transform: rotate(360deg); } }
 .admin-spin { animation: admin-rotate .85s linear infinite; }
 
 @media (max-width: 1120px) {
+  .admin-pricing-form { grid-template-columns: 1fr; }
   .admin-queue-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-queue-filters__actions { justify-content: flex-end; }
   .admin-courier-list { grid-template-columns: repeat(2, 1fr); }
@@ -1162,7 +1185,7 @@
   .admin-portal__intro { grid-template-columns: auto 1fr; border-radius: 1.15rem; }
   .admin-portal__today { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: .5rem; }
   .admin-portal__today strong { margin-left: auto; }
-  .admin-tabs { top: 4.7rem; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow-x: auto; }
+  .admin-tabs { top: 4.7rem; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow-x: auto; }
   .admin-tabs > button { justify-content: center; min-height: 3.2rem; padding: .45rem; }
   .admin-tabs > button > span:first-child { width: 2rem; height: 2rem; }
   .admin-tabs > button > span:nth-child(2), .admin-tabs b { display: none; }
@@ -1189,6 +1212,11 @@
   .admin-settings-card { grid-column: 1 / -1; }
   .admin-preset-grid > article { grid-template-columns: 1fr; }
   .admin-preset-grid > article > header, .admin-preset-grid > article > p { grid-column: 1; }
+  .admin-pricing-zones > header { grid-template-columns: auto 1fr; }
+  .admin-pricing-zones > header .admin-button { grid-column: 1 / -1; width: 100%; }
+  .admin-pricing-zone-row, .admin-pricing-zone-row--header { grid-template-columns: 1fr; }
+  .admin-pricing-zone-row--header { display: none; }
+  .admin-pricing-zone-row .admin-icon-button { width: 100%; }
   .admin-modal-overlay { padding: 0; }
   .admin-modal { width: 100%; max-height: 100vh; border-radius: 0; }
 }

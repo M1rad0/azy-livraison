@@ -84,6 +84,10 @@ export function ClientDeliveryRequestForm({
     (sum, item) => sum + (Number.isFinite(Number(item.amountToCollectAriary)) ? Number(item.amountToCollectAriary) : 0),
     0,
   ), [packages])
+  const deliveryFeeTotal = useMemo(() => packages.reduce(
+    (sum, item) => sum + (item.pricingQuote?.deliveryFeeAriary ?? 0),
+    0,
+  ), [packages])
 
   function startAdding() {
     setEditingIndex(packages.length)
@@ -248,8 +252,8 @@ export function ClientDeliveryRequestForm({
                   <article className="client-package-row" role="listitem" key={item.localId}>
                     <div className="client-package-row__index">{index + 1}</div>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
-                    <div><strong>{item.destination.label || item.destination.destinationQuery}</strong><small>{item.faritra ? 'Livraison Faritra' : 'Zone habituelle'}</small></div>
-                    <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.mobileMoneyPaid ? 'Payé par Mobile Money' : 'À encaisser'}</small></div>
+                    <div><strong>{item.destination.label || item.destination.destinationQuery}</strong><small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Tarif à recalculer'}{item.faritra ? ' · Faritra' : ''}</small></div>
+                    <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · ${item.mobileMoneyPaid ? 'payé par Mobile Money' : 'à encaisser'}` : item.mobileMoneyPaid ? 'Payé par Mobile Money' : 'À encaisser'}</small></div>
                     <div className="client-package-row__tags">
                       {item.weightKg && <span>{item.weightKg} kg</span>}
                       {item.faritra && <span>Faritra</span>}
@@ -272,6 +276,7 @@ export function ClientDeliveryRequestForm({
             <div><dt>Date</dt><dd>{requestedDate ? new Date(`${requestedDate}T12:00:00`).toLocaleDateString('fr-MG', { dateStyle: 'long' }) : 'À choisir'}</dd></div>
             <div><dt>Retrait</dt><dd>{pickup.label || pickup.destinationQuery || 'À confirmer'}</dd></div>
             <div><dt>Total déclaré</dt><dd>{formatAriary(amountTotal)}</dd></div>
+            <div><dt>Dont frais de livraison</dt><dd>{formatAriary(deliveryFeeTotal)}</dd></div>
           </dl>
 
           {locationConfirmed(pickup) && packages.length > 0 && (

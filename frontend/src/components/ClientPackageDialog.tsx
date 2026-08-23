@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Banknote, Check, MapPin, PackagePlus, Scale, X } from 'lucide-react'
+import { Banknote, BadgeDollarSign, Check, LoaderCircle, MapPin, PackagePlus, Scale, TriangleAlert, X } from 'lucide-react'
+import { ClientApiError, quoteDeliveryPrice, type DeliveryPricingQuote } from '../api/client'
 import type { Location } from '../api/csvImports'
 import { LocationPicker } from './LocationPicker'
 
@@ -13,6 +14,7 @@ export interface ClientPackageDraft {
   amountToCollectAriary: string
   mobileMoneyPaid: boolean
   weightKg: string
+  pricingQuote?: DeliveryPricingQuote
 }
 
 export function emptyClientPackage(localId: string): ClientPackageDraft {
@@ -25,6 +27,7 @@ export function emptyClientPackage(localId: string): ClientPackageDraft {
     amountToCollectAriary: '0',
     mobileMoneyPaid: false,
     weightKg: '',
+    pricingQuote: undefined,
   }
 }
 
@@ -48,6 +51,8 @@ export function ClientPackageDialog({
   const titleId = useId()
   const [value, setValue] = useState<ClientPackageDraft>(initialValue)
   const [error, setError] = useState<string>()
+  const [quoteBusy, setQuoteBusy] = useState(false)
+  const [quoteError, setQuoteError] = useState<{ message: string; outside: boolean }>()
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -56,6 +61,43 @@ export function ClientPackageDialog({
       document.body.style.overflow = previousOverflow
     }
   }, [])
+
+  useEffect(() => {
+    if (!confirmed(value.destination)) {
+      setQuoteBusy(false)
+      setQuoteError(undefined)
+      setValue((current) => current.pricingQuote ? { ...current, pricingQuote: undefined } : current)
+      return
+    }
+
+    const controller = new AbortController()
+    setQuoteBusy(true)
+    setQuoteError(undefined)
+    void quoteDeliveryPrice({
+      label: value.destination.label?.trim()
+        || value.destination.destinationQuery?.trim()
+        || `Livraison ${packageNumber}`,
+      query: value.destination.destinationQuery?.trim() || undefined,
+      latitude: value.destination.latitude as number,
+      longitude: value.destination.longitude as number,
+    }, accessToken, controller.signal).then((pricingQuote) => {
+      if (!controller.signal.aborted) {
+        setValue((current) => ({ ...current, pricingQuote }))
+      }
+    }).catch((quoteFailure: unknown) => {
+      if (controller.signal.aborted) return
+      setValue((current) => ({ ...current, pricingQuote: undefined }))
+      setQuoteError({
+        message: quoteFailure instanceof Error ? quoteFailure.message : 'Le tarif de cette destination est indisponible.',
+        outside: quoteFailure instanceof ClientApiError
+          && (quoteFailure.code.includes('OUTSIDE') || quoteFailure.code.includes('NOT_COVERED')),
+      })
+    }).finally(() => {
+      if (!controller.signal.aborted) setQuoteBusy(false)
+    })
+
+    return () => controller.abort()
+  }, [accessToken, packageNumber, value.destination.latitude, value.destination.longitude])
 
   function save() {
     if (!value.recipientName.trim()) {
@@ -68,6 +110,14 @@ export function ClientPackageDialog({
     }
     if (!confirmed(value.destination)) {
       setError('Confirmez le lieu de livraison sur la carte.')
+      return
+    }
+    if (quoteBusy) {
+      setError('Attendez le calcul du tarif de livraison.')
+      return
+    }
+    if (!value.pricingQuote) {
+      setError(quoteError?.message ?? 'Cette destination ne se trouve dans aucune zone couverte.')
       return
     }
     const amount = Number(value.amountToCollectAriary)
@@ -144,6 +194,7 @@ export function ClientPackageDialog({
               description="Recherchez une adresse, un quartier ou un point de repère à Madagascar."
               onChange={(destination) => setValue({
                 ...value,
+                pricingQuote: undefined,
                 destination: {
                   ...destination,
                   label: destination.label?.trim()
@@ -152,6 +203,24 @@ export function ClientPackageDialog({
                 },
               })}
             />
+            {quoteBusy && (
+              <div className="client-pricing-preview is-loading" role="status">
+                <LoaderCircle className="spin" aria-hidden="true" />
+                <div><strong>Calcul du tarif…</strong><small>La destination est comparée aux zones couvertes.</small></div>
+              </div>
+            )}
+            {!quoteBusy && value.pricingQuote && (
+              <div className="client-pricing-preview is-covered" role="status">
+                <BadgeDollarSign aria-hidden="true" />
+                <div><small>Zone {value.pricingQuote.pricingZoneName}</small><strong>{value.pricingQuote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar de livraison</strong></div>
+              </div>
+            )}
+            {!quoteBusy && quoteError && (
+              <div className="client-pricing-preview is-uncovered" role="alert">
+                <TriangleAlert aria-hidden="true" />
+                <div><strong>{quoteError.outside ? 'Zone non couverte' : 'Tarif indisponible'}</strong><small>{quoteError.message}</small></div>
+              </div>
+            )}
           </div>
 
           <div className="client-form-grid client-form-grid--three">
@@ -195,7 +264,7 @@ export function ClientPackageDialog({
 
         <footer className="client-modal-footer">
           <button className="button button--secondary" type="button" onClick={onClose}>Annuler</button>
-          <button className="button" type="button" onClick={save}><Check aria-hidden="true" />Enregistrer le colis</button>
+          <button className="button" type="button" disabled={quoteBusy || (confirmed(value.destination) && !value.pricingQuote)} onClick={save}><Check aria-hidden="true" />Enregistrer le colis</button>
         </footer>
       </section>
     </div>,
