@@ -30,23 +30,26 @@ import {
 } from '../api/client'
 import type { Location } from '../api/csvImports'
 import { ClientDeliveryRequestForm } from './ClientDeliveryRequestForm'
+import { ClientContactPreferences } from './ClientContactPreferences'
+import { ClientReportsPanel } from './ClientReportsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { LocationPicker } from './LocationPicker'
+import { usePortalNavigation } from './PortalShell'
 import './ClientPortal.css'
 
-type ClientView = 'history' | 'new-request' | 'profile'
+type ClientView = 'history' | 'new-request' | 'reports' | 'profile'
 
 const REQUEST_STATUS: Record<DeliveryRequestStatus, string> = {
-  PENDING: 'En attente',
-  PARTIALLY_DISPATCHED: 'Partiellement dispatchée',
-  DISPATCHED: 'Dispatchée',
+  PENDING: 'En cours de traitement',
+  PARTIALLY_DISPATCHED: 'En cours de traitement',
+  DISPATCHED: 'En cours de traitement',
   CANCELLED: 'Annulée',
 }
 
 const PACKAGE_STATUS: Record<DeliveryPackageStatus, string> = {
-  PENDING: 'En attente',
-  DISPATCHED: 'Dispatché',
-  UNASSIGNED: 'À réorganiser',
+  PENDING: 'En cours de traitement',
+  DISPATCHED: 'En cours de traitement',
+  UNASSIGNED: 'En cours de traitement',
 }
 
 const PACKAGE_OUTCOME: Record<DeliveryPackageOutcome, string> = {
@@ -99,9 +102,11 @@ function RequestHistory({
   return (
     <div className="client-history-list">
       {requests.map((request) => {
-        const pendingPackages = request.packages.filter((item) => item.status === 'PENDING' && !item.finalOutcome).length
+        const processingPackages = request.packages.filter((item) => !item.finalOutcome).length
         const allCancelled = request.packages.length > 0
           && request.packages.every((item) => item.finalOutcome === 'CANCELLED')
+        const allFinalized = request.packages.length > 0
+          && request.packages.every((item) => Boolean(item.finalOutcome))
         const cashToCollect = request.packages.reduce(
           (sum, item) => sum + (item.finalOutcome ? 0 : item.amountToCollectAriary),
           0,
@@ -109,16 +114,16 @@ function RequestHistory({
         return (
           <details className="client-history-card" key={request.id}>
             <summary>
-              <span className={`client-status client-status--${allCancelled ? 'cancelled' : request.status.toLowerCase()}`}>
-                {allCancelled ? <Ban aria-hidden="true" /> : request.status === 'DISPATCHED' ? <CheckCircle2 aria-hidden="true" /> : <Clock3 aria-hidden="true" />}
-                {allCancelled ? 'Annulée' : REQUEST_STATUS[request.status]}
+              <span className={`client-status client-status--${allCancelled ? 'cancelled' : allFinalized ? 'completed' : 'processing'}`}>
+                {allCancelled ? <Ban aria-hidden="true" /> : allFinalized ? <CheckCircle2 aria-hidden="true" /> : <Clock3 aria-hidden="true" />}
+                {allCancelled ? 'Annulée' : allFinalized ? 'Terminée' : REQUEST_STATUS[request.status]}
               </span>
               <div className="client-history-card__identity">
                 <strong>{request.pickup.label}</strong>
                 <small><CalendarClock aria-hidden="true" />{formatDate(request.requestedDate)}</small>
               </div>
               <div className="client-history-card__metric"><small>Colis</small><strong>{request.packages.length}</strong></div>
-              <div className="client-history-card__metric"><small>En attente</small><strong>{pendingPackages}</strong></div>
+              <div className="client-history-card__metric"><small>En traitement</small><strong>{processingPackages}</strong></div>
               <div className="client-history-card__metric client-history-card__metric--amount"><small>À encaisser</small><strong>{formatAriary(cashToCollect)}</strong></div>
               <ArrowRight className="client-history-card__chevron" aria-hidden="true" />
             </summary>
@@ -132,6 +137,7 @@ function RequestHistory({
               )}
               <div className="client-history-packages" role="list">
                 {request.packages.map((item) => {
+                  const applicableFee = item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0
                   const finalAmount = item.finalOutcome === 'DELIVERED'
                     ? (item.actualCollectedAriary ?? item.amountToCollectAriary)
                     : item.finalOutcome === 'RETURN_TO_SENDER'
@@ -140,18 +146,18 @@ function RequestHistory({
                         ? 0
                         : item.amountToCollectAriary
                   const finalFee = item.finalOutcome === 'DELIVERED' || item.finalOutcome === 'RETURN_TO_SENDER'
-                    ? (item.deliveryFeeAriary ?? 0)
+                    ? applicableFee
                     : item.finalOutcome
                       ? 0
-                      : (item.deliveryFeeAriary ?? 0)
+                      : applicableFee
                   return (
                   <article role="listitem" key={item.id}>
                     <span className="client-history-packages__number">{item.sequenceNumber}</span>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
                     <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}</small></div>
-                    <div><strong>{formatAriary(finalAmount)}</strong><small>{item.finalOutcome ? `frais facturés ${formatAriary(finalFee)}` : item.deliveryFeeAriary != null ? `dont ${formatAriary(item.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
+                    <div><strong>{formatAriary(finalAmount)}</strong><small>{item.finalOutcome ? `frais facturés ${formatAriary(finalFee)}` : item.finalDeliveryFeeAriary != null || item.deliveryFeeAriary != null ? `dont ${formatAriary(applicableFee)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-history-packages__state">
-                      <span className={`client-package-status client-package-status--${(item.finalOutcome ?? item.status).toLowerCase()}`}>
+                      <span className={`client-package-status client-package-status--${item.finalOutcome ? item.finalOutcome.toLowerCase() : 'processing'}`}>
                         {item.finalOutcome ? PACKAGE_OUTCOME[item.finalOutcome] : PACKAGE_STATUS[item.status]}
                       </span>
                       {item.finalOutcome === 'RETURN_TO_SENDER' && (
@@ -263,6 +269,7 @@ function ClientProfilePanel({
       <div className="client-profile-actions">
         <button className="button" type="button" disabled={saving} onClick={() => void save()}><Save aria-hidden="true" />{saving ? 'Enregistrement…' : 'Enregistrer les modifications'}</button>
       </div>
+      <ClientContactPreferences accessToken={accessToken} profile={profile} onSaved={onSaved} />
     </section>
   )
 }
@@ -272,7 +279,12 @@ export interface ClientPortalProps {
 }
 
 export function ClientPortal({ accessToken }: ClientPortalProps) {
-  const [view, setView] = useState<ClientView>('history')
+  const portalNavigation = usePortalNavigation()
+  const [localView, setLocalView] = useState<ClientView>('history')
+  const view = portalNavigation?.role === 'CLIENT'
+    && ['history', 'new-request', 'reports', 'profile'].includes(portalNavigation.section)
+    ? portalNavigation.section as ClientView
+    : localView
   const [profile, setProfile] = useState<ClientProfile>()
   const [requests, setRequests] = useState<DeliveryRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -281,6 +293,14 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   const [actionError, setActionError] = useState<string>()
   const [packageToCancel, setPackageToCancel] = useState<DeliveryRequestRecord['packages'][number]>()
   const [cancelling, setCancelling] = useState(false)
+  const [requestFormMounted, setRequestFormMounted] = useState(view === 'new-request')
+  const [profileMounted, setProfileMounted] = useState(view === 'profile')
+  const [requestFormKey, setRequestFormKey] = useState(0)
+
+  function openView(nextView: ClientView) {
+    setLocalView(nextView)
+    if (portalNavigation?.role === 'CLIENT') portalNavigation.navigate(nextView)
+  }
 
   async function load() {
     setLoading(true)
@@ -305,11 +325,16 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken])
 
+  useEffect(() => {
+    if (view === 'new-request') setRequestFormMounted(true)
+    if (view === 'profile') setProfileMounted(true)
+  }, [view])
+
   const stats = useMemo(() => {
     const packages = requests.flatMap((request) => request.packages)
     return {
       requestCount: requests.length,
-      pendingCount: packages.filter((item) => item.status === 'PENDING' && !item.finalOutcome).length,
+      processingCount: packages.filter((item) => !item.finalOutcome).length,
       finalizedCount: packages.filter((item) => Boolean(item.finalOutcome)).length,
     }
   }, [requests])
@@ -320,7 +345,8 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   async function handleCreated(request: DeliveryRequestRecord, savedDefaultPickup: boolean) {
     setRequests((current) => [request, ...current])
     setSuccessMessage(`Votre demande de ${request.packages.length} colis a bien été enregistrée.`)
-    setView('history')
+    setRequestFormKey((current) => current + 1)
+    openView('history')
     if (savedDefaultPickup) {
       try {
         setProfile(await getClientProfile(accessToken))
@@ -360,16 +386,26 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
     )
   }
 
-  if (view === 'new-request') {
-    return <ClientDeliveryRequestForm accessToken={accessToken} defaultPickup={profile.defaultPickup} onCreated={(request, saved) => void handleCreated(request, saved)} onCancel={() => setView('history')} />
-  }
-
-  if (view === 'profile') {
-    return <ClientProfilePanel accessToken={accessToken} profile={profile} onSaved={setProfile} onCancel={() => setView('history')} />
-  }
-
   return (
-    <section className="client-portal" aria-labelledby="client-dashboard-title">
+    <>
+      {requestFormMounted && (
+        <div hidden={view !== 'new-request'}>
+          <ClientDeliveryRequestForm
+            key={requestFormKey}
+            accessToken={accessToken}
+            defaultPickup={profile.defaultPickup}
+            onCreated={(request, saved) => void handleCreated(request, saved)}
+            onCancel={() => openView('history')}
+          />
+        </div>
+      )}
+      {profileMounted && (
+        <div hidden={view !== 'profile'}>
+          <ClientProfilePanel accessToken={accessToken} profile={profile} onSaved={setProfile} onCancel={() => openView('history')} />
+        </div>
+      )}
+      {view === 'reports' && <ClientReportsPanel accessToken={accessToken} />}
+      <section className="client-portal" aria-labelledby="client-dashboard-title" hidden={view !== 'history'}>
       <header className="client-dashboard-hero">
         <div>
           <p className="eyebrow">Espace client</p>
@@ -377,10 +413,10 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
           <p>Préparez vos colis et gardez un œil sur chaque demande confiée à AZY Livraison.</p>
         </div>
         <div className="client-dashboard-hero__actions">
-          <button className="button button--light" type="button" onClick={() => setView('profile')}><Settings2 aria-hidden="true" />Mon profil</button>
+          <button className="button button--light" type="button" onClick={() => openView('profile')}><Settings2 aria-hidden="true" />Mon profil</button>
           <button className="button" type="button" onClick={() => {
             setSuccessMessage(undefined)
-            setView('new-request')
+            openView('new-request')
           }}><PackagePlus aria-hidden="true" />Nouvelle demande</button>
         </div>
       </header>
@@ -390,9 +426,9 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
 
       <div className="client-stat-grid" aria-label="Résumé de vos livraisons">
         <article><span aria-hidden="true"><History /></span><div><small>Demandes enregistrées</small><strong>{stats.requestCount}</strong></div></article>
-        <article><span aria-hidden="true"><Clock3 /></span><div><small>Colis en attente</small><strong>{stats.pendingCount}</strong></div></article>
+        <article><span aria-hidden="true"><Clock3 /></span><div><small>Colis en traitement</small><strong>{stats.processingCount}</strong></div></article>
         <article><span aria-hidden="true"><PackageCheck /></span><div><small>Colis finalisés</small><strong>{stats.finalizedCount}</strong></div></article>
-        <article className="client-stat-grid__pickup"><span aria-hidden="true"><MapPin /></span><div><small>Retrait par défaut</small><strong>{profile.defaultPickup?.label ?? 'Non défini'}</strong></div><button type="button" aria-label="Modifier le retrait par défaut" onClick={() => setView('profile')}><PencilLine aria-hidden="true" /></button></article>
+        <article className="client-stat-grid__pickup"><span aria-hidden="true"><MapPin /></span><div><small>Retrait par défaut</small><strong>{profile.defaultPickup?.label ?? 'Non défini'}</strong></div><button type="button" aria-label="Modifier le retrait par défaut" onClick={() => openView('profile')}><PencilLine aria-hidden="true" /></button></article>
       </div>
 
       <section className="client-surface client-history-section">
@@ -415,6 +451,7 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
           <p>Le colis destiné à <strong>{packageToCancel.recipientName}</strong> sera annulé{cancellationDate ? ` et libérera une place pour le ${formatDate(cancellationDate)}` : ''}. Cette action est réservée aux colis encore en attente.</p>
         </ConfirmDialog>
       )}
-    </section>
+      </section>
+    </>
   )
 }

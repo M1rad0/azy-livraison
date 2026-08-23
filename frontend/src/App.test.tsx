@@ -122,7 +122,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Demandes en attente' })).toBeInTheDocument()
     expect(screen.queryByText('Outils historiques')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByText('Administration').length).toBeGreaterThan(0))
-    expect(screen.getByText('Équipe AZY')).toBeInTheDocument()
+    expect(screen.getAllByText('Équipe AZY').length).toBeGreaterThan(0)
   })
 
   it('routes a client session to a separate client dashboard', async () => {

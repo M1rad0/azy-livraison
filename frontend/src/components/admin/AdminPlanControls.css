@@ -1,0 +1,44 @@
+.admin-plan-controls { display: grid; gap: 1rem; margin-top: 1rem; padding: 1rem; background: #fff; border: 1px solid var(--admin-line); border-radius: 1.1rem; box-shadow: var(--admin-shadow); }
+.admin-plan-controls > header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.admin-plan-controls > header h3, .admin-plan-controls > header p { margin: 0; }
+.admin-plan-controls > header > div:first-child > p:last-child { margin-top: .35rem; color: var(--admin-ink-soft); font-size: .76rem; }
+.admin-plan-controls__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.admin-plan-controls.is-locked { grid-template-columns: auto 1fr; align-items: center; color: var(--admin-ink-soft); background: #f8fafc; box-shadow: none; }
+.admin-plan-controls.is-locked > span { display: grid; width: 2.5rem; height: 2.5rem; place-items: center; color: var(--admin-orange); background: var(--admin-orange-soft); border-radius: .75rem; }
+.admin-plan-controls.is-locked strong { color: var(--admin-navy); }
+.admin-plan-controls.is-locked p { margin: .2rem 0 0; font-size: .74rem; }
+.admin-plan-editor { display: grid; gap: .8rem; padding-top: 1rem; border-top: 1px solid var(--admin-line); }
+.admin-plan-editor__notice { display: flex; align-items: center; gap: .65rem; padding: .75rem; color: var(--admin-navy); background: var(--admin-blue-soft); border-radius: .8rem; }
+.admin-plan-editor__notice > svg { width: 1rem; }
+.admin-plan-editor__notice > span { display: grid; gap: .1rem; }
+.admin-plan-editor__notice small { color: var(--admin-ink-soft); font-size: .68rem; }
+.admin-plan-routes { display: grid; gap: .75rem; }
+.admin-plan-routes > article { overflow: visible; border: 1px solid var(--admin-line); border-radius: .9rem; }
+.admin-plan-routes > article.is-overloaded { border-color: #d84b00; box-shadow: 0 0 0 2px rgba(216,75,0,.1); }
+.admin-plan-routes > article > header { display: flex; align-items: center; gap: .55rem; padding: .7rem .8rem; color: #fff; background: var(--admin-navy); border-radius: .85rem .85rem 0 0; }
+.admin-plan-routes > article > header > span { display: grid; width: 2rem; height: 2rem; place-items: center; background: rgba(255,255,255,.1); border-radius: .6rem; }
+.admin-plan-routes > article > header svg { width: .9rem; }
+.admin-plan-routes > article > header div { display: grid; }
+.admin-plan-routes > article > header small { color: rgba(255,255,255,.68); font-size: .65rem; }
+.admin-plan-routes > article > div { display: grid; }
+.admin-plan-routes > article > div > section { position: relative; display: grid; grid-template-columns: auto minmax(10rem, 1fr) minmax(14rem, .8fr) auto; gap: .65rem; align-items: center; padding: .7rem .8rem; border-bottom: 1px solid var(--admin-line); }
+.admin-plan-routes > article > div > section:last-child { border-bottom: 0; }
+.admin-plan-routes > article > div > section > b { display: grid; width: 1.8rem; height: 1.8rem; place-items: center; color: #fff; background: var(--admin-orange); border-radius: .55rem; font-size: .65rem; }
+.admin-plan-routes > article > div > section > div:nth-child(2) { display: grid; min-width: 0; }
+.admin-plan-routes > article > div > section small { overflow: hidden; color: var(--admin-ink-soft); font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
+.admin-plan-routes > article > div > p { margin: 0; padding: 1rem; color: var(--admin-ink-soft); font-size: .72rem; }
+.admin-plan-order-actions { display: flex; gap: .25rem; }
+.admin-plan-order-actions button { display: grid; width: 2.2rem; height: 2.2rem; padding: 0; place-items: center; color: var(--admin-navy); background: #fff; border: 1px solid var(--admin-line); border-radius: .6rem; cursor: pointer; }
+.admin-plan-order-actions button:disabled { opacity: .3; cursor: not-allowed; }
+.admin-plan-order-actions svg { width: .85rem; }
+.admin-plan-reason { display: grid; gap: .35rem; color: var(--admin-navy); font-size: .72rem; font-weight: 750; }
+.admin-plan-reason textarea { width: 100%; padding: .7rem; color: var(--admin-navy); background: #f8fafc; border: 1px solid var(--admin-line); border-radius: .75rem; outline: none; resize: vertical; }
+.admin-plan-editor > footer { display: flex; justify-content: flex-end; gap: .5rem; }
+.admin-regenerate-form { display: grid; gap: .8rem; }
+.admin-regenerate-form > p { margin: 0; }
+.admin-regenerate-form fieldset { display: grid; max-height: 14rem; gap: .35rem; overflow: auto; padding: .7rem; border: 1px solid var(--admin-line); border-radius: .75rem; }
+.admin-regenerate-form legend { padding: 0 .3rem; color: var(--admin-navy); font-size: .72rem; font-weight: 800; }
+.admin-regenerate-form fieldset label, .admin-regenerate-option { display: flex; align-items: center; gap: .55rem; padding: .5rem; color: var(--admin-navy); background: #f8fafc; border-radius: .6rem; font-size: .72rem; }
+.admin-regenerate-form fieldset label > span, .admin-regenerate-option > span { display: grid; }
+.admin-regenerate-form fieldset small, .admin-regenerate-option small { color: var(--admin-ink-soft); font-size: .63rem; }
+@media (max-width: 900px) { .admin-plan-controls > header { flex-direction: column; } .admin-plan-controls__actions { width: 100%; justify-content: flex-start; } .admin-plan-routes > article > div > section { grid-template-columns: auto minmax(0, 1fr); } .admin-plan-routes .admin-courier-combobox, .admin-plan-order-actions { grid-column: 2; } }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { logout, refreshSession, type AuthSession } from './api/auth'
-import { AuthenticatedHeader } from './components/AuthenticatedHeader'
 import { AuthScreen } from './components/AuthScreen'
 import { Brand } from './components/Brand'
+import { PortalShell } from './components/PortalShell'
 import { AdminDashboard, ClientDashboard, CourierDashboard } from './components/RoleDashboards'
 import './App.css'
 
@@ -69,14 +69,11 @@ export function App() {
 
   return (
     <main className="app-shell app-shell--portal">
-      <AuthenticatedHeader account={session.account} onLogout={handleLogout} />
-      {session.account.role === 'ADMIN' && <AdminDashboard session={session} />}
-      {session.account.role === 'CLIENT' && <ClientDashboard session={session} />}
-      {session.account.role === 'COURIER' && <CourierDashboard session={session} />}
-      <footer>
-        <span>Espace privé</span>
-        <span>AZY Livraison · Antananarivo</span>
-      </footer>
+      <PortalShell account={session.account} onLogout={handleLogout}>
+        {session.account.role === 'ADMIN' && <AdminDashboard session={session} />}
+        {session.account.role === 'CLIENT' && <ClientDashboard session={session} />}
+        {session.account.role === 'COURIER' && <CourierDashboard session={session} />}
+      </PortalShell>
     </main>
   )
 }

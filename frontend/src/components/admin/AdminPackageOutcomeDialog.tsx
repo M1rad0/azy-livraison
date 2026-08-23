@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { CheckCircle2, ClockArrowUp, PackageX, X } from 'lucide-react'
 import type { Courier, DailyOperationPackage, DeliveryPackageOutcome } from '../../api/admin'
 import { formatAriary } from './adminHelpers'
+import { CourierCombobox } from './CourierCombobox'
 
 type EditableOutcome = Exclude<DeliveryPackageOutcome, 'CANCELLED'>
 
@@ -95,7 +96,8 @@ export function AdminPackageOutcomeDialog({
     })
   }
 
-  const projectedFee = outcome === 'POSTPONED' ? 0 : (deliveryPackage.deliveryFeeAriary ?? 0)
+  const applicableFee = deliveryPackage.finalDeliveryFeeAriary ?? deliveryPackage.deliveryFeeAriary ?? 0
+  const projectedFee = outcome === 'POSTPONED' ? 0 : applicableFee
   const projectedRecovered = outcome === 'POSTPONED' ? 0 : (Number(actualAmount) || 0)
 
   return (
@@ -112,7 +114,7 @@ export function AdminPackageOutcomeDialog({
           <div className="admin-outcome-package-summary">
             <div><small>Compte client</small><strong>{deliveryPackage.ownerDisplayName}</strong></div>
             <div><small>Montant prévu</small><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong></div>
-            <div><small>Frais de livraison</small><strong>{formatAriary(deliveryPackage.deliveryFeeAriary ?? 0)}</strong></div>
+            <div><small>Frais de livraison</small><strong>{formatAriary(applicableFee)}</strong></div>
           </div>
 
           <fieldset className="admin-outcome-choices">
@@ -127,38 +129,26 @@ export function AdminPackageOutcomeDialog({
           </fieldset>
 
           {outcome !== 'POSTPONED' && (
-            <label className="admin-outcome-field">
-              <span>Livreur réellement intervenu</span>
-              <select
-                aria-label="Livreur réellement intervenu"
-                aria-describedby={courierHelpId}
-                aria-required="true"
+            <div className="admin-outcome-field">
+              <label htmlFor={`actual-courier-${deliveryPackage.packageId}`}>Livreur réellement intervenu</label>
+              <CourierCombobox
+                couriers={couriers}
                 value={actualCourierId}
-                onChange={(event) => {
-                  setActualCourierId(event.target.value)
+                inputId={`actual-courier-${deliveryPackage.packageId}`}
+                missingLabel={selectedCourierIsMissing ? (missingCourierName ?? undefined) : undefined}
+                describedBy={courierHelpId}
+                onChange={(courierId) => {
+                  setActualCourierId(courierId)
                   setValidationError(undefined)
                 }}
-              >
-                <option value="">Choisir un livreur</option>
-                {selectedCourierIsMissing && (
-                  <option value={actualCourierId}>
-                    {missingCourierName ?? 'Livreur enregistré'} (fiche indisponible)
-                  </option>
-                )}
-                {[...couriers]
-                  .sort((left, right) => Number(right.active) - Number(left.active)
-                    || left.name.localeCompare(right.name, 'fr'))
-                  .map((courier) => (
-                    <option value={courier.id} key={courier.id}>
-                      {courier.name}{courier.active ? '' : ' (inactif)'}
-                    </option>
-                  ))}
-              </select>
+              />
               <small id={courierHelpId}>
                 Prévu lors du dispatch : {deliveryPackage.distributorCourierName ?? 'aucun livreur affecté'}.
-                Modifiez ce choix si une autre personne a réellement effectué la livraison ou la tentative.
+                {actualCourierId === deliveryPackage.distributorCourierId
+                  ? ' Ce choix est repris automatiquement.'
+                  : ' Modifiez ce choix si une autre personne a réellement effectué la livraison ou la tentative.'}
               </small>
-            </label>
+            </div>
           )}
 
           {outcome !== 'POSTPONED' && (

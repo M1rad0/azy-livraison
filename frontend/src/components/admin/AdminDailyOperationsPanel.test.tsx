@@ -115,8 +115,9 @@ describe('AdminDailyOperationsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Renseigner' }))
     expect(screen.getByText(/Mobile Money reste informatif/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Montant réellement récupéré/)).toHaveValue(25_000)
-    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('courier-1')
-    fireEvent.change(screen.getByLabelText('Livreur réellement intervenu'), { target: { value: 'courier-2' } })
+    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('Hery')
+    fireEvent.change(screen.getByLabelText('Livreur réellement intervenu'), { target: { value: 'Tiana' } })
+    fireEvent.mouseDown(screen.getByRole('option', { name: /Tiana/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer cet état' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(
@@ -149,7 +150,7 @@ describe('AdminDailyOperationsPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }))
 
-    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('courier-2')
+    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('Tiana (inactif)')
     expect(screen.getByText(/Prévu lors du dispatch : Hery/)).toBeInTheDocument()
   })
 
@@ -205,7 +206,8 @@ describe('AdminDailyOperationsPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Renseigner' }))
 
-    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('courier-1')
+    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('Hery')
+    fireEvent.focus(screen.getByLabelText('Livreur réellement intervenu'))
     expect(screen.getByRole('option', { name: 'Hery (fiche indisponible)' })).toBeInTheDocument()
   })
 

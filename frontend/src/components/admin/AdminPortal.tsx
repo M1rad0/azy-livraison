@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, LayoutDashboard, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
 import {
   cancelAdminDeliveryPackage,
   getAdminQueue,
@@ -24,6 +24,7 @@ import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
 import { AdminPricingZonesPanel } from './AdminPricingZonesPanel'
 import { antananarivoToday, errorMessage } from './adminHelpers'
 import { AdminSettingsPanel } from './AdminSettingsPanel'
+import { usePortalNavigation } from '../PortalShell'
 import './AdminPortal.css'
 
 type AdminTab = 'queue' | 'dispatch' | 'day' | 'couriers' | 'pricing' | 'settings'
@@ -39,7 +40,12 @@ const tabs = [
 
 /** Portail autonome destiné au shell authentifié lorsque `session.account.role === 'ADMIN'`. */
 export function AdminPortal({ accessToken }: { accessToken: string }) {
-  const [tab, setTab] = useState<AdminTab>('queue')
+  const portalNavigation = usePortalNavigation()
+  const [localTab, setLocalTab] = useState<AdminTab>('queue')
+  const tab = portalNavigation?.role === 'ADMIN'
+    && tabs.some((item) => item.id === portalNavigation.section)
+    ? portalNavigation.section as AdminTab
+    : localTab
   const [pendingFilters, setPendingFilters] = useState<PendingQueueFilters>({
     scope: 'ALL',
     from: '',
@@ -58,6 +64,11 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
   const [message, setMessage] = useState<string>()
   const pendingLoadId = useRef(0)
   const dispatchLoadId = useRef(0)
+
+  function openTab(nextTab: AdminTab) {
+    setLocalTab(nextTab)
+    if (portalNavigation?.role === 'ADMIN') portalNavigation.navigate(nextTab)
+  }
 
   const loadPending = useCallback(async (signal?: AbortSignal) => {
     const loadId = ++pendingLoadId.current
@@ -145,7 +156,6 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
     setHistory((current) => [created.plan, ...current.filter((plan) => plan.id !== created.plan.id)])
     void loadPending()
     void loadDispatchDay()
-    setTab('day')
   }
 
   async function cancelPackage(deliveryPackage: DeliveryPackage) {
@@ -153,35 +163,29 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
     await Promise.all([loadPending(), loadDispatchDay()])
   }
 
-  const activeCourierCount = couriers.filter((courier) => courier.active).length
-  const pendingPackageCount = useMemo(() => pendingRequests.reduce(
-    (count, request) => count + request.packages.filter((deliveryPackage) => (
-      deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome
-    )).length,
-    0,
-  ), [pendingRequests])
   const currentDispatchQueue = dispatchQueue?.date === dispatchDate ? dispatchQueue : undefined
   const currentHistory = history.filter((plan) => plan.serviceDate === dispatchDate)
 
   return (
     <div className="admin-portal">
-      <section className="admin-portal__intro" aria-labelledby="admin-portal-title">
-        <div className="admin-portal__intro-icon"><LayoutDashboard aria-hidden="true" /></div>
-        <div><p className="admin-eyebrow">Centre des opérations</p><h1 id="admin-portal-title">Piloter les livraisons</h1><p>Suivez la file, mobilisez les livreurs et enregistrez chaque journée depuis un seul espace.</p></div>
-        <div className="admin-portal__today"><small>File globale</small><strong>{pendingBusy && pendingRequests.length === 0 ? '—' : pendingPackageCount} colis</strong><span>{activeCourierCount} livreur{activeCourierCount > 1 ? 's' : ''} actif{activeCourierCount > 1 ? 's' : ''}</span></div>
-      </section>
-
-      <nav className="admin-tabs" aria-label="Sections d’administration">
-        {tabs.map(({ id, label, detail, icon: Icon }) => (
-          <button key={id} type="button" className={tab === id ? 'is-active' : undefined} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-            <span><Icon aria-hidden="true" /></span>
-            <span><strong>{label}</strong><small>{detail}</small></span>
-            {id === 'queue' && pendingPackageCount > 0 && <b>{pendingPackageCount}</b>}
-          </button>
-        ))}
-      </nav>
-
       {message && <div className="admin-global-error" role="alert"><TriangleAlert aria-hidden="true" /><span>{message}</span><button type="button" onClick={() => setMessage(undefined)}>Fermer</button></div>}
+
+      {!portalNavigation && (
+        <nav className="admin-tabs" aria-label="Sections de l’administration">
+          {tabs.map(({ id, label, detail, icon: Icon }) => (
+            <button
+              className={tab === id ? 'is-active' : undefined}
+              type="button"
+              key={id}
+              aria-current={tab === id ? 'page' : undefined}
+              onClick={() => openTab(id)}
+            >
+              <span><Icon aria-hidden="true" /></span>
+              <span><strong>{label}</strong><small>{detail}</small></span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       {tab === 'queue' && (
         <AdminQueuePanel
@@ -191,7 +195,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           onFiltersChange={setPendingFilters}
           onReload={() => void loadPending()}
           onCancelPackage={cancelPackage}
-          onOpenDispatch={() => setTab('dispatch')}
+          onOpenDispatch={() => openTab('dispatch')}
         />
       )}
       {tab === 'dispatch' && (
@@ -215,7 +219,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           date={dispatchDate}
           couriers={couriers}
           onDateChange={(date) => setDispatchDate(date)}
-          onOpenDispatch={() => setTab('dispatch')}
+          onOpenDispatch={() => openTab('dispatch')}
           onChanged={() => {
             void loadPending()
             void loadDispatchDay()

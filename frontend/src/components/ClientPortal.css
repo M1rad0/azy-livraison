@@ -275,6 +275,11 @@
   background: #fff0ed;
 }
 
+.client-status--completed {
+  color: #174f78;
+  background: #eaf2f9;
+}
+
 .client-history-card__identity,
 .client-history-card__metric {
   display: grid;

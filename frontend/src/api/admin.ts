@@ -11,7 +11,7 @@ export type VehicleType = 'MOTO' | 'BICYCLE'
 export type DeliveryRequestStatus = 'PENDING' | 'PARTIALLY_DISPATCHED' | 'DISPATCHED' | 'CANCELLED'
 export type DeliveryPackageStatus = 'PENDING' | 'DISPATCHED' | 'UNASSIGNED'
 export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | 'RETURN_TO_SENDER'
-export type DispatchStatus = 'GENERATING' | 'READY' | 'READY_WITH_WARNINGS' | 'FAILED'
+export type DispatchStatus = 'GENERATING' | 'READY' | 'READY_WITH_WARNINGS' | 'FAILED' | 'CANCELLED' | 'SUPERSEDED'
 export type OperationDayStatus = 'OPEN' | 'DISPATCHING' | 'DISPATCHED' | 'CLOSED'
 export type ReportFormat = 'pdf' | 'xlsx'
 
@@ -44,6 +44,11 @@ export interface DeliveryPackage {
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
+  calculatedDeliveryFeeAriary?: number | null
+  finalDeliveryFeeAriary?: number | null
+  deliveryFeeOverrideReason?: string | null
+  deliveryFeeOverriddenAt?: string | null
+  deliveryFeeVersion?: number
   distanceFromCenterMeters?: number | null
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
@@ -96,6 +101,8 @@ export interface Courier {
   accountId?: string
   name: string
   contact?: string
+  phoneNumber?: string
+  payoutDestination?: CourierPayoutDestination | null
   active: boolean
   vehicleType: VehicleType
   maxWeightKg?: number
@@ -109,10 +116,18 @@ export interface Courier {
   updatedAt: string
 }
 
+export interface CourierPayoutDestination {
+  operator: string
+  accountHolder: string
+  number: string
+}
+
 export interface CourierInput {
   accountId?: string
   name: string
   contact?: string
+  phoneNumber?: string
+  payoutDestination?: CourierPayoutDestination | null
   active?: boolean
   vehicleType: VehicleType
   maxWeightKg?: number
@@ -177,6 +192,14 @@ export interface DispatchPlanSummary {
   id: string
   serviceDate: string
   status: DispatchStatus
+  mode?: 'AUTOMATIC' | 'MANUAL'
+  revision?: number
+  version?: number
+  supersedesPlanId?: string | null
+  archivedAt?: string | null
+  archivedByAccountId?: string | null
+  archiveReason?: string | null
+  editable?: boolean
   strategy: 'VIA_HUB'
   hub: ConfirmedLocation
   selectedPackageCount: number
@@ -229,12 +252,65 @@ export interface DispatchPlan {
   hubExecution?: HubExecution
   metrics?: StrategyMetrics
   packages: DispatchPackageOutcome[]
+  couriers?: DispatchPlanCourier[]
+  stops?: DispatchPlanStop[]
+}
+
+export interface DispatchPlanCourier {
+  courierId: string
+  name: string
+  contact?: string | null
+  vehicleType: VehicleType
+  maxWeightKg: number
+  averageSpeedKmh: number
+  departureAt: string
+  departure: ConfirmedLocation
+  used: boolean
+  collectionRole: boolean
+  distributionRole: boolean
+  hubArrivalAt?: string | null
+  hubDepartureAt?: string | null
+  completedAt?: string | null
+  loadAtHubArrivalKg?: number | null
+  loadAtHubDepartureKg?: number | null
+  routeDistanceMeters?: number | null
+  routeDurationSeconds?: number | null
+}
+
+export interface DispatchPlanStop {
+  id: string
+  courierId: string
+  order: number
+  type: 'START' | 'PICKUP' | 'HUB' | 'DELIVERY' | string
+  deliveryRequestId?: string | null
+  packageId?: string | null
+  label?: string | null
+  location: ConfirmedLocation
+  estimatedArrivalAt?: string | null
 }
 
 export interface CreateDispatchInput {
   serviceDate: string
   courierIds: string[]
   hubOverride?: ConfirmedLocation
+}
+
+export interface ManualDispatchAssignmentInput {
+  packageId: string
+  distributorCourierId: string
+  deliveryOrder: number
+}
+
+export interface DeliveryFeeUpdateResult {
+  packageId: string
+  calculatedFeeAriary?: number | null
+  finalFeeAriary?: number | null
+  mode: 'CALCULATED' | 'MANUAL'
+  overrideReason?: string | null
+  overriddenAt?: string | null
+  overriddenByAccountId?: string | null
+  feeVersion: number
+  version: number
 }
 
 export interface DailyFinancialTotals {
@@ -281,6 +357,11 @@ export interface DailyOperationPackage {
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
+  calculatedDeliveryFeeAriary?: number | null
+  finalDeliveryFeeAriary?: number | null
+  deliveryFeeOverrideReason?: string | null
+  deliveryFeeOverriddenAt?: string | null
+  deliveryFeeVersion?: number
   technicalStatus: DeliveryPackageStatus
   unassignedReason?: string | null
   finalOutcome?: DeliveryPackageOutcome | null
@@ -479,6 +560,65 @@ export function createDispatchPlan(
       'Idempotency-Key': idempotencyKey,
     },
   })
+}
+
+export function cancelDispatchPlan(
+  id: string,
+  expectedVersion: number,
+  reason: string,
+  accessToken: string,
+) {
+  return adminRequest<DispatchPlan>(`dispatch-plans/${encodeURIComponent(id)}/cancel`, accessToken,
+    jsonRequest('POST', { expectedVersion, reason }))
+}
+
+export function regenerateDispatchPlan(
+  id: string,
+  input: {
+    expectedVersion: number
+    reason: string
+    courierIds: string[]
+    hubOverride?: ConfirmedLocation
+    includeNewPending: boolean
+  },
+  idempotencyKey: string,
+  accessToken: string,
+) {
+  return adminRequest<DispatchPlan>(`dispatch-plans/${encodeURIComponent(id)}/regenerate`, accessToken, {
+    ...jsonRequest('POST', input),
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+  })
+}
+
+export function updateManualDispatchLayout(
+  id: string,
+  expectedVersion: number,
+  reason: string,
+  assignments: ManualDispatchAssignmentInput[],
+  accessToken: string,
+) {
+  return adminRequest<DispatchPlan>(`dispatch-plans/${encodeURIComponent(id)}/manual-layout`, accessToken,
+    jsonRequest('PUT', { expectedVersion, reason, assignments }))
+}
+
+export function updateDeliveryPackageFee(
+  packageId: string,
+  input: {
+    mode: 'CALCULATED' | 'MANUAL'
+    manualFeeAriary?: number | null
+    reason?: string | null
+    version: number
+  },
+  accessToken: string,
+) {
+  return adminRequest<DeliveryFeeUpdateResult>(
+    `delivery-packages/${encodeURIComponent(packageId)}/delivery-fee`,
+    accessToken,
+    jsonRequest('PUT', input),
+  )
 }
 
 export function cancelAdminDeliveryPackage(packageId: string, version: number, accessToken: string) {

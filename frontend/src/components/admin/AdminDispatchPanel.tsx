@@ -27,6 +27,7 @@ import {
 import type { Location } from '../../api/csvImports'
 import type { CourierRoute, RouteStop } from '../../api/optimization'
 import { LocationPicker } from '../LocationPicker'
+import { AdminPlanControls } from './AdminPlanControls'
 import {
   asConfirmedLocation,
   dispatchStatusLabel,
@@ -228,7 +229,11 @@ export function AdminDispatchPanel({
 }: AdminDispatchPanelProps) {
   const activeCouriers = couriers.filter((courier) => courier.active)
   const currentQueue = queue?.date === date ? queue : undefined
-  const hasActiveOrCompletedPlan = history.some((plan) => plan.status !== 'FAILED')
+  const hasActiveOrCompletedPlan = history.some((plan) => (
+    plan.status === 'GENERATING'
+    || plan.status === 'READY'
+    || plan.status === 'READY_WITH_WARNINGS'
+  ))
   const pendingPackages = useMemo(() => currentQueue?.requests.flatMap((request) => request.packages)
     .filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome) ?? [], [currentQueue])
   const [courierIds, setCourierIds] = useState<Set<string>>(new Set())
@@ -411,7 +416,20 @@ export function AdminDispatchPanel({
         </aside>
       </div>
 
-      {visiblePlan && <DispatchResult plan={visiblePlan} couriers={couriers} />}
+      {visiblePlan && (
+        <>
+          <DispatchResult plan={visiblePlan} couriers={couriers} />
+          <AdminPlanControls
+            accessToken={accessToken}
+            plan={visiblePlan}
+            couriers={couriers}
+            onChanged={(nextPlan) => {
+              setVisiblePlan(nextPlan)
+              onCreated(nextPlan)
+            }}
+          />
+        </>
+      )}
     </section>
   )
 }

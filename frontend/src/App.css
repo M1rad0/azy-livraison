@@ -13,6 +13,7 @@
 
 .app-shell--portal {
   --portal-content-width: 1500px;
+  padding: 0;
 }
 
 .app-shell--portal > .topbar {
