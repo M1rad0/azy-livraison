@@ -363,6 +363,108 @@ class DailyWorkflowApiIntegrationTest {
                         "Indiquez le livreur réellement intervenu pour 1 colis facturé avant la clôture."));
     }
 
+    @Test
+    void keepsCalculatedFeeAndLetsAdminOverrideOrRestoreTheFinalFee() throws Exception {
+        JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
+        UUID packageId = packageId(created, 0);
+        Long calculatedFee = jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_ariary FROM delivery_package WHERE id = ?",
+                Long.class,
+                packageId);
+        assertThat(calculatedFee).isNotNull();
+        installPlan(SERVICE_DATE, List.of(packageId));
+        long announcedFee = calculatedFee + 1_250;
+
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"mode":"MANUAL","manualFeeAriary":%d,
+                                 "reason":"Tarif annoncé au client","version":1}
+                                """.formatted(announcedFee)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("MANUAL"))
+                .andExpect(jsonPath("$.calculatedFeeAriary").value(calculatedFee))
+                .andExpect(jsonPath("$.finalFeeAriary").value(announcedFee))
+                .andExpect(jsonPath("$.feeVersion").value(1))
+                .andExpect(jsonPath("$.version").value(2));
+
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mode\":\"CALCULATED\",\"version\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("CALCULATED"))
+                .andExpect(jsonPath("$.finalFeeAriary").value(calculatedFee))
+                .andExpect(jsonPath("$.overrideReason").doesNotExist())
+                .andExpect(jsonPath("$.feeVersion").value(2))
+                .andExpect(jsonPath("$.version").value(3));
+
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"mode":"MANUAL","manualFeeAriary":%d,
+                                 "reason":"Confirmation du prix annoncé","version":3}
+                                """.formatted(announcedFee)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(4));
+
+        MvcResult outcome = updateOutcome(packageId, "DELIVERED", 10_000L, 4);
+        JsonNode day = objectMapper.readTree(outcome.getResponse().getContentAsString());
+        assertThat(day.get("totals").get("deliveryFeesAriary").asLong()).isEqualTo(announcedFee);
+        assertThat(packageNode(outcome, packageId).get("calculatedDeliveryFeeAriary").asLong())
+                .isEqualTo(calculatedFee);
+        assertThat(packageNode(outcome, packageId).get("finalDeliveryFeeAriary").asLong())
+                .isEqualTo(announcedFee);
+
+        long dayVersion = day.get("version").asLong();
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/close", SERVICE_DATE)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":" + dayVersion + "}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mode\":\"CALCULATED\",\"version\":5}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Rouvrez la journée avant de corriger les frais de livraison."));
+
+        Integer eventCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM delivery_fee_change_event WHERE delivery_package_id = ?",
+                Integer.class,
+                packageId);
+        assertThat(eventCount).isEqualTo(3);
+    }
+
+    @Test
+    void refusesCalculatedModeWhenThePackageHasNoAutomaticFee() throws Exception {
+        JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
+        UUID packageId = packageId(created, 0);
+        jdbcTemplate.update("""
+                UPDATE delivery_package
+                SET pricing_zone_id = NULL,
+                    pricing_zone_name = NULL,
+                    delivery_fee_ariary = NULL,
+                    final_delivery_fee_ariary = NULL,
+                    distance_from_center_meters = NULL,
+                    pricing_zone_max_distance_meters = NULL,
+                    pricing_policy_version = NULL
+                WHERE id = ?
+                """, packageId);
+
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mode\":\"CALCULATED\",\"version\":0}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.message").value(
+                        "Aucun tarif calculé n'est disponible pour ce colis. Indiquez un tarif manuel."));
+    }
+
     private MvcResult updateOutcome(UUID packageId, String outcome, Long actual, long version) throws Exception {
         String actualJson = actual == null ? "null" : actual.toString();
         String courierJson = "POSTPONED".equals(outcome)

@@ -199,6 +199,55 @@ class DailyReportApiIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void authenticatedClientListsAndDownloadsOnlyItsClosedDailyReports() throws Exception {
+        installScenario(true);
+        insertArchivedPlanRevision();
+
+        mockMvc.perform(get("/api/client/reports").with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].serviceDate").value(SERVICE_DATE.toString()))
+                .andExpect(jsonPath("$[0].revision").value(1))
+                .andExpect(jsonPath("$[0].totals.packageCount").value(2))
+                .andExpect(jsonPath("$[0].totals.amountCollectedAriary").value(12_000))
+                .andExpect(jsonPath("$[0].totals.deliveryFeesAriary").value(3_000))
+                .andExpect(jsonPath("$[0].totals.amountToRemitAriary").value(9_000));
+
+        mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE).with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourcePlanCount").value(1))
+                .andExpect(jsonPath("$.clients.length()").value(1))
+                .andExpect(jsonPath("$.clients[0].accountId").value(CLIENT_ONE_ID.toString()))
+                .andExpect(jsonPath("$.couriers.length()").value(0))
+                .andExpect(jsonPath("$.packages.length()").value(2))
+                .andExpect(jsonPath("$.packages[0].ownerAccountId").value(CLIENT_ONE_ID.toString()));
+
+        mockMvc.perform(get("/api/client/reports/{date}.pdf", SERVICE_DATE)
+                        .with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("rapport-client.pdf")));
+
+        mockMvc.perform(get("/api/client/reports/{date}.xlsx", SERVICE_DATE)
+                        .with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(AdminDailyReportController.XLSX_MEDIA_TYPE));
+
+        UUID accountWithoutPackages = UUID.fromString("91000000-0000-0000-0000-000000000099");
+        insertAccount(accountWithoutPackages, "sans-rapport", "Sans rapport", "CLIENT");
+        mockMvc.perform(get("/api/client/reports").with(client(accountWithoutPackages)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE)
+                        .with(client(accountWithoutPackages)))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/client/reports").with(admin()))
+                .andExpect(status().isForbidden());
+    }
+
     private void installScenario(boolean closed) {
         insertCourier(COURIER_ONE_ID, "Hery", "MOTO");
         insertCourier(COURIER_TWO_ID, "Fara", "BICYCLE");
@@ -266,6 +315,24 @@ class DailyReportApiIntegrationTest {
                           '{}', '{}', 3, 3, 0, 2, 2)
                 """, PLAN_ID, Date.valueOf(SERVICE_DATE), ADMIN_ID,
                 "report-test-" + PLAN_ID, "1".repeat(64));
+    }
+
+    private void insertArchivedPlanRevision() {
+        UUID archivedPlanId = UUID.fromString("93000000-0000-0000-0000-000000000099");
+        jdbcTemplate.update("""
+                INSERT INTO dispatch_plan (
+                    id, service_date, status, strategy,
+                    lifecycle_status, archived_at, archived_by_account_id, archive_reason,
+                    created_by_account_id, idempotency_key, request_hash,
+                    hub_label, hub_latitude, hub_longitude,
+                    input_snapshot_json, policy_snapshot_json,
+                    selected_package_count, selected_courier_count
+                ) VALUES (?, ?, 'READY', 'VIA_HUB',
+                          'SUPERSEDED', CURRENT_TIMESTAMP, ?, 'Révision remplacée',
+                          ?, ?, ?, 'Ancien siège', -18.90, 47.52,
+                          '{}', '{}', 1, 1)
+                """, archivedPlanId, Date.valueOf(SERVICE_DATE), ADMIN_ID, ADMIN_ID,
+                "report-archived-" + archivedPlanId, "9".repeat(64));
     }
 
     private void insertRequest(
@@ -443,9 +510,13 @@ class DailyReportApiIntegrationTest {
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor client() {
+        return client(CLIENT_ONE_ID);
+    }
+
+    private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID accountId) {
         return jwt()
                 .jwt(token -> token.subject("client")
-                        .claim("accountId", CLIENT_ONE_ID.toString())
+                        .claim("accountId", accountId.toString())
                         .claim("role", "CLIENT"))
                 .authorities(new SimpleGrantedAuthority("ROLE_CLIENT"));
     }

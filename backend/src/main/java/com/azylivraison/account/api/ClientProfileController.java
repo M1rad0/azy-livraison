@@ -38,6 +38,22 @@ public class ClientProfileController {
                 request.defaultPickup()));
     }
 
+    @PutMapping("/contact-numbers")
+    public ClientProfileResponse replaceContactNumbers(
+            Authentication authentication,
+            @Valid @RequestBody UpdateClientContactNumbersRequest request) {
+        return response(clientProfileService.replaceContactNumbers(
+                authentication.getName(), request.version(), request.items()));
+    }
+
+    @PutMapping("/payout-destinations")
+    public ClientProfileResponse replacePayoutDestinations(
+            Authentication authentication,
+            @Valid @RequestBody UpdateClientPayoutDestinationsRequest request) {
+        return response(clientProfileService.replacePayoutDestinations(
+                authentication.getName(), request.version(), request.items()));
+    }
+
     private ClientProfileResponse response(ProfileSnapshot snapshot) {
         return ClientProfileResponse.from(snapshot.account(), snapshot.profile());
     }

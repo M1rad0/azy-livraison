@@ -58,6 +58,7 @@ public class AuthService {
         try {
             accountRepository.create(account);
             clientProfileRepository.create(account.id());
+            clientProfileRepository.createPrimaryContact(account.id(), account.phone());
         } catch (DuplicateKeyException exception) {
             throw new UsernameAlreadyExistsException();
         }

@@ -85,6 +85,65 @@ class ClientProfileApiIntegrationTest {
     }
 
     @Test
+    void managesOrderedContactAndPayoutNumbersWithOptimisticLocking() throws Exception {
+        String accessToken = registerClient("finance-profile-" + UUID.randomUUID());
+
+        mockMvc.perform(put("/api/client/profile/contact-numbers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "version": 0,
+                                  "items": [
+                                    {"label":"Boutique","number":"034 10 000 01","priority":1,"active":false},
+                                    {"label":"Responsable","number":"033 20 000 02","priority":2,"active":true}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.phone").value("033 20 000 02"))
+                .andExpect(jsonPath("$.contactNumbers[0].label").value("Boutique"))
+                .andExpect(jsonPath("$.contactNumbers[0].priority").value(1))
+                .andExpect(jsonPath("$.contactNumbers[0].active").value(false))
+                .andExpect(jsonPath("$.contactNumbers[1].label").value("Responsable"));
+
+        mockMvc.perform(put("/api/client/profile/payout-destinations")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "version": 1,
+                                  "items": [
+                                    {"operator":"MVola","accountHolder":"Client Test","number":"034 10 000 01","priority":1,"active":true},
+                                    {"operator":"Orange Money","accountHolder":"Client Test","number":"032 30 000 03","priority":2,"active":true}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.payoutDestinations[0].operator").value("MVola"))
+                .andExpect(jsonPath("$.payoutDestinations[1].priority").value(2));
+
+        mockMvc.perform(put("/api/client/profile/contact-numbers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version":0,"items":[
+                                  {"label":"Ancien","number":"034 00 000 00","priority":1,"active":true}
+                                ]}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CLIENT_PROFILE_VERSION_CONFLICT"));
+
+        mockMvc.perform(get("/api/client/profile")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contactNumbers.length()").value(2))
+                .andExpect(jsonPath("$.payoutDestinations.length()").value(2));
+    }
+
+    @Test
     void enforcesClientAndAdminBoundaries() throws Exception {
         String clientAccessToken = registerClient("security-" + UUID.randomUUID());
         String adminAccessToken = loginAdmin();

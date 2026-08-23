@@ -300,6 +300,9 @@ public class DeliveryRequestRepository {
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
+                    final_delivery_fee_ariary, delivery_fee_override_reason,
+                    delivery_fee_overridden_at, delivery_fee_overridden_by_account_id,
+                    delivery_fee_version,
                     distance_from_center_meters, pricing_zone_max_distance_meters,
                     pricing_policy_version,
                     effective_weight_kg, weight_source,
@@ -309,7 +312,7 @@ public class DeliveryRequestRepository {
                     return_completed_at, return_completed_by_account_id,
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 deliveryPackage.id(), deliveryPackage.deliveryRequestId(), deliveryPackage.sequenceNumber(),
                 deliveryPackage.recipientName(), deliveryPackage.faritra(),
@@ -320,6 +323,11 @@ public class DeliveryRequestRepository {
                 deliveryPackage.pricingSnapshot().pricingZoneId(),
                 deliveryPackage.pricingSnapshot().pricingZoneName(),
                 deliveryPackage.pricingSnapshot().deliveryFeeAriary(),
+                deliveryPackage.finalDeliveryFeeAriary(),
+                deliveryPackage.deliveryFeeOverrideReason(),
+                timestamp(deliveryPackage.deliveryFeeOverriddenAt()),
+                deliveryPackage.deliveryFeeOverriddenByAccountId(),
+                deliveryPackage.deliveryFeeVersion(),
                 deliveryPackage.pricingSnapshot().distanceFromCenterMeters(),
                 deliveryPackage.pricingSnapshot().pricingZoneMaxDistanceMeters(),
                 deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
@@ -430,6 +438,13 @@ public class DeliveryRequestRepository {
                         nullableLong(resultSet, "distance_from_center_meters"),
                         nullableLong(resultSet, "pricing_zone_max_distance_meters"),
                         nullableLong(resultSet, "pricing_policy_version")),
+                coalesce(
+                        nullableLong(resultSet, "final_delivery_fee_ariary"),
+                        nullableLong(resultSet, "delivery_fee_ariary")),
+                resultSet.getString("delivery_fee_override_reason"),
+                instant(resultSet, "delivery_fee_overridden_at"),
+                resultSet.getObject("delivery_fee_overridden_by_account_id", UUID.class),
+                resultSet.getLong("delivery_fee_version"),
                 resultSet.getBigDecimal("effective_weight_kg"),
                 PackageWeightSource.valueOf(resultSet.getString("weight_source")),
                 DeliveryPackageStatus.valueOf(resultSet.getString("status")),
@@ -455,6 +470,10 @@ public class DeliveryRequestRepository {
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private Long coalesce(Long preferred, Long fallback) {
+        return preferred == null ? fallback : preferred;
     }
 
     private Instant instant(ResultSet resultSet, String column) throws SQLException {

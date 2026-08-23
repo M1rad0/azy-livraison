@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.administration.domain.CourierProfile;
+import com.azylivraison.administration.domain.CourierPayoutDestination;
 import com.azylivraison.administration.domain.VehiclePresetConfiguration;
 import com.azylivraison.administration.repository.CourierProfileRepository;
 
@@ -37,11 +38,14 @@ public class CourierProfileService {
     @Transactional
     public EffectiveCourierProfile create(CourierProfileCommand command) {
         presetService.findByType(command.vehicleType());
+        String phoneNumber = normalizeOptional(firstNonBlank(command.phoneNumber(), command.contact()));
         CourierProfile courier = new CourierProfile(
                 UUID.randomUUID(),
                 command.accountId(),
                 normalizeRequired(command.name()),
-                normalizeOptional(command.contact()),
+                phoneNumber,
+                phoneNumber,
+                normalizePayout(command.payoutDestination()),
                 true,
                 command.vehicleType(),
                 command.maxWeightKg(),
@@ -59,12 +63,15 @@ public class CourierProfileService {
     public EffectiveCourierProfile update(UUID id, CourierProfileCommand command, Long requestedVersion) {
         CourierProfile current = findDomainById(id);
         presetService.findByType(command.vehicleType());
+        String phoneNumber = normalizeOptional(firstNonBlank(command.phoneNumber(), command.contact()));
         long expectedVersion = requestedVersion == null ? current.version() : requestedVersion;
         CourierProfile toSave = new CourierProfile(
                 id,
                 command.accountId(),
                 normalizeRequired(command.name()),
-                normalizeOptional(command.contact()),
+                phoneNumber,
+                phoneNumber,
+                normalizePayout(command.payoutDestination()),
                 command.active(),
                 command.vehicleType(),
                 command.maxWeightKg(),
@@ -114,6 +121,20 @@ public class CourierProfileService {
 
     private String normalizeOptional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String firstNonBlank(String preferred, String fallback) {
+        return preferred != null && !preferred.isBlank() ? preferred : fallback;
+    }
+
+    private CourierPayoutDestination normalizePayout(CourierPayoutDestination payout) {
+        if (payout == null) {
+            return null;
+        }
+        return new CourierPayoutDestination(
+                normalizeRequired(payout.operator()),
+                normalizeRequired(payout.accountHolder()),
+                normalizeRequired(payout.number()));
     }
 
     private AdministrationConflictException versionConflict() {

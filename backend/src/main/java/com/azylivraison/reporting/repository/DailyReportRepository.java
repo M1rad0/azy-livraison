@@ -35,6 +35,20 @@ public class DailyReportRepository {
         return workflowRepository.findDay(serviceDate);
     }
 
+    public List<LocalDate> listClosedDatesForClient(UUID accountId) {
+        return jdbcTemplate.query("""
+                SELECT operation_day.service_date
+                FROM delivery_operation_day operation_day
+                JOIN delivery_operation_client_snapshot snapshot
+                  ON snapshot.service_date = operation_day.service_date
+                 AND snapshot.closure_revision = operation_day.closure_revision
+                WHERE operation_day.status = 'CLOSED'
+                  AND snapshot.account_id = :accountId
+                ORDER BY operation_day.service_date DESC
+                """, Map.of("accountId", accountId),
+                (resultSet, rowNumber) -> resultSet.getObject("service_date", LocalDate.class));
+    }
+
     public ReportSource load(OperationDay day) {
         List<DailyPackageRecord> packages = workflowRepository.findPackages(day);
         ReportContext context = context(day);
@@ -61,7 +75,8 @@ public class DailyReportRepository {
                        (SELECT COUNT(*)
                         FROM dispatch_plan source_plan
                         WHERE source_plan.service_date = :serviceDate
-                          AND source_plan.status IN ('READY', 'READY_WITH_WARNINGS')) AS source_plan_count
+                          AND source_plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                          AND source_plan.lifecycle_status = 'ACTIVE') AS source_plan_count
                 FROM dispatch_plan plan
                 JOIN app_account closer ON closer.id = :closedByAccountId
                 WHERE plan.id = :dispatchPlanId

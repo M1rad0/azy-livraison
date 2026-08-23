@@ -194,6 +194,12 @@ class AdministrationApiIntegrationTest {
                                 {
                                   "name": "  Tiana  ",
                                   "contact": "034 00 000 00",
+                                  "phoneNumber": "034 11 222 33",
+                                  "payoutDestination": {
+                                    "operator": "MVola",
+                                    "accountHolder": "Tiana Rakoto",
+                                    "number": "034 11 222 33"
+                                  },
                                   "vehicleType": "MOTO",
                                   "maxWeightKg": null,
                                   "averageSpeedKmh": null,
@@ -210,6 +216,10 @@ class AdministrationApiIntegrationTest {
                 .andExpect(header().exists(HttpHeaders.LOCATION))
                 .andExpect(jsonPath("$.name").value("Tiana"))
                 .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.phoneNumber").value("034 11 222 33"))
+                .andExpect(jsonPath("$.contact").value("034 11 222 33"))
+                .andExpect(jsonPath("$.payoutDestination.operator").value("MVola"))
+                .andExpect(jsonPath("$.payoutDestination.accountHolder").value("Tiana Rakoto"))
                 .andExpect(jsonPath("$.maxWeightKg").doesNotExist())
                 .andExpect(jsonPath("$.averageSpeedKmh").doesNotExist())
                 .andExpect(jsonPath("$.effectiveMaxWeightKg").value(30))
@@ -225,6 +235,12 @@ class AdministrationApiIntegrationTest {
                                 {
                                   "name": "Tiana",
                                   "contact": "034 00 000 00",
+                                  "phoneNumber": "033 44 555 66",
+                                  "payoutDestination": {
+                                    "operator": "Orange Money",
+                                    "accountHolder": "Tiana Rakoto",
+                                    "number": "033 44 555 66"
+                                  },
                                   "active": true,
                                   "vehicleType": "BICYCLE",
                                   "maxWeightKg": 14,
@@ -241,6 +257,8 @@ class AdministrationApiIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.vehicleType").value("BICYCLE"))
+                .andExpect(jsonPath("$.phoneNumber").value("033 44 555 66"))
+                .andExpect(jsonPath("$.payoutDestination.operator").value("Orange Money"))
                 .andExpect(jsonPath("$.maxWeightKg").value(14))
                 .andExpect(jsonPath("$.effectiveMaxWeightKg").value(14))
                 .andExpect(jsonPath("$.version").value(1));

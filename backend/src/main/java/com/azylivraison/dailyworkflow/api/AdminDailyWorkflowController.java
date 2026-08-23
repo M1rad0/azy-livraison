@@ -48,6 +48,20 @@ public class AdminDailyWorkflowController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/delivery-packages/{packageId}/delivery-fee")
+    public DeliveryFeeResponse updateDeliveryFee(
+            @PathVariable UUID packageId,
+            @Valid @RequestBody DeliveryFeeUpdateRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return DeliveryFeeResponse.from(service.updateDeliveryFee(
+                packageId,
+                request.mode(),
+                request.manualFeeAriary(),
+                request.reason(),
+                request.version(),
+                accountId(jwt)));
+    }
+
     @PutMapping("/delivery-days/{serviceDate}/packages/{packageId}/outcome")
     public DailyOperationResponse recordOutcome(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,

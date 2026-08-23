@@ -12,6 +12,8 @@ public record CourierProfile(
         UUID accountId,
         String name,
         String contact,
+        String phoneNumber,
+        CourierPayoutDestination payoutDestination,
         boolean active,
         VehicleType vehicleType,
         BigDecimal maxWeightKg,
@@ -24,7 +26,7 @@ public record CourierProfile(
 
     public CourierProfile withActive(boolean newActive) {
         return new CourierProfile(
-                id, accountId, name, contact, newActive, vehicleType,
+                id, accountId, name, contact, phoneNumber, payoutDestination, newActive, vehicleType,
                 maxWeightKg, averageSpeedKmh, defaultDepartureTime, departureLocation,
                 version, createdAt, updatedAt);
     }
