@@ -83,9 +83,11 @@ Après le dispatch, l'administrateur attribue à chaque colis une issue finale :
 - `POSTPONED` : reporté, sans frais sur la journée d'origine ; il doit être transmis au lendemain avec un nouveau retrait avant la clôture ;
 - `RETURN_TO_SENDER` : livraison non aboutie à retourner à l'expéditeur, avec frais de livraison et suivi séparé du retour physique.
 
+Le livreur prévu par l'optimiseur et le livreur réellement intervenu sont deux données distinctes. Lors du compte rendu, l'affectation prévue est proposée par défaut mais l'administrateur peut choisir n'importe quel profil livreur, même inactif ou absent du dispatch. Ce choix est obligatoire pour `DELIVERED` et `RETURN_TO_SENDER`, les deux issues facturées, puis son identité est conservée sous forme de snapshot pour les futurs calculs de rémunération. Les anciens comptes rendus ne sont pas attribués automatiquement : sans preuve d'exécution, ils restent explicitement non renseignés.
+
 L'indicateur Mobile Money est purement informatif : il ne met jamais un montant à zéro et n'intervient dans aucun total financier. Le montant à reverser est toujours `montant réellement récupéré - frais de livraison` et peut donc être négatif pour un retour.
 
-La clôture manuelle n'est possible que lorsque tous les colis ont une issue finale et que tous les reports ont été programmés au lendemain. Une journée clôturée peut être rouverte avec une raison auditée. Une fois clôturée, elle fournit un rapport général et un rapport par compte client, chacun en PDF et en véritable fichier Excel `.xlsx`. Le retour physique d'un colis peut encore être confirmé après la clôture : cette action est auditée, ne change aucun montant financier et apparaît dans les exports régénérés ensuite.
+La clôture manuelle n'est possible que lorsque tous les colis ont une issue finale, que chaque issue facturée possède son livreur réel et que tous les reports ont été programmés au lendemain. Une journée clôturée peut être rouverte avec une raison auditée. Une fois clôturée, elle fournit un rapport général et un rapport par compte client, chacun en PDF et en véritable fichier Excel `.xlsx`. Les exports distinguent le livreur prévu du livreur réel et regroupent les synthèses par livreur réel. Le retour physique d'un colis peut encore être confirmé après la clôture : cette action est auditée, ne change aucun montant financier et apparaît dans les exports régénérés ensuite.
 
 ### Statuts persistés
 
@@ -626,7 +628,7 @@ La création d'un dispatch ne reçoit aucun `packageIds` : elle sélectionne obl
 | Méthode | Route | Usage |
 |---|---|---|
 | `GET` | `/api/admin/delivery-days/{date}` | Lire l'état opérationnel, les colis et les totaux de la journée |
-| `PUT` | `/api/admin/delivery-days/{date}/packages/{id}/outcome` | Enregistrer ou corriger l'issue finale d'un colis |
+| `PUT` | `/api/admin/delivery-days/{date}/packages/{id}/outcome` | Enregistrer ou corriger l'issue finale, le montant et le `actualCourierId` d'un colis |
 | `POST` | `/api/admin/delivery-days/{date}/packages/{id}/carry-forward` | Créer le colis lié du lendemain avec son nouveau retrait |
 | `POST` | `/api/admin/delivery-days/{date}/packages/{id}/return-completed` | Confirmer le retour physique à l'expéditeur |
 | `POST` | `/api/admin/delivery-days/{date}/close` | Clôturer après validation de tous les colis et reports |
@@ -681,6 +683,7 @@ Flyway applique automatiquement les migrations au démarrage, dans l'ordre :
 | `V7__create_persisted_dispatch_plans.sql` | dispatchs `VIA_HUB`, réservations, snapshots, livreurs retenus, résultats colis et arrêts |
 | `V8__create_delivery_pricing_zones.sql` | point central, zones tarifaires et snapshots de prix des colis |
 | `V9__create_daily_delivery_workflow.sql` | issues finales, reports liés, journées, clôtures, audit et snapshots clients |
+| `V10__record_actual_delivery_courier.sql` | livreur réellement intervenu et snapshot d'identité distinct de l'affectation planifiée |
 
 Ne renommez et ne modifiez pas une migration déjà appliquée sur une base partagée : tout changement ultérieur doit utiliser une nouvelle version Flyway. Le passage de `V3` à `V4` attribue le rôle `ADMIN` aux comptes déjà présents afin de préserver l'accès au back-office.
 

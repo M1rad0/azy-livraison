@@ -109,6 +109,8 @@ class DailyReportApiIntegrationTest {
                     .contains("12 000 Ar")
                     .contains("7 000 Ar")
                     .contains("5 000 Ar")
+                    .contains("Livreur prévu : Hery")
+                    .contains("Livreur réel : Fara")
                     .contains("Mobile Money (informatif)")
                     .contains("Dépôt Ankorondrano");
         }
@@ -135,6 +137,14 @@ class DailyReportApiIntegrationTest {
             assertThat(summaryValue(workbook.getSheet("Synthèse"), "Total à reverser")).isEqualTo(5_000);
             assertThat(sheetContains(workbook.getSheet("Retours et reports"), "03/09/2026")).isTrue();
             assertThat(sheetContains(workbook.getSheet("Retours et reports"), "Dépôt Ankorondrano")).isTrue();
+            Row delivered = rowWithValue(workbook.getSheet("Colis"), 4, "Destinataire Mobile Money");
+            assertThat(delivered.getCell(10).getStringCellValue()).isEqualTo("Hery");
+            assertThat(delivered.getCell(11).getStringCellValue()).isEqualTo("Fara");
+            Row hery = rowWithValue(workbook.getSheet("Livreurs"), 0, "Hery");
+            assertThat(hery.getCell(4).getNumericCellValue()).isZero();
+            assertThat(hery.getCell(7).getNumericCellValue()).isEqualTo(1);
+            Row fara = rowWithValue(workbook.getSheet("Livreurs"), 0, "Fara");
+            assertThat(fara.getCell(4).getNumericCellValue()).isEqualTo(1);
         }
     }
 
@@ -170,10 +180,12 @@ class DailyReportApiIntegrationTest {
             assertThat(packages.getLastRowNum()).isEqualTo(2);
             Row delivered = rowWithValue(packages, 4, "Destinataire Mobile Money");
             assertThat(delivered.getCell(3).getStringCellValue()).isEqualTo("Boutique Rado clôture");
-            assertThat(delivered.getCell(12).getNumericCellValue()).isEqualTo(12_000);
-            assertThat(delivered.getCell(13).getNumericCellValue()).isEqualTo(3_000);
-            assertThat(delivered.getCell(14).getNumericCellValue()).isEqualTo(9_000);
-            assertThat(delivered.getCell(15).getStringCellValue()).isEqualTo("Oui");
+            assertThat(delivered.getCell(10).getStringCellValue()).isEqualTo("Hery");
+            assertThat(delivered.getCell(11).getStringCellValue()).isEqualTo("Fara");
+            assertThat(delivered.getCell(13).getNumericCellValue()).isEqualTo(12_000);
+            assertThat(delivered.getCell(14).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(delivered.getCell(15).getNumericCellValue()).isEqualTo(9_000);
+            assertThat(delivered.getCell(16).getStringCellValue()).isEqualTo("Oui");
             assertThat(sheetContains(packages, "Maison Soa clôture")).isFalse();
         }
 
@@ -196,16 +208,21 @@ class DailyReportApiIntegrationTest {
         insertRequest(SUCCESSOR_REQUEST_ID, CLIENT_TWO_ID, NEXT_DATE, "Dépôt Ankorondrano", 1, "PENDING");
 
         insertPackage(DELIVERED_ID, REQUEST_ONE_ID, 1, "Destinataire Mobile Money",
-                15_000, true, 3_000, "DELIVERED", 12_000L, PLAN_ID, "DISPATCHED", null, null);
+                15_000, true, 3_000, "DELIVERED", 12_000L,
+                COURIER_TWO_ID, "Fara", "BICYCLE", PLAN_ID, "DISPATCHED", null, null);
         insertPackage(CANCELLED_ID, REQUEST_ONE_ID, 2, "Annulation avant dispatch",
-                9_000, false, 3_000, "CANCELLED", null, null, "PENDING", null, null);
+                9_000, false, 3_000, "CANCELLED", null,
+                null, null, null, null, "PENDING", null, null);
         insertPackage(RETURN_ID, REQUEST_TWO_ID, 1, "Destinataire retour",
-                18_000, false, 4_000, "RETURN_TO_SENDER", 0L, PLAN_ID, "DISPATCHED",
+                18_000, false, 4_000, "RETURN_TO_SENDER", 0L,
+                COURIER_ONE_ID, "Hery", "MOTO", PLAN_ID, "DISPATCHED",
                 OUTCOME_AT.plusSeconds(3600), null);
         insertPackage(POSTPONED_ID, REQUEST_TWO_ID, 2, "Destinataire reporté",
-                22_000, false, 5_000, "POSTPONED", null, PLAN_ID, "DISPATCHED", null, null);
+                22_000, false, 5_000, "POSTPONED", null,
+                null, null, null, PLAN_ID, "DISPATCHED", null, null);
         insertPackage(SUCCESSOR_ID, SUCCESSOR_REQUEST_ID, 1, "Destinataire reporté",
-                22_000, false, 5_000, null, null, null, "PENDING", null, POSTPONED_ID);
+                22_000, false, 5_000, null, null,
+                null, null, null, null, "PENDING", null, POSTPONED_ID);
 
         insertPlanCourier(COURIER_ONE_ID, "Hery", "MOTO");
         insertPlanCourier(COURIER_TWO_ID, "Fara", "BICYCLE");
@@ -280,6 +297,9 @@ class DailyReportApiIntegrationTest {
             long fee,
             String outcome,
             Long actualCollected,
+            UUID actualCourierId,
+            String actualCourierName,
+            String actualCourierVehicleType,
             UUID dispatchPlanId,
             String technicalStatus,
             Instant returnCompletedAt,
@@ -307,11 +327,15 @@ class DailyReportApiIntegrationTest {
                     UPDATE delivery_package
                     SET final_outcome = ?, actual_collected_ariary = ?,
                         outcome_note = ?, outcome_recorded_at = ?, outcome_recorded_by_account_id = ?,
+                        actual_delivery_courier_id = ?, actual_delivery_courier_name = ?,
+                        actual_delivery_courier_contact = ?, actual_delivery_vehicle_type = ?,
                         return_completed_at = ?, return_completed_by_account_id = ?,
                         dispatch_plan_id = ?, version = 1
                     WHERE id = ?
                     """, outcome, actualCollected, "Compte rendu " + recipient,
                     Timestamp.from(OUTCOME_AT), ADMIN_ID,
+                    actualCourierId, actualCourierName,
+                    actualCourierId == null ? null : "034 00 300 00", actualCourierVehicleType,
                     timestamp(returnCompletedAt), returnCompletedAt == null ? null : ADMIN_ID,
                     dispatchPlanId, packageId);
         }

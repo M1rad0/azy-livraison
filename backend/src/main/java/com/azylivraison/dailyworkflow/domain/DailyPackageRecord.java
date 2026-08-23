@@ -38,6 +38,10 @@ public record DailyPackageRecord(
         UUID dispatchPlanId,
         UUID distributorCourierId,
         String distributorCourierName,
+        UUID actualCourierId,
+        String actualCourierName,
+        String actualCourierContact,
+        String actualCourierVehicleType,
         Instant estimatedDeliveryAt,
         Instant priorityAt,
         long version) {

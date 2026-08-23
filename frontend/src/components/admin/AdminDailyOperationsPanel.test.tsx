@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { DailyOperation, DailyOperationPackage } from '../../api/admin'
+import type { Courier, DailyOperation, DailyOperationPackage } from '../../api/admin'
 import { AdminDailyOperationsPanel } from './AdminDailyOperationsPanel'
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -25,6 +25,8 @@ const packageFixture: DailyOperationPackage = {
   pricingZoneName: 'Centre-ville',
   deliveryFeeAriary: 3_000,
   technicalStatus: 'DISPATCHED',
+  distributorCourierId: 'courier-1',
+  distributorCourierName: 'Hery',
   finalOutcome: null,
   actualCollectedAriary: null,
   finalState: false,
@@ -33,6 +35,21 @@ const packageFixture: DailyOperationPackage = {
   amountToRemitAriary: 0,
   version: 2,
 }
+
+const couriers: Courier[] = [
+  {
+    id: 'courier-1', name: 'Hery', contact: '034 00 000 01', active: true,
+    vehicleType: 'MOTO', effectiveMaxWeightKg: 30, effectiveAverageSpeedKmh: 25,
+    defaultDepartureTime: '06:00:00', departureLocation: { label: 'Analakely', latitude: -18.91, longitude: 47.52 },
+    version: 1, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+  },
+  {
+    id: 'courier-2', name: 'Tiana', contact: '034 00 000 02', active: false,
+    vehicleType: 'BICYCLE', effectiveMaxWeightKg: 10, effectiveAverageSpeedKmh: 12,
+    defaultDepartureTime: '06:30:00', departureLocation: { label: 'Alasora', latitude: -18.96, longitude: 47.57 },
+    version: 2, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-20T00:00:00Z',
+  },
+]
 
 function dayFixture(deliveryPackage: DailyOperationPackage = packageFixture): DailyOperation {
   const finalized = deliveryPackage.finalState ? 1 : 0
@@ -80,6 +97,8 @@ describe('AdminDailyOperationsPanel', () => {
       ...packageFixture,
       finalOutcome: 'DELIVERED' as const,
       actualCollectedAriary: 25_000,
+      actualCourierId: 'courier-2',
+      actualCourierName: 'Tiana',
       finalState: true,
       recoveredAriary: 25_000,
       chargedDeliveryFeeAriary: 3_000,
@@ -91,11 +110,13 @@ describe('AdminDailyOperationsPanel', () => {
       .mockResolvedValueOnce(jsonResponse(dayFixture(updatedPackage)))
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Renseigner' }))
     expect(screen.getByText(/Mobile Money reste informatif/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Montant réellement récupéré/)).toHaveValue(25_000)
+    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('courier-1')
+    fireEvent.change(screen.getByLabelText('Livreur réellement intervenu'), { target: { value: 'courier-2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer cet état' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(
@@ -103,9 +124,89 @@ describe('AdminDailyOperationsPanel', () => {
       '/api/admin/delivery-days/2026-08-24/packages/package-1/outcome',
       expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify({ outcome: 'DELIVERED', actualCollectedAriary: 25_000, note: null, version: 2 }),
+        body: JSON.stringify({ outcome: 'DELIVERED', actualCollectedAriary: 25_000, actualCourierId: 'courier-2', note: null, version: 2 }),
       }),
     ))
+    expect(await screen.findByText('Réalisé par : Tiana')).toBeInTheDocument()
+    expect(screen.getByText('Prévu : Hery')).toBeInTheDocument()
+  })
+
+  it('préremplit une correction avec le livreur réel plutôt que le livreur planifié', async () => {
+    const delivered = {
+      ...packageFixture,
+      finalOutcome: 'DELIVERED' as const,
+      actualCollectedAriary: 25_000,
+      actualCourierId: 'courier-2',
+      actualCourierName: 'Tiana',
+      finalState: true,
+      recoveredAriary: 25_000,
+      chargedDeliveryFeeAriary: 3_000,
+      amountToRemitAriary: 22_000,
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(dayFixture(delivered))))
+
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }))
+
+    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('courier-2')
+    expect(screen.getByText(/Prévu lors du dispatch : Hery/)).toBeInTheDocument()
+  })
+
+  it('efface le livreur réel quand un colis est finalement reporté', async () => {
+    const delivered = {
+      ...packageFixture,
+      finalOutcome: 'DELIVERED' as const,
+      actualCollectedAriary: 25_000,
+      actualCourierId: 'courier-2',
+      actualCourierName: 'Tiana',
+      finalState: true,
+      recoveredAriary: 25_000,
+      chargedDeliveryFeeAriary: 3_000,
+      amountToRemitAriary: 22_000,
+    }
+    const postponed = {
+      ...delivered,
+      finalOutcome: 'POSTPONED' as const,
+      actualCollectedAriary: null,
+      actualCourierId: null,
+      actualCourierName: null,
+      recoveredAriary: 0,
+      chargedDeliveryFeeAriary: 0,
+      amountToRemitAriary: 0,
+      version: 3,
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(dayFixture(delivered)))
+      .mockResolvedValueOnce(jsonResponse(dayFixture(postponed)))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }))
+    fireEvent.click(screen.getByRole('radio', { name: /Reporté/ }))
+    expect(screen.queryByLabelText('Livreur réellement intervenu')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer cet état' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/admin/delivery-days/2026-08-24/packages/package-1/outcome',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ outcome: 'POSTPONED', actualCollectedAriary: null, actualCourierId: null, note: null, version: 2 }),
+      }),
+    ))
+  })
+
+  it('conserve le livreur planifié comme option de secours si les fiches ne sont pas chargées', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(dayFixture())))
+
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={[]} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Renseigner' }))
+
+    expect(screen.getByLabelText('Livreur réellement intervenu')).toHaveValue('courier-1')
+    expect(screen.getByRole('option', { name: 'Hery (fiche indisponible)' })).toBeInTheDocument()
   })
 
   it('interdit la clôture tant qu’un report n’est pas programmé et fige celui déjà transmis', async () => {
@@ -117,7 +218,7 @@ describe('AdminDailyOperationsPanel', () => {
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(dayFixture(postponed))))
 
-    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
 
     expect(await screen.findByText('1 colis reporté reste à programmer')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clôturer la journée' })).toBeDisabled()
@@ -125,7 +226,7 @@ describe('AdminDailyOperationsPanel', () => {
     cleanup()
     const carried = { ...postponed, carriedForwardToPackageId: 'package-next', version: 4 }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(dayFixture(carried))))
-    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
 
     expect(await screen.findByText('Tous les colis ont un état final')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument()
@@ -144,7 +245,7 @@ describe('AdminDailyOperationsPanel', () => {
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(dayFixture(postponed))))
 
-    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
 
     expect(await screen.findByText('Montants réalisés')).toBeInTheDocument()
     expect(screen.queryByText(/25.000 Ar/)).not.toBeInTheDocument()

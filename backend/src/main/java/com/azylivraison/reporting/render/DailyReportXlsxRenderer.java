@@ -180,7 +180,8 @@ public final class DailyReportXlsxRenderer {
         Sheet sheet = workbook.createSheet(sheetName);
         String[] headers = {
             "Colis", "Demande", "N°", "Compte client", "Destinataire", "Contact", "Retrait",
-            "Destination", "Zone", "État final", "Livreur", "Montant prévu (Ar)", "Récupéré (Ar)",
+            "Destination", "Zone", "État final", "Livreur prévu", "Livreur réel",
+            "Montant prévu (Ar)", "Récupéré (Ar)",
             "Frais appliqués (Ar)", "À reverser (Ar)", "Mobile Money (informatif)", "Faritra",
             "Finalisé le", "Retour", "Retourné le", "Nouveau colis", "Reporté au", "Nouveau retrait", "Note"
         };
@@ -199,7 +200,8 @@ public final class DailyReportXlsxRenderer {
             text(row, column++, item.destinationLabel(), styles.body);
             text(row, column++, item.pricingZoneName(), styles.body);
             text(row, column++, item.outcome().frenchLabel(), styles.body);
-            text(row, column++, item.distributorCourierName(), styles.body);
+            text(row, column++, item.plannedCourierName(), styles.body);
+            text(row, column++, actualCourierLabel(item), styles.body);
             money(row, column++, item.expectedAmountToCollectAriary(), styles.money);
             money(row, column++, item.actualAmountCollectedAriary(), styles.money);
             money(row, column++, item.appliedDeliveryFeeAriary(), styles.money);
@@ -216,8 +218,18 @@ public final class DailyReportXlsxRenderer {
             text(row, column, item.outcomeNote(), styles.body);
         }
         finishTable(sheet, headers.length, rowIndex,
-                new int[] {38, 38, 7, 25, 25, 18, 28, 30, 18, 16, 22, 18, 18, 20, 18, 24, 11, 20,
+                new int[] {38, 38, 7, 25, 25, 18, 28, 30, 18, 16, 22, 22, 18, 18, 20, 18, 24, 11, 20,
                     21, 20, 38, 16, 28, 34});
+    }
+
+    private static String actualCourierLabel(PackageLine item) {
+        if (item.actualCourierName() != null && !item.actualCourierName().isBlank()) {
+            return item.actualCourierName();
+        }
+        return item.outcome() == PackageOutcome.DELIVERED
+                || item.outcome() == PackageOutcome.RETURN_TO_SENDER
+                ? "Non renseigné (historique)"
+                : null;
     }
 
     private void title(Sheet sheet, Styles styles, String title, int width) {

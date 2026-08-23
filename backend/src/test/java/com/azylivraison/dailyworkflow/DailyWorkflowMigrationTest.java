@@ -1,6 +1,7 @@
 package com.azylivraison.dailyworkflow;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -61,6 +62,18 @@ class DailyWorkflowMigrationTest {
         insertOutcome(jdbc, firstPlanId, firstPackageId, requestId, "Premier", "ASSIGNED");
         insertOutcome(jdbc, secondPlanId, secondPackageId, requestId, "Second", "UNASSIGNED");
 
+        Flyway.configure()
+                .dataSource(dataSource)
+                .target(MigrationVersion.fromVersion("9"))
+                .load()
+                .migrate();
+        jdbc.update("""
+                UPDATE delivery_package
+                SET final_outcome = 'DELIVERED', actual_collected_ariary = 10000,
+                    outcome_recorded_at = CURRENT_TIMESTAMP,
+                    outcome_recorded_by_account_id = ?
+                WHERE id = ?
+                """, adminId, firstPackageId);
         Flyway.configure().dataSource(dataSource).load().migrate();
 
         assertThat(jdbc.queryForObject("""
@@ -80,6 +93,29 @@ class DailyWorkflowMigrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT unassigned_reason FROM delivery_package WHERE id = ?",
                 String.class, secondPackageId)).contains("historique");
+        assertThat(jdbc.queryForObject(
+                "SELECT actual_delivery_courier_id IS NULL FROM delivery_package WHERE id = ?",
+                Boolean.class, firstPackageId)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT actual_delivery_courier_name IS NULL FROM delivery_package WHERE id = ?",
+                Boolean.class, firstPackageId)).isTrue();
+
+        UUID actualCourierId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO courier_profile (
+                    id, name, vehicle_type, default_departure_time,
+                    departure_latitude, departure_longitude
+                ) VALUES (?, 'Livreur réel', 'MOTO', '06:00:00', -18.92, 47.50)
+                """, actualCourierId);
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE delivery_package
+                SET actual_delivery_courier_id = ?,
+                    actual_delivery_courier_name = 'Livreur réel',
+                    actual_delivery_vehicle_type = 'MOTO'
+                WHERE id = ?
+                """, actualCourierId, secondPackageId))
+                .as("un livreur réel ne peut être enregistré sans issue facturée")
+                .isInstanceOf(RuntimeException.class);
         dataSource.close();
     }
 

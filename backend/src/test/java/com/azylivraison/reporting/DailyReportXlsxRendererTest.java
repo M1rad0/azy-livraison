@@ -32,14 +32,25 @@ class DailyReportXlsxRendererTest {
             Sheet packages = workbook.getSheet("Colis");
             Row deliveredMobileMoney = packages.getRow(1);
             assertThat(deliveredMobileMoney.getCell(4).getStringCellValue()).isEqualTo("Mme Volana");
-            assertThat(deliveredMobileMoney.getCell(12).getNumericCellValue()).isEqualTo(40_000);
-            assertThat(deliveredMobileMoney.getCell(13).getNumericCellValue()).isEqualTo(3_000);
-            assertThat(deliveredMobileMoney.getCell(14).getNumericCellValue()).isEqualTo(37_000);
-            assertThat(deliveredMobileMoney.getCell(15).getStringCellValue()).isEqualTo("Oui");
+            assertThat(deliveredMobileMoney.getCell(10).getStringCellValue()).isEqualTo("Hery");
+            assertThat(deliveredMobileMoney.getCell(11).getStringCellValue()).isEqualTo("Fara");
+            assertThat(deliveredMobileMoney.getCell(13).getNumericCellValue()).isEqualTo(40_000);
+            assertThat(deliveredMobileMoney.getCell(14).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(deliveredMobileMoney.getCell(15).getNumericCellValue()).isEqualTo(37_000);
+            assertThat(deliveredMobileMoney.getCell(16).getStringCellValue()).isEqualTo("Oui");
 
             Row returned = packages.getRow(4);
-            assertThat(returned.getCell(14).getNumericCellValue()).isEqualTo(-4_000);
-            assertThat(returned.getCell(18).getStringCellValue()).isEqualTo("Retourné à l'expéditeur");
+            assertThat(returned.getCell(10).getStringCellValue()).isEqualTo("Fara");
+            assertThat(returned.getCell(11).getStringCellValue()).isEqualTo("Hery");
+            assertThat(returned.getCell(15).getNumericCellValue()).isEqualTo(-4_000);
+            assertThat(returned.getCell(19).getStringCellValue()).isEqualTo("Retourné à l'expéditeur");
+
+            Sheet couriers = workbook.getSheet("Livreurs");
+            assertThat(couriers.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Hery");
+            assertThat(couriers.getRow(1).getCell(4).getNumericCellValue()).isZero();
+            assertThat(couriers.getRow(1).getCell(7).getNumericCellValue()).isEqualTo(1);
+            assertThat(couriers.getRow(2).getCell(0).getStringCellValue()).isEqualTo("Fara");
+            assertThat(couriers.getRow(2).getCell(4).getNumericCellValue()).isEqualTo(1);
         }
     }
 

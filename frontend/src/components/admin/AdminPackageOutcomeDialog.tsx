@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CheckCircle2, ClockArrowUp, PackageX, X } from 'lucide-react'
-import type { DailyOperationPackage, DeliveryPackageOutcome } from '../../api/admin'
+import type { Courier, DailyOperationPackage, DeliveryPackageOutcome } from '../../api/admin'
 import { formatAriary } from './adminHelpers'
 
 type EditableOutcome = Exclude<DeliveryPackageOutcome, 'CANCELLED'>
@@ -19,17 +19,20 @@ const choices: Array<{
 export interface PackageOutcomeInput {
   outcome: EditableOutcome
   actualCollectedAriary?: number | null
+  actualCourierId?: string | null
   note?: string | null
 }
 
 export function AdminPackageOutcomeDialog({
   deliveryPackage,
+  couriers,
   busy,
   error,
   onSave,
   onClose,
 }: {
   deliveryPackage: DailyOperationPackage
+  couriers: Courier[]
   busy: boolean
   error?: string
   onSave: (input: PackageOutcomeInput) => void
@@ -43,8 +46,17 @@ export function AdminPackageOutcomeDialog({
     deliveryPackage.actualCollectedAriary
       ?? (initialOutcome === 'RETURN_TO_SENDER' ? 0 : deliveryPackage.amountToCollectAriary),
   ))
+  const [actualCourierId, setActualCourierId] = useState(
+    deliveryPackage.actualCourierId ?? deliveryPackage.distributorCourierId ?? '',
+  )
   const [note, setNote] = useState(deliveryPackage.outcomeNote ?? '')
   const [validationError, setValidationError] = useState<string>()
+  const courierHelpId = `actual-courier-help-${deliveryPackage.packageId}`
+  const selectedCourierIsMissing = actualCourierId !== ''
+    && !couriers.some((courier) => courier.id === actualCourierId)
+  const missingCourierName = actualCourierId === deliveryPackage.actualCourierId
+    ? deliveryPackage.actualCourierName
+    : deliveryPackage.distributorCourierName
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -71,9 +83,14 @@ export function AdminPackageOutcomeDialog({
       setValidationError('Indiquez un montant réellement récupéré valide, en ariary entiers.')
       return
     }
+    if (needsAmount && !actualCourierId) {
+      setValidationError('Choisissez le livreur réellement intervenu.')
+      return
+    }
     onSave({
       outcome,
       actualCollectedAriary: needsAmount ? parsedAmount : null,
+      actualCourierId: needsAmount ? actualCourierId : null,
       note: note.trim() || null,
     })
   }
@@ -108,6 +125,41 @@ export function AdminPackageOutcomeDialog({
               </label>
             ))}
           </fieldset>
+
+          {outcome !== 'POSTPONED' && (
+            <label className="admin-outcome-field">
+              <span>Livreur réellement intervenu</span>
+              <select
+                aria-label="Livreur réellement intervenu"
+                aria-describedby={courierHelpId}
+                aria-required="true"
+                value={actualCourierId}
+                onChange={(event) => {
+                  setActualCourierId(event.target.value)
+                  setValidationError(undefined)
+                }}
+              >
+                <option value="">Choisir un livreur</option>
+                {selectedCourierIsMissing && (
+                  <option value={actualCourierId}>
+                    {missingCourierName ?? 'Livreur enregistré'} (fiche indisponible)
+                  </option>
+                )}
+                {[...couriers]
+                  .sort((left, right) => Number(right.active) - Number(left.active)
+                    || left.name.localeCompare(right.name, 'fr'))
+                  .map((courier) => (
+                    <option value={courier.id} key={courier.id}>
+                      {courier.name}{courier.active ? '' : ' (inactif)'}
+                    </option>
+                  ))}
+              </select>
+              <small id={courierHelpId}>
+                Prévu lors du dispatch : {deliveryPackage.distributorCourierName ?? 'aucun livreur affecté'}.
+                Modifiez ce choix si une autre personne a réellement effectué la livraison ou la tentative.
+              </small>
+            </label>
+          )}
 
           {outcome !== 'POSTPONED' && (
             <label className="admin-outcome-field">

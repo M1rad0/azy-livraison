@@ -27,6 +27,7 @@ import {
   markReturnCompleted,
   reopenDeliveryDay,
   updateDeliveryPackageOutcome,
+  type Courier,
   type DailyOperation,
   type DailyOperationPackage,
   type DeliveryPackageOutcome,
@@ -137,12 +138,14 @@ function CarryForwardDialog({
 export function AdminDailyOperationsPanel({
   accessToken,
   date,
+  couriers,
   onDateChange,
   onOpenDispatch,
   onChanged,
 }: {
   accessToken: string
   date: string
+  couriers: Courier[]
   onDateChange: (date: string) => void
   onOpenDispatch: () => void
   onChanged: () => void
@@ -190,6 +193,7 @@ export function AdminDailyOperationsPanel({
         deliveryPackage.contact,
         locationLabel(deliveryPackage.destination),
         deliveryPackage.distributorCourierName ?? '',
+        deliveryPackage.actualCourierName ?? '',
       ].some((value) => value.toLocaleLowerCase('fr').includes(normalized))
     }) ?? []
   }, [day, filter, query])
@@ -358,7 +362,24 @@ export function AdminDailyOperationsPanel({
               {visiblePackages.map((deliveryPackage) => (
                 <article className="admin-day-package" key={deliveryPackage.packageId}>
                   <div className="admin-day-package__identity"><span>{deliveryPackage.sequenceNumber}</span><div><small>{deliveryPackage.ownerDisplayName}</small><strong>{deliveryPackage.recipientName}</strong><em>{deliveryPackage.contact}</em></div></div>
-                  <div><small>Livraison</small><strong><MapPin aria-hidden="true" />{locationLabel(deliveryPackage.destination)}</strong><em>{deliveryPackage.distributorCourierName ?? 'Livreur non affecté'}{deliveryPackage.estimatedDeliveryAt ? ` · ${formatTime(deliveryPackage.estimatedDeliveryAt)}` : ''}</em></div>
+                  <div>
+                    <small>Livraison</small>
+                    <strong><MapPin aria-hidden="true" />{locationLabel(deliveryPackage.destination)}</strong>
+                    {deliveryPackage.finalOutcome === 'DELIVERED' || deliveryPackage.finalOutcome === 'RETURN_TO_SENDER' ? (
+                      <>
+                        <em>Réalisé par : {deliveryPackage.actualCourierName ?? 'Non renseigné — historique'}</em>
+                        {deliveryPackage.distributorCourierId === deliveryPackage.actualCourierId
+                          ? deliveryPackage.estimatedDeliveryAt && (
+                            <em>Passage prévu à {formatTime(deliveryPackage.estimatedDeliveryAt)}</em>
+                          )
+                          : deliveryPackage.distributorCourierName && (
+                            <em>Prévu : {deliveryPackage.distributorCourierName}{deliveryPackage.estimatedDeliveryAt ? ` · ${formatTime(deliveryPackage.estimatedDeliveryAt)}` : ''}</em>
+                          )}
+                      </>
+                    ) : (
+                      <em>Prévu : {deliveryPackage.distributorCourierName ?? 'livreur non affecté'}{deliveryPackage.estimatedDeliveryAt ? ` · ${formatTime(deliveryPackage.estimatedDeliveryAt)}` : ''}</em>
+                    )}
+                  </div>
                   <div><small>{deliveryPackage.finalState ? 'Montants réalisés' : 'Montants prévus'}</small><strong>{formatAriary(deliveryPackage.finalState ? deliveryPackage.recoveredAriary : deliveryPackage.amountToCollectAriary)}</strong><em>{deliveryPackage.mobileMoneyPaid ? 'Mobile Money signalé · ' : ''}frais {formatAriary(deliveryPackage.finalState ? deliveryPackage.chargedDeliveryFeeAriary : (deliveryPackage.deliveryFeeAriary ?? 0))}</em></div>
                   <div className="admin-day-package__outcome">
                     <small>Situation</small>
@@ -418,7 +439,7 @@ export function AdminDailyOperationsPanel({
         </>
       ) : null}
 
-      {editingPackage && <AdminPackageOutcomeDialog deliveryPackage={editingPackage} busy={busyAction === `outcome:${editingPackage.packageId}`} error={dialogError} onClose={() => setEditingPackage(undefined)} onSave={(input) => void saveOutcome(input)} />}
+      {editingPackage && <AdminPackageOutcomeDialog deliveryPackage={editingPackage} couriers={couriers} busy={busyAction === `outcome:${editingPackage.packageId}`} error={dialogError} onClose={() => setEditingPackage(undefined)} onSave={(input) => void saveOutcome(input)} />}
       {carryPackage && <CarryForwardDialog accessToken={accessToken} deliveryPackage={carryPackage} busy={busyAction === `carry:${carryPackage.packageId}`} error={dialogError} onClose={() => setCarryPackage(undefined)} onConfirm={(pickup) => void carryForward(pickup)} />}
       {closing && <ConfirmDialog title="Clôturer cette journée ?" confirmLabel="Clôturer et activer les rapports" busy={busyAction === 'close'} onClose={() => setClosing(false)} onConfirm={() => void closeDay()}><p>Les {day?.counts.total ?? 0} colis ont un état final. Le compte rendu sera verrouillé et les rapports financiers deviendront téléchargeables.</p></ConfirmDialog>}
       {reopening && <ConfirmDialog title="Rouvrir cette journée ?" confirmLabel="Rouvrir la journée" busy={busyAction === 'reopen'} danger onClose={() => { setReopening(false); setDialogError(undefined) }} onConfirm={() => void reopenDay()}><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={reopenReason} placeholder="Ex. Corriger le montant récupéré d’un colis" onChange={(event) => setReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}

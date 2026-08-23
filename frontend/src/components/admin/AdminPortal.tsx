@@ -213,6 +213,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
         <AdminDailyOperationsPanel
           accessToken={accessToken}
           date={dispatchDate}
+          couriers={couriers}
           onDateChange={(date) => setDispatchDate(date)}
           onOpenDispatch={() => setTab('dispatch')}
           onChanged={() => {

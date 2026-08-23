@@ -50,8 +50,7 @@ public class DailyReportRepository {
                 packages,
                 context,
                 clientIdentities(accountIds),
-                successors(sourcePackageIds),
-                couriers(day.serviceDate()));
+                successors(sourcePackageIds));
     }
 
     private ReportContext context(OperationDay day) {
@@ -115,45 +114,17 @@ public class DailyReportRepository {
         return Map.copyOf(successors);
     }
 
-    private List<CourierIdentity> couriers(LocalDate serviceDate) {
-        return jdbcTemplate.query("""
-                SELECT courier_id, courier_name, courier_contact, vehicle_type
-                FROM (
-                    SELECT courier.courier_id, courier.courier_name,
-                           courier.courier_contact, courier.vehicle_type,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY courier.courier_id
-                               ORDER BY plan.created_at DESC, plan.id DESC
-                           ) AS courier_snapshot_rank
-                    FROM dispatch_plan_courier courier
-                    JOIN dispatch_plan plan ON plan.id = courier.dispatch_plan_id
-                    WHERE plan.service_date = :serviceDate
-                      AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
-                      AND courier.used = TRUE
-                ) ranked_courier
-                WHERE courier_snapshot_rank = 1
-                ORDER BY courier_name, courier_id
-                """, Map.of("serviceDate", serviceDate),
-                (resultSet, rowNumber) -> new CourierIdentity(
-                        resultSet.getObject("courier_id", UUID.class),
-                        resultSet.getString("courier_name"),
-                        resultSet.getString("courier_contact"),
-                        resultSet.getString("vehicle_type")));
-    }
-
     public record ReportSource(
             OperationDay day,
             List<DailyPackageRecord> packages,
             ReportContext context,
             Map<UUID, ClientIdentity> clientIdentities,
-            Map<UUID, SuccessorDetails> successors,
-            List<CourierIdentity> couriers) {
+            Map<UUID, SuccessorDetails> successors) {
 
         public ReportSource {
             packages = List.copyOf(packages);
             clientIdentities = Map.copyOf(clientIdentities);
             successors = Map.copyOf(successors);
-            couriers = List.copyOf(couriers);
         }
     }
 
@@ -173,10 +144,4 @@ public class DailyReportRepository {
             String pickupLabel) {
     }
 
-    public record CourierIdentity(
-            UUID courierId,
-            String displayName,
-            String contact,
-            String vehicleType) {
-    }
 }

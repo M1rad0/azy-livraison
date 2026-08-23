@@ -9,6 +9,7 @@ import com.azylivraison.dailyworkflow.domain.OperationDay;
 import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CarryForwardIds;
+import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CourierSnapshot;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.PackageForUpdate;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.SettingsSnapshot;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
@@ -53,6 +54,7 @@ public class DailyWorkflowService {
             UUID packageId,
             DeliveryPackageOutcome outcome,
             Long actualCollectedAriary,
+            UUID actualCourierId,
             String note,
             long expectedVersion,
             UUID actorAccountId) {
@@ -86,10 +88,35 @@ public class DailyWorkflowService {
             throw new DailyWorkflowConflictException(
                     "Le tarif de livraison de ce colis est absent. Corrigez-le avant la clôture.");
         }
+        boolean actualCourierRequired = outcome == DeliveryPackageOutcome.DELIVERED
+                || outcome == DeliveryPackageOutcome.RETURN_TO_SENDER;
+        if (actualCourierRequired && actualCourierId == null) {
+            throw new DailyWorkflowInputException(
+                    "Indiquez le livreur réellement intervenu pour ce colis.");
+        }
+        if (!actualCourierRequired && actualCourierId != null) {
+            throw new DailyWorkflowInputException(
+                    "Un colis reporté ne doit pas avoir de livreur réel pour cette journée.");
+        }
+        CourierSnapshot actualCourier = null;
+        if (actualCourierId != null) {
+            if (actualCourierId.equals(deliveryPackage.actualCourierId())) {
+                actualCourier = new CourierSnapshot(
+                        deliveryPackage.actualCourierId(),
+                        deliveryPackage.actualCourierName(),
+                        deliveryPackage.actualCourierContact(),
+                        deliveryPackage.actualCourierVehicleType());
+            } else {
+                actualCourier = repository.findCourierSnapshot(actualCourierId)
+                        .orElseThrow(() -> new DailyWorkflowInputException(
+                                "Le livreur réellement intervenu est introuvable."));
+            }
+        }
         repository.updateOutcome(
                 deliveryPackage,
                 outcome,
                 recovered,
+                actualCourier,
                 normalizeNullable(note),
                 actorAccountId,
                 Instant.now());
@@ -169,6 +196,13 @@ public class DailyWorkflowService {
             throw new DailyWorkflowConflictException(
                     "Attribuez un état final aux " + incomplete
                             + " colis restant" + (incomplete > 1 ? "s" : "") + " avant la clôture.");
+        }
+        int missingActualCouriers = repository.missingActualCourierDayPackageCount(serviceDate);
+        if (missingActualCouriers > 0) {
+            throw new DailyWorkflowConflictException(
+                    "Indiquez le livreur réellement intervenu pour " + missingActualCouriers
+                            + " colis facturé" + (missingActualCouriers > 1 ? "s" : "")
+                            + " avant la clôture.");
         }
         int notCarried = repository.uncarriedPostponedDayPackageCount(serviceDate);
         if (notCarried > 0) {

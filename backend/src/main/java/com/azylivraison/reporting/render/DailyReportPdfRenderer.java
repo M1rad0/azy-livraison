@@ -134,7 +134,7 @@ public final class DailyReportPdfRenderer {
 
     private void writeCouriers(PdfWriter writer, List<CourierSummary> couriers) throws IOException {
         if (couriers.isEmpty()) return;
-        writer.section("Livreurs");
+        writer.section("Livreurs réels");
         for (CourierSummary courier : couriers) {
             String contact = joinNonBlank(" · ", courier.vehicleType(), courier.contact());
             writer.row(text(courier.displayName()), contact,
@@ -157,7 +157,8 @@ public final class DailyReportPdfRenderer {
             String route = text(item.pickupLabel()) + " → " + text(item.destinationLabel());
             String assignment = joinNonBlank(" · ", text(item.clientDisplayName()),
                     item.recipientContact() == null ? null : "Contact : " + item.recipientContact(),
-                    item.distributorCourierName() == null ? null : "Livreur : " + item.distributorCourierName());
+                    item.plannedCourierName() == null ? null : "Livreur prévu : " + item.plannedCourierName(),
+                    actualCourierLabel(item));
             String finance = "Prévu " + ariary(item.expectedAmountToCollectAriary())
                     + " · Récupéré " + ariary(item.actualAmountCollectedAriary())
                     + " · Frais " + ariary(item.appliedDeliveryFeeAriary())
@@ -190,6 +191,16 @@ public final class DailyReportPdfRenderer {
         synchronized (INTEGER) {
             return INTEGER.format(value) + " Ar";
         }
+    }
+
+    private static String actualCourierLabel(PackageLine item) {
+        if (item.actualCourierName() != null && !item.actualCourierName().isBlank()) {
+            return "Livreur réel : " + item.actualCourierName();
+        }
+        return item.outcome() == PackageOutcome.DELIVERED
+                || item.outcome() == PackageOutcome.RETURN_TO_SENDER
+                ? "Livreur réel : Non renseigné (historique)"
+                : null;
     }
 
     private static String formatDateTime(Instant instant) {

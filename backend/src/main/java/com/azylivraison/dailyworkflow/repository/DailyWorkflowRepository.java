@@ -78,6 +78,8 @@ public class DailyWorkflowRepository {
                        successor.id AS carried_forward_to_package_id,
                        p.dispatch_plan_id, outcome.distributor_courier_id,
                        courier.courier_name AS distributor_courier_name,
+                       p.actual_delivery_courier_id, p.actual_delivery_courier_name,
+                       p.actual_delivery_courier_contact, p.actual_delivery_vehicle_type,
                        outcome.estimated_delivery_at, p.priority_at, p.version
                 FROM delivery_package p
                 JOIN delivery_request dr ON dr.id = p.delivery_request_id
@@ -157,6 +159,10 @@ public class DailyWorkflowRepository {
                     outcome_note = NULL,
                     outcome_recorded_at = ?,
                     outcome_recorded_by_account_id = ?,
+                    actual_delivery_courier_id = NULL,
+                    actual_delivery_courier_name = NULL,
+                    actual_delivery_courier_contact = NULL,
+                    actual_delivery_vehicle_type = NULL,
                     return_completed_at = NULL,
                     return_completed_by_account_id = NULL,
                     version = version + 1,
@@ -181,6 +187,7 @@ public class DailyWorkflowRepository {
             PackageForUpdate source,
             DeliveryPackageOutcome outcome,
             Long actualCollectedAriary,
+            CourierSnapshot actualCourier,
             String note,
             UUID actorAccountId,
             Instant now) {
@@ -191,6 +198,10 @@ public class DailyWorkflowRepository {
                     outcome_note = ?,
                     outcome_recorded_at = ?,
                     outcome_recorded_by_account_id = ?,
+                    actual_delivery_courier_id = ?,
+                    actual_delivery_courier_name = ?,
+                    actual_delivery_courier_contact = ?,
+                    actual_delivery_vehicle_type = ?,
                     return_completed_at = CASE
                         WHEN ? = 'RETURN_TO_SENDER' THEN return_completed_at ELSE NULL END,
                     return_completed_by_account_id = CASE
@@ -201,6 +212,10 @@ public class DailyWorkflowRepository {
                 """,
                 outcome.name(), actualCollectedAriary, note,
                 timestamp(now), actorAccountId,
+                actualCourier == null ? null : actualCourier.courierId(),
+                actualCourier == null ? null : actualCourier.name(),
+                actualCourier == null ? null : actualCourier.contact(),
+                actualCourier == null ? null : actualCourier.vehicleType(),
                 outcome.name(), outcome.name(), timestamp(now), source.packageId());
         insertDeliveryEvent(
                 source,
@@ -209,8 +224,28 @@ public class DailyWorkflowRepository {
                 outcome.name(),
                 actorAccountId,
                 "{\"actualCollectedAriary\":" + (actualCollectedAriary == null ? "null" : actualCollectedAriary)
+                        + ",\"actualCourierId\":"
+                        + (actualCourier == null ? "null" : "\"" + actualCourier.courierId() + "\"")
+                        + ",\"actualCourierName\":"
+                        + jsonString(actualCourier == null ? null : actualCourier.name())
+                        + ",\"actualCourierContact\":"
+                        + jsonString(actualCourier == null ? null : actualCourier.contact())
+                        + ",\"actualCourierVehicleType\":"
+                        + jsonString(actualCourier == null ? null : actualCourier.vehicleType())
                         + "}",
                 now);
+    }
+
+    public Optional<CourierSnapshot> findCourierSnapshot(UUID courierId) {
+        return jdbcTemplate.query("""
+                SELECT id, name, contact, vehicle_type
+                FROM courier_profile
+                WHERE id = ?
+                """, (resultSet, rowNumber) -> new CourierSnapshot(
+                resultSet.getObject("id", UUID.class),
+                resultSet.getString("name"),
+                resultSet.getString("contact"),
+                resultSet.getString("vehicle_type")), courierId).stream().findFirst();
     }
 
     public void markReturnCompleted(PackageForUpdate source, UUID actorAccountId, Instant now) {
@@ -251,6 +286,19 @@ public class DailyWorkflowRepository {
                       FROM delivery_package successor
                       WHERE successor.carried_forward_from_package_id = source.id
                   )
+                """, Integer.class, Date.valueOf(serviceDate));
+        return count == null ? 0 : count;
+    }
+
+    public int missingActualCourierDayPackageCount(LocalDate serviceDate) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM delivery_package package
+                JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
+                WHERE plan.service_date = ?
+                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND package.final_outcome IN ('DELIVERED', 'RETURN_TO_SENDER')
+                  AND package.actual_delivery_courier_id IS NULL
                 """, Integer.class, Date.valueOf(serviceDate));
         return count == null ? 0 : count;
     }
@@ -477,6 +525,10 @@ public class DailyWorkflowRepository {
                 resultSet.getObject("dispatch_plan_id", UUID.class),
                 resultSet.getObject("distributor_courier_id", UUID.class),
                 resultSet.getString("distributor_courier_name"),
+                resultSet.getObject("actual_delivery_courier_id", UUID.class),
+                resultSet.getString("actual_delivery_courier_name"),
+                resultSet.getString("actual_delivery_courier_contact"),
+                resultSet.getString("actual_delivery_vehicle_type"),
                 instant(resultSet, "estimated_delivery_at"),
                 instant(resultSet, "priority_at"),
                 resultSet.getLong("version"));
@@ -511,6 +563,10 @@ public class DailyWorkflowRepository {
                 DeliveryPackageStatus.valueOf(resultSet.getString("status")),
                 finalOutcome == null ? null : DeliveryPackageOutcome.valueOf(finalOutcome),
                 nullableLong(resultSet, "actual_collected_ariary"),
+                resultSet.getObject("actual_delivery_courier_id", UUID.class),
+                resultSet.getString("actual_delivery_courier_name"),
+                resultSet.getString("actual_delivery_courier_contact"),
+                resultSet.getString("actual_delivery_vehicle_type"),
                 instant(resultSet, "return_completed_at"),
                 resultSet.getObject("dispatch_plan_id", UUID.class),
                 instant(resultSet, "priority_at"),
@@ -544,10 +600,17 @@ public class DailyWorkflowRepository {
                 .replace("\n", "\\n").replace("\r", "\\r");
     }
 
+    private String jsonString(String value) {
+        return value == null ? "null" : "\"" + jsonEscape(value) + "\"";
+    }
+
     public record SettingsSnapshot(int dailyPackageLimit, BigDecimal defaultPackageWeightKg) {
     }
 
     public record CarryForwardIds(UUID requestId, UUID packageId, LocalDate requestedDate) {
+    }
+
+    public record CourierSnapshot(UUID courierId, String name, String contact, String vehicleType) {
     }
 
     public record PackageForUpdate(
@@ -573,6 +636,10 @@ public class DailyWorkflowRepository {
             DeliveryPackageStatus technicalStatus,
             DeliveryPackageOutcome finalOutcome,
             Long actualCollectedAriary,
+            UUID actualCourierId,
+            String actualCourierName,
+            String actualCourierContact,
+            String actualCourierVehicleType,
             Instant returnCompletedAt,
             UUID dispatchPlanId,
             Instant priorityAt,

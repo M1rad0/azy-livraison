@@ -59,6 +59,7 @@ public class AdminDailyWorkflowController {
                 packageId,
                 request.outcome(),
                 request.actualCollectedAriary(),
+                request.actualCourierId(),
                 request.note(),
                 request.version(),
                 accountId(jwt)));

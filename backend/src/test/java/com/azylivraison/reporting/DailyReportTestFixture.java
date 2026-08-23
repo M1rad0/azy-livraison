@@ -49,9 +49,9 @@ final class DailyReportTestFixture {
                         new ClientSummary(CLIENT_TWO_ID, "Maison Soa", "soa", "032 00 000 02", clientTwo)),
                 List.of(
                         new CourierSummary(COURIER_ONE_ID, "Hery", "033 00 000 03", "Moto",
-                                new Totals(1, 1, 0, 0, 0, 0, 40_000, 3_000, 37_000)),
+                                new Totals(1, 0, 0, 0, 1, 1, 0, 4_000, -4_000)),
                         new CourierSummary(COURIER_TWO_ID, "Fara", "034 00 000 04", "Bicyclette",
-                                new Totals(1, 0, 0, 0, 1, 1, 0, 4_000, -4_000))),
+                                new Totals(1, 1, 0, 0, 0, 0, 40_000, 3_000, 37_000))),
                 List.of(deliveredMobileMoney(), cancelled(), postponed(), returned()));
     }
 
@@ -70,6 +70,8 @@ final class DailyReportTestFixture {
                 PackageOutcome.DELIVERED,
                 COURIER_ONE_ID,
                 "Hery",
+                COURIER_TWO_ID,
+                "Fara",
                 45_000,
                 40_000,
                 3_000,
@@ -98,6 +100,8 @@ final class DailyReportTestFixture {
                 "Ankorondrano",
                 "Périphérie",
                 PackageOutcome.CANCELLED,
+                null,
+                null,
                 null,
                 null,
                 12_000,
@@ -130,6 +134,8 @@ final class DailyReportTestFixture {
                 PackageOutcome.POSTPONED,
                 COURIER_TWO_ID,
                 "Fara",
+                null,
+                null,
                 20_000,
                 0,
                 0,
@@ -160,6 +166,8 @@ final class DailyReportTestFixture {
                 PackageOutcome.RETURN_TO_SENDER,
                 COURIER_TWO_ID,
                 "Fara",
+                COURIER_ONE_ID,
+                "Hery",
                 15_000,
                 0,
                 4_000,

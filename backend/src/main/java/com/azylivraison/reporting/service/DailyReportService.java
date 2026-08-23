@@ -26,7 +26,6 @@ import com.azylivraison.reporting.render.DailyReportPdfRenderer;
 import com.azylivraison.reporting.render.DailyReportXlsxRenderer;
 import com.azylivraison.reporting.repository.DailyReportRepository;
 import com.azylivraison.reporting.repository.DailyReportRepository.ClientIdentity;
-import com.azylivraison.reporting.repository.DailyReportRepository.CourierIdentity;
 import com.azylivraison.reporting.repository.DailyReportRepository.ReportSource;
 import com.azylivraison.reporting.repository.DailyReportRepository.SuccessorDetails;
 
@@ -103,6 +102,7 @@ public class DailyReportService {
             reportIdentity.append('|').append(deliveryPackage.packageId())
                     .append(':').append(deliveryPackage.finalOutcome())
                     .append(':').append(deliveryPackage.actualCollectedAriary())
+                    .append(':').append(deliveryPackage.actualCourierId())
                     .append(':').append(deliveryPackage.returnCompletedAt())
                     .append(':').append(deliveryPackage.carriedForwardToPackageId());
         }
@@ -151,28 +151,21 @@ public class DailyReportService {
     private List<CourierSummary> courierSummaries(ReportSource source) {
         Map<UUID, List<DailyPackageRecord>> byCourier = new LinkedHashMap<>();
         for (DailyPackageRecord deliveryPackage : source.packages()) {
-            if (deliveryPackage.distributorCourierId() != null) {
-                byCourier.computeIfAbsent(deliveryPackage.distributorCourierId(), ignored -> new ArrayList<>())
+            if (deliveryPackage.actualCourierId() != null) {
+                byCourier.computeIfAbsent(deliveryPackage.actualCourierId(), ignored -> new ArrayList<>())
                         .add(deliveryPackage);
             }
         }
 
-        Map<UUID, CourierIdentity> identities = new LinkedHashMap<>();
-        for (CourierIdentity courier : source.couriers()) identities.put(courier.courierId(), courier);
-        for (Map.Entry<UUID, List<DailyPackageRecord>> entry : byCourier.entrySet()) {
-            DailyPackageRecord first = entry.getValue().getFirst();
-            identities.putIfAbsent(entry.getKey(), new CourierIdentity(
-                    entry.getKey(), first.distributorCourierName(), null, null));
-        }
-
         List<CourierSummary> couriers = new ArrayList<>();
-        for (CourierIdentity identity : identities.values()) {
-            List<DailyPackageRecord> packages = byCourier.getOrDefault(identity.courierId(), List.of());
+        for (Map.Entry<UUID, List<DailyPackageRecord>> entry : byCourier.entrySet()) {
+            List<DailyPackageRecord> packages = entry.getValue();
+            DailyPackageRecord first = packages.getFirst();
             couriers.add(new CourierSummary(
-                    identity.courierId(),
-                    identity.displayName(),
-                    identity.contact(),
-                    vehicleLabel(identity.vehicleType()),
+                    entry.getKey(),
+                    first.actualCourierName(),
+                    first.actualCourierContact(),
+                    vehicleLabel(first.actualCourierVehicleType()),
                     totals(packages)));
         }
         return List.copyOf(couriers);
@@ -205,6 +198,8 @@ public class DailyReportService {
                 PackageOutcome.valueOf(deliveryPackage.finalOutcome().name()),
                 deliveryPackage.distributorCourierId(),
                 deliveryPackage.distributorCourierName(),
+                deliveryPackage.actualCourierId(),
+                deliveryPackage.actualCourierName(),
                 deliveryPackage.amountToCollectAriary(),
                 deliveryPackage.recoveredAriary(),
                 deliveryPackage.chargedDeliveryFeeAriary(),

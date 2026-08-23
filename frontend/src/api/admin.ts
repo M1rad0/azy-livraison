@@ -293,6 +293,10 @@ export interface DailyOperationPackage {
   dispatchPlanId?: string | null
   distributorCourierId?: string | null
   distributorCourierName?: string | null
+  actualCourierId?: string | null
+  actualCourierName?: string | null
+  actualCourierContact?: string | null
+  actualCourierVehicleType?: VehicleType | null
   estimatedDeliveryAt?: string | null
   finalState: boolean
   recoveredAriary: number
@@ -493,6 +497,7 @@ export function updateDeliveryPackageOutcome(
   input: {
     outcome: Exclude<DeliveryPackageOutcome, 'CANCELLED'>
     actualCollectedAriary?: number | null
+    actualCourierId?: string | null
     note?: string | null
     version: number
   },

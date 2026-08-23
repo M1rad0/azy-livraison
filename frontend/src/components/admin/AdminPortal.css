@@ -1387,8 +1387,8 @@
 .admin-outcome-choices strong { font-size: .7rem; }
 .admin-outcome-choices small { color: var(--admin-ink-soft); font-size: .59rem; }
 .admin-outcome-field { display: flex; flex-direction: column; gap: .3rem; }
-.admin-outcome-field input, .admin-outcome-field textarea { width: 100%; padding: .65rem .7rem; color: var(--admin-navy); background: #f8fafc; border: 1px solid var(--admin-line); border-radius: .7rem; outline: 0; resize: vertical; }
-.admin-outcome-field input:focus, .admin-outcome-field textarea:focus { border-color: var(--admin-orange); box-shadow: 0 0 0 3px rgba(244,91,11,.1); }
+.admin-outcome-field input, .admin-outcome-field select, .admin-outcome-field textarea { width: 100%; padding: .65rem .7rem; color: var(--admin-navy); background: #f8fafc; border: 1px solid var(--admin-line); border-radius: .7rem; outline: 0; resize: vertical; }
+.admin-outcome-field input:focus, .admin-outcome-field select:focus, .admin-outcome-field textarea:focus { border-color: var(--admin-orange); box-shadow: 0 0 0 3px rgba(244,91,11,.1); }
 .admin-outcome-field > small { color: var(--admin-ink-soft); font-size: .58rem; }
 .admin-outcome-projection { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: .5rem; padding: .65rem; color: var(--admin-navy); background: var(--admin-blue-soft); border-radius: .75rem; }
 .admin-outcome-projection > div { display: flex; flex-direction: column; }

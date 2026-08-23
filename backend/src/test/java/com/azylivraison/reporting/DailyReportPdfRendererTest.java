@@ -38,6 +38,9 @@ class DailyReportPdfRendererTest {
                     .contains("40 000 Ar")
                     .contains("Total à reverser")
                     .contains("33 000 Ar")
+                    .contains("Livreurs réels")
+                    .contains("Livreur prévu : Hery")
+                    .contains("Livreur réel : Fara")
                     .contains("Mobile Money (informatif)")
                     .contains("Retourné à l'expéditeur");
         }
