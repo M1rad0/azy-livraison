@@ -6,12 +6,18 @@ import java.util.UUID;
 
 import com.azylivraison.dispatch.domain.DispatchPlanRecord;
 import com.azylivraison.dispatch.domain.DispatchStatus;
+import com.azylivraison.dispatch.domain.DispatchMode;
 import com.azylivraison.planning.domain.Location;
 
 public record DispatchPlanSummaryResponse(
         UUID id,
         LocalDate serviceDate,
         DispatchStatus status,
+        int revision,
+        DispatchMode mode,
+        long version,
+        UUID supersedesPlanId,
+        boolean editable,
         String strategy,
         Location hub,
         int selectedPackageCount,
@@ -27,13 +33,21 @@ public record DispatchPlanSummaryResponse(
         String failureCode,
         String failureMessage,
         Instant createdAt,
-        Instant completedProcessingAt) {
+        Instant completedProcessingAt,
+        Instant archivedAt,
+        UUID archivedByAccountId,
+        String archiveReason) {
 
-    static DispatchPlanSummaryResponse from(DispatchPlanRecord plan) {
+    static DispatchPlanSummaryResponse from(DispatchPlanRecord plan, boolean editable) {
         return new DispatchPlanSummaryResponse(
                 plan.id(),
                 plan.serviceDate(),
                 plan.status(),
+                plan.revision(),
+                plan.mode(),
+                plan.version(),
+                plan.supersedesPlanId(),
+                editable,
                 "VIA_HUB",
                 plan.hub(),
                 plan.selectedPackageCount(),
@@ -49,6 +63,9 @@ public record DispatchPlanSummaryResponse(
                 plan.failureCode(),
                 plan.failureMessage(),
                 plan.createdAt(),
-                plan.completedProcessingAt());
+                plan.completedProcessingAt(),
+                plan.archivedAt(),
+                plan.archivedByAccountId(),
+                plan.archiveReason());
     }
 }

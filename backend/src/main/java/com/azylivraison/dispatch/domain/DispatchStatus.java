@@ -4,5 +4,7 @@ public enum DispatchStatus {
     GENERATING,
     READY,
     READY_WITH_WARNINGS,
-    FAILED
+    FAILED,
+    CANCELLED,
+    SUPERSEDED
 }

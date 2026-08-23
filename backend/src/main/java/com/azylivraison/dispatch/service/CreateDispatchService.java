@@ -182,9 +182,22 @@ public class CreateDispatchService {
         validateOptimizationTimeLimit(settings.optimizationTimeLimitSeconds());
         Location hub = resolvedHub(command.hubOverride(), settings.defaultHub());
         List<SelectedCourierSnapshot> couriers = selectedCouriers(command.serviceDate(), command.courierIds());
-        List<DispatchSourcePackage> packages = dispatchSourceRepository.findPending(command.serviceDate());
+        List<DispatchSourcePackage> packages = dispatchSourceRepository.findPending(
+                command.serviceDate(), command.packageIds());
         if (packages.isEmpty()) {
             throw new DispatchInputException("Aucun colis en attente n'est disponible pour cette date.");
+        }
+        if (command.packageIds() != null && packages.size() != command.packageIds().size()) {
+            Set<UUID> available = packages.stream()
+                    .map(DispatchSourcePackage::packageId)
+                    .collect(Collectors.toSet());
+            List<UUID> unavailable = command.packageIds().stream()
+                    .filter(id -> !available.contains(id))
+                    .toList();
+            throw new DispatchConflictException(
+                    "La cohorte du plan ne peut plus être régénérée : " + unavailable.size()
+                            + " colis ne sont plus en attente ou admissibles ("
+                            + unavailable.stream().map(UUID::toString).collect(Collectors.joining(", ")) + ").");
         }
         validateMatrixSize(couriers, packages);
 
@@ -196,7 +209,7 @@ public class CreateDispatchService {
                 plan,
                 packages,
                 settings.version(),
-                true));
+                command.packageIds() == null));
         String policyJson = writeJson(policySnapshot);
 
         dispatchPlanRepository.createGenerating(
@@ -605,6 +618,15 @@ public class CreateDispatchService {
             throw new DispatchInputException("La clé de sécurité du dispatch est absente ou invalide.");
         }
         if (command.courierIds().isEmpty()) throw new DispatchInputException("Sélectionnez au moins un livreur.");
+        if (command.packageIds() != null) {
+            if (command.packageIds().isEmpty()) {
+                throw new DispatchInputException("La cohorte de colis à régénérer est vide.");
+            }
+            if (command.packageIds().stream().anyMatch(Objects::isNull)
+                    || command.packageIds().stream().distinct().count() != command.packageIds().size()) {
+                throw new DispatchInputException("La cohorte de colis à régénérer est invalide.");
+            }
+        }
         if (command.hubOverride() != null) {
             requireCoordinates(command.hubOverride(), "Confirmez le point de ralliement sur la carte.");
         }
@@ -620,7 +642,10 @@ public class CreateDispatchService {
     private String requestHash(CreateDispatchCommand command) {
         String couriers = command.courierIds().stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
         Location hub = command.hubOverride();
-        String canonical = command.serviceDate() + "\n" + couriers + "\nALL_ELIGIBLE\n"
+        String packages = command.packageIds() == null
+                ? "ALL_ELIGIBLE"
+                : command.packageIds().stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
+        String canonical = command.serviceDate() + "\n" + couriers + "\n" + packages + "\n"
                 + (hub == null ? "DEFAULT_HUB" : hub.latitude() + "," + hub.longitude() + ","
                         + Objects.toString(hub.label(), "") + "," + Objects.toString(hub.destinationQuery(), ""));
         try {
@@ -645,7 +670,12 @@ public class CreateDispatchService {
                 readJson(plan.resultJson(), OptimizationResult.class),
                 readJson(plan.hubExecutionJson(), HubExecution.class),
                 readJson(plan.metricsJson(), StrategyMetrics.class),
-                dispatchPlanRepository.findPackageOutcomes(plan.id()));
+                plan.editable()
+                        && dispatchPlanRepository.isActiveOperationPlan(plan.id())
+                        && dispatchPlanRepository.countFinalOutcomes(plan.id()) == 0,
+                dispatchPlanRepository.findPackageOutcomes(plan.id()),
+                dispatchPlanRepository.findCouriers(plan.id()),
+                dispatchPlanRepository.findStops(plan.id()));
     }
 
     private String writeJson(Object value) {

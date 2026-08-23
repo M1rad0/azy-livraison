@@ -13,9 +13,14 @@ public record DispatchPlanDetails(
         OptimizationResult result,
         HubExecution hubExecution,
         StrategyMetrics metrics,
-        List<DispatchPackageOutcome> packages) {
+        boolean editable,
+        List<DispatchPackageOutcome> packages,
+        List<DispatchPlanCourierSnapshot> couriers,
+        List<DispatchStop> stops) {
 
     public DispatchPlanDetails {
         packages = List.copyOf(packages);
+        couriers = List.copyOf(couriers);
+        stops = List.copyOf(stops);
     }
 }

@@ -58,9 +58,19 @@ public class DispatchSourceRepository {
     }
 
     public List<DispatchSourcePackage> findPending(LocalDate serviceDate) {
+        return findPending(serviceDate, null);
+    }
+
+    public List<DispatchSourcePackage> findPending(LocalDate serviceDate, List<UUID> packageIds) {
         MapSqlParameterSource parameters = new MapSqlParameterSource("serviceDate", serviceDate);
+        String selection = "";
+        if (packageIds != null) {
+            parameters.addValue("packageIds", packageIds);
+            selection = " AND p.id IN (:packageIds)";
+        }
         return jdbcTemplate.query(
-                SELECT_PENDING + " ORDER BY p.priority_at, dr.requested_date, dr.created_at, p.sequence_number, p.id",
+                SELECT_PENDING + selection
+                        + " ORDER BY p.priority_at, dr.requested_date, dr.created_at, p.sequence_number, p.id",
                 parameters,
                 (resultSet, rowNumber) -> map(resultSet));
     }
