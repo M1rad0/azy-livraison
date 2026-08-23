@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  cancelAdminDeliveryPackage,
+  closeDeliveryDay,
   createDispatchPlan,
+  downloadGeneralDailyReport,
+  getDeliveryDay,
   getDeliveryPricingPolicy,
   getAdminQueue,
   listDeliveryRequests,
@@ -82,7 +86,6 @@ describe('API administrateur', () => {
     const input = {
       serviceDate: '2026-08-22',
       courierIds: ['courier-1'],
-      packageIds: ['package-1', 'package-2'],
     }
     await expect(createDispatchPlan(input, 'dispatch-key', 'admin-token')).resolves.toBe(response)
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/dispatch-plans', expect.objectContaining({
@@ -94,6 +97,44 @@ describe('API administrateur', () => {
       }),
       body: JSON.stringify(input),
     }))
+  })
+
+  it('raccorde les actions du compte rendu quotidien', async () => {
+    const day = {
+      serviceDate: '2026-08-22', status: 'DISPATCHED', admissionsClosed: true,
+      dispatchPlanId: 'plan-1', closureRevision: 0, version: 2,
+      counts: { total: 1, finalized: 1, awaitingOutcome: 0, delivered: 1, cancelled: 0, postponed: 0, returnToSender: 0, returnsCompleted: 0 },
+      totals: { recoveredAriary: 25000, deliveryFeesAriary: 3000, amountToRemitAriary: 22000 },
+      clients: [], packages: [],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => day })
+      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => undefined })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...day, status: 'CLOSED', version: 3 }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getDeliveryDay('2026-08-22', 'admin-token')
+    await cancelAdminDeliveryPackage('package-1', 4, 'admin-token')
+    await closeDeliveryDay('2026-08-22', 2, 'admin-token')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/delivery-days/2026-08-22', expect.anything())
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/delivery-packages/package-1/cancel', expect.objectContaining({ body: JSON.stringify({ version: 4 }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/delivery-days/2026-08-22/close', expect.objectContaining({ body: JSON.stringify({ version: 2 }) }))
+  })
+
+  it('télécharge un rapport binaire avec le nom fourni par le serveur', async () => {
+    const blob = new Blob(['rapport'], { type: 'application/pdf' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Disposition': 'attachment; filename="rapport-azy.pdf"' }),
+      blob: async () => blob,
+    }))
+
+    await expect(downloadGeneralDailyReport('2026-08-22', 'pdf', 'admin-token')).resolves.toEqual({
+      blob,
+      filename: 'rapport-azy.pdf',
+    })
   })
 
   it('n’envoie pas les dates de lecture lors de la mise à jour des paramètres', async () => {

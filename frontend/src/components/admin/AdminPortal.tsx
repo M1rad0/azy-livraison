@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BadgeDollarSign, Bike, Boxes, LayoutDashboard, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
+import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, LayoutDashboard, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
 import {
+  cancelAdminDeliveryPackage,
   getAdminQueue,
   getOperationalSettings,
   listCouriers,
@@ -9,6 +10,7 @@ import {
   listVehiclePresets,
   type AdminQueue,
   type Courier,
+  type DeliveryPackage,
   type DeliveryRequest,
   type DispatchPlan,
   type DispatchPlanSummary,
@@ -17,17 +19,19 @@ import {
 } from '../../api/admin'
 import { AdminCouriersPanel } from './AdminCouriersPanel'
 import { AdminDispatchPanel } from './AdminDispatchPanel'
+import { AdminDailyOperationsPanel } from './AdminDailyOperationsPanel'
 import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
 import { AdminPricingZonesPanel } from './AdminPricingZonesPanel'
 import { antananarivoToday, errorMessage } from './adminHelpers'
 import { AdminSettingsPanel } from './AdminSettingsPanel'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'dispatch' | 'couriers' | 'pricing' | 'settings'
+type AdminTab = 'queue' | 'dispatch' | 'day' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
   { id: 'dispatch', label: 'Dispatch', detail: 'Via point de ralliement', icon: Sparkles },
+  { id: 'day', label: 'Compte rendu', detail: 'Clôture et rapports', icon: ClipboardCheck },
   { id: 'couriers', label: 'Livreurs', detail: 'Équipe et véhicules', icon: Bike },
   { id: 'pricing', label: 'Tarification', detail: 'Zones et prix', icon: BadgeDollarSign },
   { id: 'settings', label: 'Paramètres', detail: 'Règles opérationnelles', icon: Settings2 },
@@ -49,7 +53,6 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
   const [settings, setSettings] = useState<OperationalSettings>()
   const [presets, setPresets] = useState<VehiclePreset[]>([])
   const [history, setHistory] = useState<DispatchPlanSummary[]>([])
-  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<string>>(new Set())
   const [pendingBusy, setPendingBusy] = useState(true)
   const [dispatchBusy, setDispatchBusy] = useState(true)
   const [message, setMessage] = useState<string>()
@@ -73,11 +76,6 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
       }, signal)
       if (signal?.aborted || loadId !== pendingLoadId.current) return
       setPendingRequests(requests)
-      if (pendingFilters.scope === 'ALL' && !pendingFilters.client.trim()) {
-        const pendingIds = new Set(requests.flatMap((request) => request.packages)
-          .map((deliveryPackage) => deliveryPackage.id))
-        setSelectedPackageIds((current) => new Set([...current].filter((id) => pendingIds.has(id))))
-      }
     } catch (error) {
       if ((error as { name?: string }).name !== 'AbortError'
         && loadId === pendingLoadId.current) setMessage(errorMessage(error))
@@ -134,23 +132,6 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
     return () => controller.abort()
   }, [accessToken])
 
-  function updateSelection(packageId: string, selected: boolean) {
-    setSelectedPackageIds((current) => {
-      const next = new Set(current)
-      if (selected) next.add(packageId)
-      else next.delete(packageId)
-      return next
-    })
-  }
-
-  function selectAllPending() {
-    setSelectedPackageIds((current) => new Set([
-      ...current,
-      ...pendingRequests.flatMap((request) => request.packages)
-        .map((deliveryPackage) => deliveryPackage.id),
-    ]))
-  }
-
   function upsertCourier(saved: Courier) {
     setCouriers((current) => {
       const exists = current.some((courier) => courier.id === saved.id)
@@ -162,14 +143,21 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
 
   function dispatchCreated(created: DispatchPlan) {
     setHistory((current) => [created.plan, ...current.filter((plan) => plan.id !== created.plan.id)])
-    setSelectedPackageIds(new Set())
     void loadPending()
     void loadDispatchDay()
+    setTab('day')
+  }
+
+  async function cancelPackage(deliveryPackage: DeliveryPackage) {
+    await cancelAdminDeliveryPackage(deliveryPackage.id, deliveryPackage.version, accessToken)
+    await Promise.all([loadPending(), loadDispatchDay()])
   }
 
   const activeCourierCount = couriers.filter((courier) => courier.active).length
   const pendingPackageCount = useMemo(() => pendingRequests.reduce(
-    (count, request) => count + request.packages.length,
+    (count, request) => count + request.packages.filter((deliveryPackage) => (
+      deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome
+    )).length,
     0,
   ), [pendingRequests])
   const currentDispatchQueue = dispatchQueue?.date === dispatchDate ? dispatchQueue : undefined
@@ -200,11 +188,9 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           requests={pendingRequests}
           filters={pendingFilters}
           busy={pendingBusy}
-          selectedPackageIds={selectedPackageIds}
           onFiltersChange={setPendingFilters}
           onReload={() => void loadPending()}
-          onPackageSelectionChange={updateSelection}
-          onSelectAllPending={selectAllPending}
+          onCancelPackage={cancelPackage}
           onOpenDispatch={() => setTab('dispatch')}
         />
       )}
@@ -217,12 +203,22 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           couriers={couriers}
           settings={settings}
           history={currentHistory}
-          selectedPackageIds={selectedPackageIds}
           onDateChange={(date) => {
             if (date) setDispatchDate(date)
           }}
-          onPackageSelectionChange={updateSelection}
           onCreated={dispatchCreated}
+        />
+      )}
+      {tab === 'day' && (
+        <AdminDailyOperationsPanel
+          accessToken={accessToken}
+          date={dispatchDate}
+          onDateChange={(date) => setDispatchDate(date)}
+          onOpenDispatch={() => setTab('dispatch')}
+          onChanged={() => {
+            void loadPending()
+            void loadDispatchDay()
+          }}
         />
       )}
       {tab === 'couriers' && <AdminCouriersPanel accessToken={accessToken} couriers={couriers} presets={presets} onSaved={upsertCourier} />}

@@ -29,8 +29,9 @@ export interface UpdateClientProfileInput {
   defaultPickup: ClientDefaultPickup | null
 }
 
-export type DeliveryRequestStatus = 'PENDING' | 'PARTIALLY_DISPATCHED' | 'DISPATCHED'
+export type DeliveryRequestStatus = 'PENDING' | 'PARTIALLY_DISPATCHED' | 'DISPATCHED' | 'CANCELLED'
 export type DeliveryPackageStatus = 'PENDING' | 'DISPATCHED' | 'UNASSIGNED'
+export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | 'RETURN_TO_SENDER'
 export type PackageWeightSource = 'PROVIDED' | 'DEFAULT_SETTING'
 
 export interface DeliveryPackageRecord {
@@ -52,6 +53,13 @@ export interface DeliveryPackageRecord {
   weightSource: PackageWeightSource
   status: DeliveryPackageStatus
   unassignedReason?: string | null
+  finalOutcome?: DeliveryPackageOutcome | null
+  actualCollectedAriary?: number | null
+  outcomeNote?: string | null
+  outcomeRecordedAt?: string | null
+  returnCompletedAt?: string | null
+  carriedForwardFromPackageId?: string | null
+  dispatchPlanId?: string | null
   version: number
   createdAt: string
   updatedAt: string
@@ -104,7 +112,6 @@ export interface CreateDeliveryRequestInput {
   requestedDate: string
   pickup: ClientLocation
   saveAsDefaultPickup: boolean
-  acceptCapacityOverflow: boolean
   packages: CreateDeliveryPackageInput[]
 }
 
@@ -114,12 +121,15 @@ interface ApiErrorPayload {
   violations?: Array<{ field: string; message: string }>
 }
 
-interface CapacityConfirmationPayload extends ApiErrorPayload {
-  code: 'DAILY_CAPACITY_CONFIRMATION_REQUIRED'
+interface CapacityExceededPayload extends ApiErrorPayload {
+  code: 'DAILY_CAPACITY_EXCEEDED'
+  requestedDate: string
   limit: number
   current: number
   requested: number
   projected: number
+  remaining: number
+  excess: number
 }
 
 export class ClientApiError extends Error {
@@ -133,15 +143,18 @@ export class ClientApiError extends Error {
   }
 }
 
-export class CapacityConfirmationRequiredError extends ClientApiError {
+export class DailyCapacityExceededError extends ClientApiError {
   constructor(
     message: string,
+    public readonly requestedDate: string,
     public readonly limit: number,
     public readonly current: number,
     public readonly requested: number,
     public readonly projected: number,
+    public readonly remaining: number,
+    public readonly excess: number,
   ) {
-    super(message, 'DAILY_CAPACITY_CONFIRMATION_REQUIRED', 409)
+    super(message, 'DAILY_CAPACITY_EXCEEDED', 409)
   }
 }
 
@@ -158,14 +171,17 @@ async function clientRequest<T>(path: string, accessToken: string, init?: Reques
 
   if (!response.ok) {
     const error = (payload ?? {}) as ApiErrorPayload
-    if (response.status === 409 && error.code === 'DAILY_CAPACITY_CONFIRMATION_REQUIRED') {
-      const capacity = error as CapacityConfirmationPayload
-      throw new CapacityConfirmationRequiredError(
-        capacity.message ?? 'Le nombre de colis prévu pour cette journée dépasse la capacité habituelle.',
+    if (response.status === 409 && error.code === 'DAILY_CAPACITY_EXCEEDED') {
+      const capacity = error as CapacityExceededPayload
+      throw new DailyCapacityExceededError(
+        capacity.message ?? 'La capacité maximale de cette journée est atteinte.',
+        capacity.requestedDate,
         capacity.limit,
         capacity.current,
         capacity.requested,
         capacity.projected,
+        capacity.remaining,
+        capacity.excess,
       )
     }
     throw new ClientApiError(
@@ -206,6 +222,18 @@ export function createDeliveryRequest(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  })
+}
+
+export function cancelDeliveryPackage(
+  packageId: string,
+  version: number,
+  accessToken: string,
+): Promise<void> {
+  return clientRequest<void>(`delivery-packages/${encodeURIComponent(packageId)}/cancel`, accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version }),
   })
 }
 

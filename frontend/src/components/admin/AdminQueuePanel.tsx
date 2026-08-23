@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  Ban,
   CalendarDays,
   CircleDollarSign,
   Clock3,
@@ -13,7 +14,8 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react'
-import type { DeliveryRequest } from '../../api/admin'
+import type { DeliveryPackage, DeliveryRequest } from '../../api/admin'
+import { ConfirmDialog } from '../ConfirmDialog'
 import {
   antananarivoToday,
   formatAriary,
@@ -34,11 +36,9 @@ interface AdminQueuePanelProps {
   requests: DeliveryRequest[]
   filters: PendingQueueFilters
   busy: boolean
-  selectedPackageIds: Set<string>
   onFiltersChange: (filters: PendingQueueFilters) => void
   onReload: () => void
-  onPackageSelectionChange: (packageId: string, selected: boolean) => void
-  onSelectAllPending: () => void
+  onCancelPackage: (deliveryPackage: DeliveryPackage) => Promise<void>
   onOpenDispatch: () => void
 }
 
@@ -46,17 +46,18 @@ export function AdminQueuePanel({
   requests,
   filters,
   busy,
-  selectedPackageIds,
   onFiltersChange,
   onReload,
-  onPackageSelectionChange,
-  onSelectAllPending,
+  onCancelPackage,
   onOpenDispatch,
 }: AdminQueuePanelProps) {
   const [draft, setDraft] = useState(filters)
   const [filterError, setFilterError] = useState<string>()
+  const [packageToCancel, setPackageToCancel] = useState<DeliveryPackage>()
+  const [cancelling, setCancelling] = useState(false)
+  const [actionError, setActionError] = useState<string>()
   const pendingPackages = requests.flatMap((request) => request.packages)
-    .filter((deliveryPackage) => deliveryPackage.status === 'PENDING')
+    .filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome)
   const clientCount = new Set(requests.map((request) => request.ownerAccountId)).size
   const hasActiveFilters = filters.scope === 'PERIOD' || Boolean(filters.client)
   const today = antananarivoToday()
@@ -85,6 +86,21 @@ export function AdminQueuePanel({
     onFiltersChange(cleared)
   }
 
+  async function confirmCancellation() {
+    if (!packageToCancel) return
+    setCancelling(true)
+    setActionError(undefined)
+    try {
+      await onCancelPackage(packageToCancel)
+      setPackageToCancel(undefined)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Le colis n’a pas pu être annulé.')
+      setPackageToCancel(undefined)
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   return (
     <section className="admin-panel" aria-labelledby="queue-title">
       <header className="admin-panel__heading">
@@ -93,9 +109,12 @@ export function AdminQueuePanel({
           <h2 id="queue-title">Livraisons en attente</h2>
           <p>Retrouvez tous les colis encore à dispatcher, quelle que soit leur date demandée.</p>
         </div>
-        <button className="admin-icon-button" type="button" onClick={onReload} disabled={busy} aria-label="Actualiser les livraisons en attente">
-          <RefreshCw className={busy ? 'admin-spin' : undefined} aria-hidden="true" />
-        </button>
+        <div className="admin-toolbar">
+          <button className="admin-button" type="button" onClick={onOpenDispatch}>Préparer la journée</button>
+          <button className="admin-icon-button" type="button" onClick={onReload} disabled={busy} aria-label="Actualiser les livraisons en attente">
+            <RefreshCw className={busy ? 'admin-spin' : undefined} aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <form className="admin-queue-filters" onSubmit={applyFilters}>
@@ -123,6 +142,8 @@ export function AdminQueuePanel({
         {filterError && <p className="admin-queue-filters__error" role="alert">{filterError}</p>}
       </form>
 
+      {actionError && <div className="admin-callout admin-callout--error" role="alert"><Ban aria-hidden="true" /><div><strong>Annulation impossible</strong><span>{actionError}</span></div></div>}
+
       {!busy || requests.length > 0 ? (
         <div className="admin-stats" aria-label="Situation globale des livraisons en attente">
           <article>
@@ -146,16 +167,9 @@ export function AdminQueuePanel({
         <div className="admin-empty"><PackageOpen aria-hidden="true" /><strong>{hasActiveFilters ? 'Aucun résultat pour ces filtres' : 'Aucune livraison en attente'}</strong><span>{hasActiveFilters ? 'Modifiez la période ou la recherche client.' : 'Les nouvelles demandes apparaîtront ici.'}</span></div>
       ) : (
         <>
-          <div className="admin-selection-bar">
-            <span><strong>{selectedPackageIds.size}</strong> colis sélectionné{selectedPackageIds.size > 1 ? 's' : ''}</span>
-            <div>
-              <button className="admin-button admin-button--ghost" type="button" onClick={onSelectAllPending}>
-                Tout sélectionner ({pendingPackages.length})
-              </button>
-              <button className="admin-button" type="button" disabled={selectedPackageIds.size === 0} onClick={onOpenDispatch}>
-                Préparer le dispatch
-              </button>
-            </div>
+          <div className="admin-selection-bar admin-selection-bar--automatic">
+            <span><strong>{pendingPackages.length}</strong> colis en attente</span>
+            <small>Le plan inclura automatiquement toute la file admissible de la date choisie.</small>
           </div>
 
           <div className="admin-request-list">
@@ -174,9 +188,9 @@ export function AdminQueuePanel({
                     <span className={`admin-request-date${request.requestedDate < today ? ' is-overdue' : ''}`}>
                       <CalendarDays aria-hidden="true" />Demandée pour le {formatDate(request.requestedDate)}
                     </span>
-                    {request.capacity.accepted && <span className="admin-chip admin-chip--warning">Dépassement accepté</span>}
+                    {request.capacity.accepted && <span className="admin-chip admin-chip--warning">Ancien dépassement enregistré</span>}
                     <span className="admin-chip">{requestStatusLabel(request.status)}</span>
-                    <strong>{request.packages.length} colis</strong>
+                    <strong>{request.packages.filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome).length} colis</strong>
                   </div>
                 </header>
 
@@ -187,7 +201,7 @@ export function AdminQueuePanel({
 
                 <div className="admin-package-table" role="table" aria-label={`Colis de ${request.ownerDisplayName}`}>
                   <div className="admin-package-row admin-package-row--header" role="row">
-                    <span role="columnheader">Choix</span>
+                    <span role="columnheader">Action</span>
                     <span role="columnheader">Destinataire</span>
                     <span role="columnheader">Destination</span>
                     <span role="columnheader">Contact</span>
@@ -195,27 +209,26 @@ export function AdminQueuePanel({
                     <span role="columnheader">Paiement</span>
                     <span role="columnheader">État</span>
                   </div>
-                  {request.packages.map((deliveryPackage) => {
-                    const selectable = deliveryPackage.status === 'PENDING'
+                  {request.packages.filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome).map((deliveryPackage) => {
+                    const cancellable = deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome
                     return (
                       <div className="admin-package-row" role="row" key={deliveryPackage.id}>
                         <span role="cell">
-                          <input
-                            type="checkbox"
-                            aria-label={`Sélectionner le colis de ${deliveryPackage.recipientName}`}
-                            checked={selectedPackageIds.has(deliveryPackage.id)}
-                            disabled={!selectable}
-                            onChange={(event) => onPackageSelectionChange(deliveryPackage.id, event.target.checked)}
-                          />
+                          <button
+                            className="admin-table-action admin-table-action--danger"
+                            type="button"
+                            aria-label={`Annuler le colis de ${deliveryPackage.recipientName}`}
+                            disabled={!cancellable}
+                            onClick={() => setPackageToCancel(deliveryPackage)}
+                          ><Ban aria-hidden="true" /></button>
                         </span>
                         <span role="cell"><strong>{deliveryPackage.recipientName}</strong>{deliveryPackage.faritra && <small>Faritra</small>}</span>
                         <span role="cell"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}<small>{deliveryPackage.pricingZoneName ? `Zone ${deliveryPackage.pricingZoneName}` : 'Tarif non disponible'}</small></span></span>
                         <span role="cell">{deliveryPackage.contact || '—'}</span>
                         <span role="cell"><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong><small>{deliveryPackage.deliveryFeeAriary != null ? `dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : 'Tarif indisponible'}</small></span>
                         <span role="cell">
-                          {deliveryPackage.mobileMoneyPaid
-                            ? <><Smartphone aria-hidden="true" />Mobile Money</>
-                            : <><CircleDollarSign aria-hidden="true" />À encaisser</>}
+                          <CircleDollarSign aria-hidden="true" />
+                          <span>À encaisser{deliveryPackage.mobileMoneyPaid && <small><Smartphone aria-hidden="true" />Mobile Money signalé</small>}</span>
                         </span>
                         <span role="cell"><i className={`admin-status-dot admin-status-dot--${deliveryPackage.status.toLowerCase()}`} />{packageStatusLabel(deliveryPackage.status)}</span>
                       </div>
@@ -226,6 +239,19 @@ export function AdminQueuePanel({
             ))}
           </div>
         </>
+      )}
+
+      {packageToCancel && (
+        <ConfirmDialog
+          title="Annuler ce colis ?"
+          confirmLabel="Annuler le colis"
+          busy={cancelling}
+          danger
+          onClose={() => setPackageToCancel(undefined)}
+          onConfirm={() => void confirmCancellation()}
+        >
+          <p>Le colis destiné à <strong>{packageToCancel.recipientName}</strong> sera annulé et libérera immédiatement une place. Seuls les colis encore en attente peuvent être annulés.</p>
+        </ConfirmDialog>
       )}
     </section>
   )

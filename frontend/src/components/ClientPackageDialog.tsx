@@ -63,6 +63,14 @@ export function ClientPackageDialog({
   }, [])
 
   useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  useEffect(() => {
     if (!confirmed(value.destination)) {
       setQuoteBusy(false)
       setQuoteError(undefined)
@@ -254,7 +262,7 @@ export function ClientPackageDialog({
               </label>
               <label className="client-check-card">
                 <input type="checkbox" checked={value.mobileMoneyPaid} onChange={(event) => setValue({ ...value, mobileMoneyPaid: event.target.checked })} />
-                <span><strong>Déjà payé par Mobile Money</strong><small>Aucun encaissement du prix déjà réglé</small></span>
+                <span><strong>Mobile Money signalé</strong><small>Information uniquement · le montant à récupérer reste inchangé</small></span>
               </label>
             </div>
           </div>

@@ -8,9 +8,12 @@ import type {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 export type VehicleType = 'MOTO' | 'BICYCLE'
-export type DeliveryRequestStatus = 'PENDING' | 'PARTIALLY_DISPATCHED' | 'DISPATCHED'
+export type DeliveryRequestStatus = 'PENDING' | 'PARTIALLY_DISPATCHED' | 'DISPATCHED' | 'CANCELLED'
 export type DeliveryPackageStatus = 'PENDING' | 'DISPATCHED' | 'UNASSIGNED'
+export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | 'RETURN_TO_SENDER'
 export type DispatchStatus = 'GENERATING' | 'READY' | 'READY_WITH_WARNINGS' | 'FAILED'
+export type OperationDayStatus = 'OPEN' | 'DISPATCHING' | 'DISPATCHED' | 'CLOSED'
+export type ReportFormat = 'pdf' | 'xlsx'
 
 export interface ConfirmedLocation {
   label?: string
@@ -48,6 +51,13 @@ export interface DeliveryPackage {
   weightSource: 'PROVIDED' | 'DEFAULT_SETTING'
   status: DeliveryPackageStatus
   unassignedReason?: string
+  finalOutcome?: DeliveryPackageOutcome | null
+  actualCollectedAriary?: number | null
+  outcomeNote?: string | null
+  outcomeRecordedAt?: string | null
+  returnCompletedAt?: string | null
+  carriedForwardFromPackageId?: string | null
+  dispatchPlanId?: string | null
   version: number
   createdAt: string
   updatedAt: string
@@ -224,8 +234,98 @@ export interface DispatchPlan {
 export interface CreateDispatchInput {
   serviceDate: string
   courierIds: string[]
-  packageIds: string[]
   hubOverride?: ConfirmedLocation
+}
+
+export interface DailyFinancialTotals {
+  recoveredAriary: number
+  deliveryFeesAriary: number
+  amountToRemitAriary: number
+}
+
+export interface DailyOperationCounts {
+  total: number
+  finalized: number
+  awaitingOutcome: number
+  delivered: number
+  cancelled: number
+  postponed: number
+  returnToSender: number
+  returnsCompleted: number
+}
+
+export interface ClientDaySummary {
+  accountId: string
+  displayName: string
+  phone?: string | null
+  packageCount: number
+  finalizedCount: number
+  totals: DailyFinancialTotals
+}
+
+export interface DailyOperationPackage {
+  packageId: string
+  deliveryRequestId: string
+  ownerAccountId: string
+  ownerDisplayName: string
+  ownerPhone?: string | null
+  requestedDate: string
+  pickup: ConfirmedLocation
+  sequenceNumber: number
+  recipientName: string
+  faritra: boolean
+  destination: ConfirmedLocation
+  contact: string
+  amountToCollectAriary: number
+  mobileMoneyPaid: boolean
+  pricingZoneId?: string | null
+  pricingZoneName?: string | null
+  deliveryFeeAriary?: number | null
+  technicalStatus: DeliveryPackageStatus
+  unassignedReason?: string | null
+  finalOutcome?: DeliveryPackageOutcome | null
+  actualCollectedAriary?: number | null
+  outcomeNote?: string | null
+  outcomeRecordedAt?: string | null
+  returnCompletedAt?: string | null
+  carriedForwardFromPackageId?: string | null
+  carriedForwardToPackageId?: string | null
+  dispatchPlanId?: string | null
+  distributorCourierId?: string | null
+  distributorCourierName?: string | null
+  estimatedDeliveryAt?: string | null
+  finalState: boolean
+  recoveredAriary: number
+  chargedDeliveryFeeAriary: number
+  amountToRemitAriary: number
+  version: number
+}
+
+export interface DailyOperation {
+  serviceDate: string
+  status: OperationDayStatus
+  admissionsClosed: boolean
+  dispatchPlanId?: string | null
+  closureRevision: number
+  closedAt?: string | null
+  reopenedAt?: string | null
+  reopenReason?: string | null
+  version: number
+  counts: DailyOperationCounts
+  totals: DailyFinancialTotals
+  clients: ClientDaySummary[]
+  packages: DailyOperationPackage[]
+}
+
+export interface CarryForwardResult {
+  deliveryRequestId: string
+  packageId: string
+  requestedDate: string
+}
+
+export interface DownloadedReport {
+  blob: Blob
+  filename: string
 }
 
 interface ApiErrorPayload {
@@ -375,4 +475,135 @@ export function createDispatchPlan(
       'Idempotency-Key': idempotencyKey,
     },
   })
+}
+
+export function cancelAdminDeliveryPackage(packageId: string, version: number, accessToken: string) {
+  return adminRequest<void>(`delivery-packages/${encodeURIComponent(packageId)}/cancel`, accessToken, {
+    ...jsonRequest('POST', { version }),
+  })
+}
+
+export function getDeliveryDay(serviceDate: string, accessToken: string, signal?: AbortSignal) {
+  return adminRequest<DailyOperation>(`delivery-days/${encodeURIComponent(serviceDate)}`, accessToken, { signal })
+}
+
+export function updateDeliveryPackageOutcome(
+  serviceDate: string,
+  packageId: string,
+  input: {
+    outcome: Exclude<DeliveryPackageOutcome, 'CANCELLED'>
+    actualCollectedAriary?: number | null
+    note?: string | null
+    version: number
+  },
+  accessToken: string,
+) {
+  return adminRequest<DailyOperation>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/packages/${encodeURIComponent(packageId)}/outcome`,
+    accessToken,
+    jsonRequest('PUT', input),
+  )
+}
+
+export function markReturnCompleted(
+  serviceDate: string,
+  packageId: string,
+  version: number,
+  accessToken: string,
+) {
+  return adminRequest<DailyOperation>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/packages/${encodeURIComponent(packageId)}/return-completed`,
+    accessToken,
+    jsonRequest('POST', { version }),
+  )
+}
+
+export function carryForwardDeliveryPackage(
+  serviceDate: string,
+  packageId: string,
+  pickup: ConfirmedLocation,
+  version: number,
+  accessToken: string,
+) {
+  return adminRequest<CarryForwardResult>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/packages/${encodeURIComponent(packageId)}/carry-forward`,
+    accessToken,
+    jsonRequest('POST', {
+      pickup: {
+        label: pickup.label?.trim() || pickup.query?.trim() || pickup.destinationQuery?.trim() || 'Point de retrait',
+        query: pickup.query?.trim() || pickup.destinationQuery?.trim() || null,
+        latitude: pickup.latitude,
+        longitude: pickup.longitude,
+      },
+      version,
+    }),
+  )
+}
+
+export function closeDeliveryDay(serviceDate: string, version: number, accessToken: string) {
+  return adminRequest<DailyOperation>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/close`,
+    accessToken,
+    jsonRequest('POST', { version }),
+  )
+}
+
+export function reopenDeliveryDay(serviceDate: string, version: number, reason: string, accessToken: string) {
+  return adminRequest<DailyOperation>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/reopen`,
+    accessToken,
+    jsonRequest('POST', { version, reason }),
+  )
+}
+
+function reportFilename(response: Response, fallback: string): string {
+  const disposition = response.headers.get('Content-Disposition')
+  const utf8 = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8)
+    } catch {
+      return utf8
+    }
+  }
+  return disposition?.match(/filename="?([^";]+)"?/i)?.[1] ?? fallback
+}
+
+async function downloadAdminReport(path: string, fallback: string, accessToken: string): Promise<DownloadedReport> {
+  const response = await fetch(`${API_BASE_URL}/admin/${path}`, {
+    headers: {
+      Accept: '*/*',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as ApiErrorPayload
+    throw new AdminApiError(
+      payload.message ?? `Le rapport n'a pas pu être généré (${response.status}).`,
+      response.status,
+      payload.code,
+    )
+  }
+  return { blob: await response.blob(), filename: reportFilename(response, fallback) }
+}
+
+export function downloadGeneralDailyReport(serviceDate: string, format: ReportFormat, accessToken: string) {
+  return downloadAdminReport(
+    `delivery-days/${encodeURIComponent(serviceDate)}/reports/general.${format}`,
+    `azy-livraison-${serviceDate}.${format}`,
+    accessToken,
+  )
+}
+
+export function downloadClientDailyReport(
+  serviceDate: string,
+  accountId: string,
+  format: ReportFormat,
+  accessToken: string,
+) {
+  return downloadAdminReport(
+    `delivery-days/${encodeURIComponent(serviceDate)}/reports/clients/${encodeURIComponent(accountId)}.${format}`,
+    `azy-livraison-client-${serviceDate}.${format}`,
+    accessToken,
+  )
 }

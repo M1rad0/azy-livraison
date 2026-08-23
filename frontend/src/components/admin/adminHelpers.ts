@@ -78,6 +78,7 @@ export function requestStatusLabel(status: DeliveryRequestStatus) {
     PENDING: 'En attente',
     PARTIALLY_DISPATCHED: 'Partiellement dispatchée',
     DISPATCHED: 'Dispatchée',
+    CANCELLED: 'Annulée',
   }[status]
 }
 
