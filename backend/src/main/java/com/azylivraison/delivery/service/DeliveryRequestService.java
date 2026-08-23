@@ -45,13 +45,16 @@ public class DeliveryRequestService {
     @Transactional
     public DeliveryRequestResponse create(UUID ownerAccountId, CreateDeliveryRequest input) {
         OperationalSettingsSnapshot settings = repository.lockOperationalSettings();
-        int current = repository.countPendingPackages(input.requestedDate());
+        if (repository.isDateClosedForAdmissions(input.requestedDate())) {
+            throw new DeliveryDateClosedException(input.requestedDate());
+        }
+        int current = repository.countAllocatedPackages(input.requestedDate());
         int requested = input.packages().size();
         int projected = Math.addExact(current, requested);
         boolean overflow = projected > settings.dailyPackageLimit();
-        if (overflow && !input.acceptCapacityOverflow()) {
-            throw new CapacityConfirmationRequiredException(
-                    settings.dailyPackageLimit(), current, requested, projected);
+        if (overflow) {
+            throw new DailyCapacityExceededException(
+                    input.requestedDate(), settings.dailyPackageLimit(), current, requested, projected);
         }
 
         Instant now = Instant.now();
@@ -80,8 +83,8 @@ public class DeliveryRequestService {
                 current,
                 requested,
                 projected,
-                overflow,
-                overflow && input.acceptCapacityOverflow(),
+                false,
+                false,
                 DeliveryRequestStatus.PENDING,
                 0,
                 now,
@@ -148,7 +151,7 @@ public class DeliveryRequestService {
     public AdminQueueResponse queue(LocalDate date) {
         OperationalSettingsSnapshot settings = repository.getOperationalSettings();
         QueueCounts counts = repository.queueCounts(date);
-        List<DeliveryRequestResponse> requests = repository.findPendingQueueThrough(date).stream()
+        List<DeliveryRequestResponse> requests = repository.findPendingQueueForDate(date).stream()
                 .map(DeliveryRequestResponse::fromPendingPackages)
                 .toList();
         int remaining = Math.max(0, settings.dailyPackageLimit() - counts.pendingPackageCount());
@@ -190,6 +193,16 @@ public class DeliveryRequestService {
                 providedWeight ? PackageWeightSource.PROVIDED : PackageWeightSource.DEFAULT_SETTING,
                 DeliveryPackageStatus.PENDING,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                now,
                 0,
                 now,
                 now);

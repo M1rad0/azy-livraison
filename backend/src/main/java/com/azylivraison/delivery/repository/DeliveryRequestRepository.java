@@ -60,12 +60,23 @@ public class DeliveryRequestRepository {
                 resultSet.getBigDecimal("default_package_weight_kg")));
     }
 
-    public int countPendingPackages(LocalDate date) {
+    public boolean isDateClosedForAdmissions(LocalDate date) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM delivery_operation_day
+                WHERE service_date = ?
+                  AND admissions_closed_at IS NOT NULL
+                """, Integer.class, Date.valueOf(date));
+        return count != null && count > 0;
+    }
+
+    public int countAllocatedPackages(LocalDate date) {
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM delivery_package dp
                 JOIN delivery_request dr ON dr.id = dp.delivery_request_id
-                WHERE dr.requested_date = ? AND dp.status = 'PENDING'
+                WHERE dr.requested_date = ?
+                  AND (dp.final_outcome IS NULL OR dp.final_outcome <> 'CANCELLED')
                 """, Integer.class, Date.valueOf(date));
         return count == null ? 0 : count;
     }
@@ -169,8 +180,32 @@ public class DeliveryRequestRepository {
             arguments.add(Date.valueOf(to));
         }
         if (status != null) {
-            sql.append(" AND dr.status = ?");
-            arguments.add(status.name());
+            if (status == DeliveryRequestStatus.CANCELLED) {
+                sql.append("""
+                         AND EXISTS (
+                             SELECT 1 FROM delivery_package cancelled_package
+                             WHERE cancelled_package.delivery_request_id = dr.id
+                         )
+                         AND NOT EXISTS (
+                             SELECT 1 FROM delivery_package active_package
+                             WHERE active_package.delivery_request_id = dr.id
+                               AND (active_package.final_outcome IS NULL
+                                    OR active_package.final_outcome <> 'CANCELLED')
+                         )
+                        """);
+            } else {
+                sql.append(" AND dr.status = ?");
+                arguments.add(status.name());
+                if (status == DeliveryRequestStatus.PENDING) {
+                    sql.append("""
+                             AND EXISTS (
+                                 SELECT 1 FROM delivery_package active_pending_package
+                                 WHERE active_pending_package.delivery_request_id = dr.id
+                                   AND active_pending_package.final_outcome IS NULL
+                             )
+                            """);
+                }
+            }
         }
         if (pendingOnly) {
             sql.append("""
@@ -179,6 +214,7 @@ public class DeliveryRequestRepository {
                          FROM delivery_package pending_package
                          WHERE pending_package.delivery_request_id = dr.id
                            AND pending_package.status = 'PENDING'
+                           AND pending_package.final_outcome IS NULL
                      )
                     """);
         }
@@ -210,19 +246,17 @@ public class DeliveryRequestRepository {
         return "%" + escaped + "%";
     }
 
-    /**
-     * Returns the operational backlog for a service day. An undelivered parcel
-     * from an earlier requested date must remain visible until it is dispatched.
-     */
-    public List<StoredDeliveryRequest> findPendingQueueThrough(LocalDate date) {
+    /** Returns only the admitted queue for the selected activity date. */
+    public List<StoredDeliveryRequest> findPendingQueueForDate(LocalDate date) {
         List<StoredDeliveryRequest> requests = jdbcTemplate.query(
                 REQUEST_SELECT + """
-                         WHERE dr.requested_date <= ?
+                         WHERE dr.requested_date = ?
                            AND EXISTS (
                                SELECT 1
                                FROM delivery_package queued_package
                                WHERE queued_package.delivery_request_id = dr.id
                                  AND queued_package.status = 'PENDING'
+                                 AND queued_package.final_outcome IS NULL
                            )
                          ORDER BY dr.requested_date, dr.created_at, dr.id
                         """,
@@ -234,13 +268,22 @@ public class DeliveryRequestRepository {
     public QueueCounts queueCounts(LocalDate date) {
         return jdbcTemplate.queryForObject("""
                 SELECT
-                    COUNT(DISTINCT CASE WHEN dr.status = 'PENDING' THEN dr.id END) AS pending_requests,
-                    COUNT(DISTINCT CASE WHEN dr.status = 'PARTIALLY_DISPATCHED' THEN dr.id END)
+                    COUNT(DISTINCT CASE
+                        WHEN dr.status = 'PENDING'
+                         AND dp.status = 'PENDING'
+                         AND dp.final_outcome IS NULL
+                        THEN dr.id END) AS pending_requests,
+                    COUNT(DISTINCT CASE
+                        WHEN dr.status = 'PARTIALLY_DISPATCHED'
+                         AND dp.status = 'PENDING'
+                         AND dp.final_outcome IS NULL
+                        THEN dr.id END)
                         AS partially_dispatched_requests,
-                    COUNT(CASE WHEN dp.status = 'PENDING' THEN 1 END) AS pending_packages
+                    COUNT(CASE WHEN dp.status = 'PENDING' AND dp.final_outcome IS NULL THEN 1 END)
+                        AS pending_packages
                 FROM delivery_request dr
                 LEFT JOIN delivery_package dp ON dp.delivery_request_id = dr.id
-                WHERE dr.requested_date <= ?
+                WHERE dr.requested_date = ?
                 """, (resultSet, rowNumber) -> new QueueCounts(
                 resultSet.getInt("pending_requests"),
                 resultSet.getInt("partially_dispatched_requests"),
@@ -260,8 +303,13 @@ public class DeliveryRequestRepository {
                     distance_from_center_meters, pricing_zone_max_distance_meters,
                     pricing_policy_version,
                     effective_weight_kg, weight_source,
-                    status, unassigned_reason, version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, unassigned_reason,
+                    final_outcome, actual_collected_ariary, outcome_note,
+                    outcome_recorded_at, outcome_recorded_by_account_id,
+                    return_completed_at, return_completed_by_account_id,
+                    carried_forward_from_package_id, dispatch_plan_id, priority_at,
+                    version, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 deliveryPackage.id(), deliveryPackage.deliveryRequestId(), deliveryPackage.sequenceNumber(),
                 deliveryPackage.recipientName(), deliveryPackage.faritra(),
@@ -277,7 +325,13 @@ public class DeliveryRequestRepository {
                 deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
                 deliveryPackage.effectiveWeightKg(),
                 deliveryPackage.weightSource().name(), deliveryPackage.status().name(),
-                deliveryPackage.unassignedReason(), deliveryPackage.version(),
+                deliveryPackage.unassignedReason(),
+                deliveryPackage.finalOutcome() == null ? null : deliveryPackage.finalOutcome().name(),
+                deliveryPackage.actualCollectedAriary(), deliveryPackage.outcomeNote(),
+                timestamp(deliveryPackage.outcomeRecordedAt()), deliveryPackage.outcomeRecordedByAccountId(),
+                timestamp(deliveryPackage.returnCompletedAt()), deliveryPackage.returnCompletedByAccountId(),
+                deliveryPackage.carriedForwardFromPackageId(), deliveryPackage.dispatchPlanId(),
+                timestamp(deliveryPackage.priorityAt()), deliveryPackage.version(),
                 Timestamp.from(deliveryPackage.createdAt()), Timestamp.from(deliveryPackage.updatedAt()));
     }
 
@@ -302,13 +356,22 @@ public class DeliveryRequestRepository {
 
     private List<StoredDeliveryRequest> withPackages(List<StoredDeliveryRequest> requests) {
         return requests.stream()
-                .map(request -> new StoredDeliveryRequest(
-                        request.id(), request.ownerAccountId(), request.ownerDisplayName(), request.ownerPhone(),
-                        request.requestedDate(),
-                        request.pickup(), request.capacityLimitSnapshot(), request.capacityCurrentSnapshot(),
-                        request.capacityRequestedSnapshot(), request.capacityProjectedSnapshot(),
-                        request.capacityOverflowWarning(), request.capacityOverflowAccepted(), request.status(),
-                        request.version(), request.createdAt(), request.updatedAt(), findPackages(request.id())))
+                .map(request -> {
+                    List<StoredDeliveryPackage> packages = findPackages(request.id());
+                    DeliveryRequestStatus effectiveStatus = !packages.isEmpty()
+                            && packages.stream().allMatch(deliveryPackage ->
+                                    deliveryPackage.finalOutcome()
+                                            == com.azylivraison.delivery.domain.DeliveryPackageOutcome.CANCELLED)
+                            ? DeliveryRequestStatus.CANCELLED
+                            : request.status();
+                    return new StoredDeliveryRequest(
+                            request.id(), request.ownerAccountId(), request.ownerDisplayName(), request.ownerPhone(),
+                            request.requestedDate(),
+                            request.pickup(), request.capacityLimitSnapshot(), request.capacityCurrentSnapshot(),
+                            request.capacityRequestedSnapshot(), request.capacityProjectedSnapshot(),
+                            request.capacityOverflowWarning(), request.capacityOverflowAccepted(), effectiveStatus,
+                            request.version(), request.createdAt(), request.updatedAt(), packages);
+                })
                 .toList();
     }
 
@@ -371,6 +434,19 @@ public class DeliveryRequestRepository {
                 PackageWeightSource.valueOf(resultSet.getString("weight_source")),
                 DeliveryPackageStatus.valueOf(resultSet.getString("status")),
                 resultSet.getString("unassigned_reason"),
+                resultSet.getString("final_outcome") == null
+                        ? null
+                        : com.azylivraison.delivery.domain.DeliveryPackageOutcome.valueOf(
+                                resultSet.getString("final_outcome")),
+                nullableLong(resultSet, "actual_collected_ariary"),
+                resultSet.getString("outcome_note"),
+                instant(resultSet, "outcome_recorded_at"),
+                resultSet.getObject("outcome_recorded_by_account_id", UUID.class),
+                instant(resultSet, "return_completed_at"),
+                resultSet.getObject("return_completed_by_account_id", UUID.class),
+                resultSet.getObject("carried_forward_from_package_id", UUID.class),
+                resultSet.getObject("dispatch_plan_id", UUID.class),
+                resultSet.getTimestamp("priority_at").toInstant(),
                 resultSet.getLong("version"),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant());
@@ -379,6 +455,15 @@ public class DeliveryRequestRepository {
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private Instant instant(ResultSet resultSet, String column) throws SQLException {
+        Timestamp timestamp = resultSet.getTimestamp(column);
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    private Timestamp timestamp(Instant value) {
+        return value == null ? null : Timestamp.from(value);
     }
 
     public record OperationalSettingsSnapshot(int dailyPackageLimit, BigDecimal defaultPackageWeightKg) {

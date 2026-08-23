@@ -28,6 +28,9 @@ public record DispatchPackageOutcome(
         Location destination) {
 
     public long cashToCollectAriary() {
-        return mobileMoneyPaid ? 0 : amountToCollectAriary;
+        // Mobile Money is only an informational flag in the current business
+        // policy. The amount declared by the client remains the amount AZY
+        // tracks and reconciles, regardless of how the recipient paid.
+        return amountToCollectAriary;
     }
 }

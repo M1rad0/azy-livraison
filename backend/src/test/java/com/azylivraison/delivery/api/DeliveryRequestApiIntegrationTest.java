@@ -56,7 +56,7 @@ class DeliveryRequestApiIntegrationTest {
         MvcResult creation = mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(true, true, false)))
+                        .content(requestJson(true, false)))
                 .andExpect(status().isCreated())
                 .andExpect(header().exists(HttpHeaders.LOCATION))
                 .andExpect(jsonPath("$.ownerAccountId").value(CLIENT_ONE_ID.toString()))
@@ -90,27 +90,32 @@ class DeliveryRequestApiIntegrationTest {
     }
 
     @Test
-    void requiresExplicitConfirmationWhenTheDailyLimitWouldBeExceeded() throws Exception {
+    void rejectsTheWholeRequestWhenTheDailyLimitWouldBeExceeded() throws Exception {
         jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
 
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, false, true)))
+                        .content(requestJson(false, true)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("DAILY_CAPACITY_CONFIRMATION_REQUIRED"))
+                .andExpect(jsonPath("$.code").value("DAILY_CAPACITY_EXCEEDED"))
                 .andExpect(jsonPath("$.limit").value(1))
                 .andExpect(jsonPath("$.current").value(0))
                 .andExpect(jsonPath("$.requested").value(2))
-                .andExpect(jsonPath("$.projected").value(2));
+                .andExpect(jsonPath("$.projected").value(2))
+                .andExpect(jsonPath("$.remaining").value(1))
+                .andExpect(jsonPath("$.excess").value(1));
 
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, true, true)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.capacity.warning").value(true))
-                .andExpect(jsonPath("$.capacity.accepted").value(true));
+                        .content(requestJson(false, true)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DAILY_CAPACITY_EXCEEDED"))
+                .andExpect(jsonPath("$.excess").value(1));
+
+        Integer inserted = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM delivery_request", Integer.class);
+        org.assertj.core.api.Assertions.assertThat(inserted).isZero();
     }
 
     @Test
@@ -118,7 +123,7 @@ class DeliveryRequestApiIntegrationTest {
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, false, true)))
+                        .content(requestJson(false, true)))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/admin/queue")
@@ -141,11 +146,11 @@ class DeliveryRequestApiIntegrationTest {
     }
 
     @Test
-    void keepsOverduePendingPackagesVisibleInTheNextOperationalQueue() throws Exception {
+    void keepsAPreviousDateOutOfTheNextQueueButVisibleInTheGlobalList() throws Exception {
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, false, false)
+                        .content(requestJson(false, false)
                                 .replace("2026-08-24", "2026-08-23")))
                 .andExpect(status().isCreated());
 
@@ -153,9 +158,17 @@ class DeliveryRequestApiIntegrationTest {
                         .param("date", "2026-08-24")
                         .with(admin()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stats.pendingRequestCount").value(1))
-                .andExpect(jsonPath("$.stats.pendingPackageCount").value(1))
-                .andExpect(jsonPath("$.requests[0].requestedDate").value("2026-08-23"));
+                .andExpect(jsonPath("$.stats.pendingRequestCount").value(0))
+                .andExpect(jsonPath("$.stats.pendingPackageCount").value(0))
+                .andExpect(jsonPath("$.requests.length()").value(0));
+
+        mockMvc.perform(get("/api/admin/delivery-requests")
+                        .param("from", "2026-08-23")
+                        .param("to", "2026-08-23")
+                        .param("pendingOnly", "true")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].requestedDate").value("2026-08-23"));
     }
 
     @Test
@@ -163,7 +176,7 @@ class DeliveryRequestApiIntegrationTest {
         MvcResult firstCreation = mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, false, true)))
+                        .content(requestJson(false, true)))
                 .andExpect(status().isCreated())
                 .andReturn();
         String firstRequestId = objectMapper.readTree(firstCreation.getResponse().getContentAsString())
@@ -179,14 +192,14 @@ class DeliveryRequestApiIntegrationTest {
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_TWO_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, false, false)
+                        .content(requestJson(false, false)
                                 .replace("2026-08-24", "2026-08-26")))
                 .andExpect(status().isCreated());
 
         MvcResult completedCreation = mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson(false, false, false)
+                        .content(requestJson(false, false)
                                 .replace("2026-08-24", "2026-08-25")))
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -324,7 +337,7 @@ class DeliveryRequestApiIntegrationTest {
                 """, id, username, "unused-password-hash", role, displayName, "034 00 000 00");
     }
 
-    private String requestJson(boolean savePickup, boolean acceptOverflow, boolean twoPackages) {
+    private String requestJson(boolean savePickup, boolean twoPackages) {
         String secondPackage = twoPackages ? """
                 ,{
                   "recipientName": "Soa",
@@ -351,7 +364,6 @@ class DeliveryRequestApiIntegrationTest {
                     "longitude": 47.5212
                   },
                   "saveAsDefaultPickup": %s,
-                  "acceptCapacityOverflow": %s,
                   "packages": [{
                     "recipientName": "Rakoto",
                     "faritra": true,
@@ -366,6 +378,6 @@ class DeliveryRequestApiIntegrationTest {
                     "mobileMoneyPaid": false
                   }%s]
                 }
-                """.formatted(savePickup, acceptOverflow, secondPackage);
+                """.formatted(savePickup, secondPackage);
     }
 }

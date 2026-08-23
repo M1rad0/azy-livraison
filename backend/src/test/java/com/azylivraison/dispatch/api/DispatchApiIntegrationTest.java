@@ -13,9 +13,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.HexFormat;
 import java.util.UUID;
 
 import com.azylivraison.optimization.domain.OptimizationComparisonResult.CourierHubManifest;
@@ -125,13 +130,13 @@ class DispatchApiIntegrationTest {
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
                     distance_from_center_meters, pricing_zone_max_distance_meters,
                     pricing_policy_version,
-                    effective_weight_kg, weight_source
+                    effective_weight_kg, weight_source, priority_at
                 ) VALUES (?, ?, 1, 'Rakoto', TRUE,
                           'Ampasapito', 'Ampasapito, Antananarivo', -18.8990, 47.5440,
                           '034 11 222 33', 45000, FALSE,
                           '71000000-0000-0000-0000-000000000001', 'Centre-ville', 3000,
                           2448, 2500, 0,
-                          2.5, 'PROVIDED')
+                          2.5, 'PROVIDED', CURRENT_TIMESTAMP)
                 """, PACKAGE_ID, REQUEST_ID);
         when(optimizationFacade.optimize(any(DeliveryPlan.class), any(ViaHubRunPolicy.class)))
                 .thenAnswer(invocation -> successfulResult(invocation.getArgument(0), invocation.getArgument(1)));
@@ -173,7 +178,7 @@ class DispatchApiIntegrationTest {
                         .header("Idempotency-Key", "dispatch-2026-08-24")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isCreated())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.plan.id").value(id));
 
         mockMvc.perform(get("/api/admin/dispatch-plans/{id}", id).with(admin()))
@@ -221,6 +226,137 @@ class DispatchApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("DISPATCH_VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.message").value("Validation impossible."));
+    }
+
+    @Test
+    void recoversAStaleInterruptedDispatchBeforeCreatingTheDailyPlan() throws Exception {
+        UUID stalePlanId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO dispatch_plan (
+                    id, service_date, status, strategy, created_by_account_id,
+                    idempotency_key, request_hash,
+                    hub_label, hub_latitude, hub_longitude,
+                    input_snapshot_json, policy_snapshot_json,
+                    selected_package_count, selected_courier_count, created_at
+                ) VALUES (?, '2026-08-24', 'GENERATING', 'VIA_HUB', ?,
+                          ?, ?, 'Ancien siège', -18.90, 47.52, '{}', '{}', 1, 1, ?)
+                """, stalePlanId, ADMIN_ID, "stale-" + stalePlanId, "0".repeat(64),
+                Timestamp.from(Instant.now().minusSeconds(31 * 60)));
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day (
+                    service_date, status, admissions_closed_at, dispatch_plan_id
+                ) VALUES ('2026-08-24', 'DISPATCHING', CURRENT_TIMESTAMP, ?)
+                """, stalePlanId);
+
+        mockMvc.perform(post("/api/admin/dispatch-plans")
+                        .with(admin())
+                        .header("Idempotency-Key", "replacement-after-crash")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "serviceDate": "2026-08-24",
+                                  "courierIds": ["%s"]
+                                }
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.plan.status").value("READY"));
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM dispatch_plan WHERE id = ?", String.class, stalePlanId))
+                .isEqualTo("FAILED");
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_operation_day_event
+                WHERE service_date = '2026-08-24' AND event_type = 'STALE_DISPATCH_RECOVERED'
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void turnsAStaleIdempotentReplayIntoAnAuditedFailure() throws Exception {
+        UUID stalePlanId = UUID.randomUUID();
+        String key = "stale-idempotent-replay";
+        String canonical = "2026-08-24\n" + COURIER_ID + "\nALL_ELIGIBLE\nDEFAULT_HUB";
+        String requestHash = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        jdbcTemplate.update("""
+                INSERT INTO dispatch_plan (
+                    id, service_date, status, strategy, created_by_account_id,
+                    idempotency_key, request_hash,
+                    hub_label, hub_latitude, hub_longitude,
+                    input_snapshot_json, policy_snapshot_json,
+                    selected_package_count, selected_courier_count, created_at
+                ) VALUES (?, '2026-08-24', 'GENERATING', 'VIA_HUB', ?,
+                          ?, ?, 'Ancien siège', -18.90, 47.52, '{}',
+                          '{"pickupServiceSeconds":600,"hubTransferSeconds":900,"deliveryServiceSeconds":300,"deliveryWindowEarlyToleranceSeconds":0,"deliveryWindowLateToleranceSeconds":1800,"windowAppliesTo":"DELIVERY"}',
+                          1, 1, ?)
+                """, stalePlanId, ADMIN_ID, key, requestHash,
+                Timestamp.from(Instant.now().minusSeconds(31 * 60)));
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day (
+                    service_date, status, admissions_closed_at, dispatch_plan_id
+                ) VALUES ('2026-08-24', 'DISPATCHING', CURRENT_TIMESTAMP, ?)
+                """, stalePlanId);
+
+        mockMvc.perform(post("/api/admin/dispatch-plans")
+                        .with(admin())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "serviceDate": "2026-08-24",
+                                  "courierIds": ["%s"]
+                                }
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.id").value(stalePlanId.toString()))
+                .andExpect(jsonPath("$.plan.status").value("FAILED"));
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject("""
+                SELECT status FROM delivery_operation_day WHERE service_date = '2026-08-24'
+                """, String.class)).isEqualTo("OPEN");
+        verify(optimizationFacade, times(0)).optimize(any(DeliveryPlan.class), any(ViaHubRunPolicy.class));
+    }
+
+    @Test
+    void dispatchesOnlyTheSelectedActivityDate() throws Exception {
+        UUID oldRequestId = UUID.randomUUID();
+        UUID oldPackageId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO delivery_request (
+                    id, owner_account_id, requested_date,
+                    pickup_label, pickup_latitude, pickup_longitude,
+                    capacity_limit_snapshot, capacity_current_snapshot,
+                    capacity_requested_snapshot, capacity_projected_snapshot
+                ) VALUES (?, ?, '2026-08-23', 'Ancien retrait', -18.91, 47.52, 100, 0, 1, 1)
+                """, oldRequestId, CLIENT_ID);
+        jdbcTemplate.update("""
+                INSERT INTO delivery_package (
+                    id, delivery_request_id, sequence_number,
+                    recipient_name, faritra,
+                    destination_label, destination_latitude, destination_longitude,
+                    contact, amount_to_collect_ariary, mobile_money_paid,
+                    effective_weight_kg, weight_source, priority_at
+                ) VALUES (?, ?, 1, 'Ancien destinataire', FALSE,
+                          'Ancienne destination', -18.90, 47.53,
+                          '034 00 000 09', 1000, FALSE,
+                          1, 'DEFAULT_SETTING', CURRENT_TIMESTAMP)
+                """, oldPackageId, oldRequestId);
+
+        mockMvc.perform(post("/api/admin/dispatch-plans")
+                        .with(admin())
+                        .header("Idempotency-Key", "strict-daily-queue")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "serviceDate": "2026-08-24",
+                                  "courierIds": ["%s"]
+                                }
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.plan.selectedPackageCount").value(1));
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM delivery_package WHERE id = ?", String.class, oldPackageId))
+                .isEqualTo("PENDING");
     }
 
     private ViaHubOptimizationResult successfulResult(DeliveryPlan plan, ViaHubRunPolicy policy) {

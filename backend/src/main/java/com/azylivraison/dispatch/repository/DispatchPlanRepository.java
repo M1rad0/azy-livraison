@@ -15,6 +15,7 @@ import com.azylivraison.dispatch.domain.DispatchPlanRecord;
 import com.azylivraison.dispatch.domain.DispatchStatus;
 import com.azylivraison.dispatch.domain.DispatchStop;
 import com.azylivraison.dispatch.domain.SelectedCourierSnapshot;
+import com.azylivraison.dispatch.service.DispatchConflictException;
 import com.azylivraison.optimization.domain.ViaHubOptimizationResult;
 import com.azylivraison.planning.domain.Location;
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
@@ -76,6 +77,220 @@ public class DispatchPlanRepository {
                 SELECT_PLAN + " WHERE service_date = ? ORDER BY created_at DESC",
                 (resultSet, rowNumber) -> mapPlan(resultSet),
                 serviceDate);
+    }
+
+    public void beginOperationDay(LocalDate serviceDate, UUID actorAccountId, Instant staleBefore) {
+        List<OperationDayDispatchLock> states = jdbcTemplate.query(
+                """
+                SELECT status, dispatch_plan_id
+                FROM delivery_operation_day
+                WHERE service_date = ?
+                FOR UPDATE
+                """,
+                (resultSet, rowNumber) -> new OperationDayDispatchLock(
+                        resultSet.getString("status"),
+                        resultSet.getObject("dispatch_plan_id", UUID.class)),
+                serviceDate);
+        if (states.isEmpty()) {
+            jdbcTemplate.update("""
+                    INSERT INTO delivery_operation_day (
+                        service_date, status, admissions_closed_at, created_at, updated_at
+                    ) VALUES (?, 'DISPATCHING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """, serviceDate);
+            return;
+        }
+        OperationDayDispatchLock state = states.getFirst();
+        String currentStatus = state.status();
+        if ("DISPATCHING".equals(currentStatus)
+                && state.dispatchPlanId() != null
+                && recoverStaleGeneratingPlan(serviceDate, state.dispatchPlanId(), actorAccountId, staleBefore)) {
+            currentStatus = "OPEN";
+        }
+        if (!"OPEN".equals(currentStatus)) {
+            throw new DispatchConflictException(
+                    "Le plan de cette date est déjà en préparation, enregistré ou clôturé.");
+        }
+        int started = jdbcTemplate.update("""
+                UPDATE delivery_operation_day
+                SET status = 'DISPATCHING',
+                    admissions_closed_at = CURRENT_TIMESTAMP,
+                    dispatch_plan_id = NULL,
+                    version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE service_date = ? AND status = 'OPEN'
+                """, serviceDate);
+        if (started != 1) {
+            throw new DispatchConflictException("La journée n'a pas pu être réservée pour ce dispatch.");
+        }
+    }
+
+    public boolean recoverStaleIdempotentPlan(
+            LocalDate serviceDate,
+            UUID dispatchPlanId,
+            UUID actorAccountId,
+            Instant staleBefore) {
+        List<OperationDayDispatchLock> states = jdbcTemplate.query(
+                """
+                SELECT status, dispatch_plan_id
+                FROM delivery_operation_day
+                WHERE service_date = ?
+                FOR UPDATE
+                """,
+                (resultSet, rowNumber) -> new OperationDayDispatchLock(
+                        resultSet.getString("status"),
+                        resultSet.getObject("dispatch_plan_id", UUID.class)),
+                serviceDate);
+        if (states.isEmpty()) return false;
+        OperationDayDispatchLock state = states.getFirst();
+        if (!"DISPATCHING".equals(state.status())
+                || !dispatchPlanId.equals(state.dispatchPlanId())) return false;
+        return recoverStaleGeneratingPlan(
+                serviceDate, dispatchPlanId, actorAccountId, staleBefore);
+    }
+
+    private boolean recoverStaleGeneratingPlan(
+            LocalDate serviceDate,
+            UUID dispatchPlanId,
+            UUID actorAccountId,
+            Instant staleBefore) {
+        List<String> stalePlans = jdbcTemplate.query("""
+                SELECT status
+                FROM dispatch_plan
+                WHERE id = ? AND created_at < ?
+                FOR UPDATE
+                """, (resultSet, rowNumber) -> resultSet.getString("status"),
+                dispatchPlanId, Timestamp.from(staleBefore));
+        if (stalePlans.isEmpty() || !"GENERATING".equals(stalePlans.getFirst())) return false;
+
+        int failed = jdbcTemplate.update("""
+                UPDATE dispatch_plan
+                SET status = 'FAILED',
+                    failure_code = 'STALE_GENERATING_PLAN',
+                    failure_message = 'Le calcul a été interrompu avant son enregistrement.',
+                    completed_processing_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'GENERATING'
+                """, dispatchPlanId);
+        if (failed != 1) return false;
+
+        jdbcTemplate.update(
+                "DELETE FROM dispatch_package_reservation WHERE dispatch_plan_id = ?", dispatchPlanId);
+        jdbcTemplate.update(
+                "DELETE FROM dispatch_day_reservation WHERE dispatch_plan_id = ?", dispatchPlanId);
+        int reopened = jdbcTemplate.update("""
+                UPDATE delivery_operation_day
+                SET status = 'OPEN', admissions_closed_at = NULL, dispatch_plan_id = NULL,
+                    version = version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE service_date = ? AND status = 'DISPATCHING' AND dispatch_plan_id = ?
+                """, serviceDate, dispatchPlanId);
+        if (reopened != 1) {
+            throw new IllegalStateException("Le dispatch interrompu n'a pas pu être libéré.");
+        }
+        insertDayEvent(serviceDate, "STALE_DISPATCH_RECOVERED", actorAccountId,
+                "{\"dispatchPlanId\":\"" + dispatchPlanId + "\"}");
+        return true;
+    }
+
+    public void attachOperationPlan(LocalDate serviceDate, UUID dispatchPlanId, UUID actorAccountId) {
+        int updated = jdbcTemplate.update("""
+                UPDATE delivery_operation_day
+                SET dispatch_plan_id = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE service_date = ? AND status = 'DISPATCHING' AND dispatch_plan_id IS NULL
+                """, dispatchPlanId, serviceDate);
+        if (updated != 1) {
+            throw new DispatchConflictException("La journée n'a pas pu être réservée pour ce plan.");
+        }
+        insertDayEvent(serviceDate, "DISPATCH_STARTED", actorAccountId,
+                "{\"dispatchPlanId\":\"" + dispatchPlanId + "\"}");
+    }
+
+    public void lockOperationPlanForCompletion(UUID dispatchPlanId) {
+        List<OperationDayDispatchLock> days = jdbcTemplate.query(
+                """
+                SELECT status, dispatch_plan_id
+                FROM delivery_operation_day
+                WHERE dispatch_plan_id = ?
+                FOR UPDATE
+                """,
+                (resultSet, rowNumber) -> new OperationDayDispatchLock(
+                        resultSet.getString("status"),
+                        resultSet.getObject("dispatch_plan_id", UUID.class)),
+                dispatchPlanId);
+        if (days.isEmpty() || !"DISPATCHING".equals(days.getFirst().status())) {
+            throw new DispatchConflictException(
+                    "Ce calcul n'est plus le dispatch actif de la journée.");
+        }
+        List<String> plans = jdbcTemplate.query(
+                "SELECT status FROM dispatch_plan WHERE id = ? FOR UPDATE",
+                (resultSet, rowNumber) -> resultSet.getString("status"),
+                dispatchPlanId);
+        if (plans.isEmpty() || !"GENERATING".equals(plans.getFirst())) {
+            throw new DispatchConflictException(
+                    "Ce calcul a déjà été finalisé ou interrompu.");
+        }
+    }
+
+    public void markOperationDayDispatched(UUID dispatchPlanId, UUID actorAccountId) {
+        int updated = jdbcTemplate.update("""
+                UPDATE delivery_operation_day
+                SET status = 'DISPATCHED', version = version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE dispatch_plan_id = ? AND status = 'DISPATCHING'
+                """, dispatchPlanId);
+        if (updated != 1) {
+            throw new DispatchConflictException(
+                    "La journée n'est plus réservée par ce calcul.");
+        }
+        LocalDate serviceDate = jdbcTemplate.queryForObject(
+                "SELECT service_date FROM dispatch_plan WHERE id = ?", LocalDate.class, dispatchPlanId);
+        insertDayEvent(serviceDate, "DISPATCH_COMPLETED", actorAccountId,
+                "{\"dispatchPlanId\":\"" + dispatchPlanId + "\"}");
+    }
+
+    public void failOperationPlan(
+            UUID dispatchPlanId,
+            UUID actorAccountId,
+            String code,
+            String message) {
+        List<LocalDate> dates = jdbcTemplate.query(
+                "SELECT service_date FROM delivery_operation_day WHERE dispatch_plan_id = ? FOR UPDATE",
+                (resultSet, rowNumber) -> resultSet.getObject("service_date", LocalDate.class),
+                dispatchPlanId);
+        List<String> plans = jdbcTemplate.query(
+                "SELECT status FROM dispatch_plan WHERE id = ? FOR UPDATE",
+                (resultSet, rowNumber) -> resultSet.getString("status"),
+                dispatchPlanId);
+        if (plans.isEmpty() || !"GENERATING".equals(plans.getFirst())) return;
+        int failed = jdbcTemplate.update("""
+                UPDATE dispatch_plan
+                SET status = 'FAILED',
+                    failure_code = ?,
+                    failure_message = ?,
+                    completed_processing_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'GENERATING'
+                """, code, truncate(message, 1000), dispatchPlanId);
+        if (failed != 1 || dates.isEmpty()) return;
+        LocalDate serviceDate = dates.getFirst();
+        int reopened = jdbcTemplate.update("""
+                UPDATE delivery_operation_day
+                SET status = 'OPEN', admissions_closed_at = NULL, dispatch_plan_id = NULL,
+                    version = version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE service_date = ? AND status = 'DISPATCHING' AND dispatch_plan_id = ?
+                """, serviceDate, dispatchPlanId);
+        if (reopened != 1) {
+            throw new IllegalStateException("La journée n'a pas pu être libérée après l'échec du dispatch.");
+        }
+        insertDayEvent(serviceDate, "DISPATCH_FAILED", actorAccountId,
+                "{\"dispatchPlanId\":\"" + dispatchPlanId + "\"}");
+    }
+
+    private void insertDayEvent(LocalDate serviceDate, String eventType, UUID actorId, String payload) {
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day_event (
+                    id, service_date, event_type, actor_account_id, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, UUID.randomUUID(), serviceDate, eventType, actorId, payload);
+    }
+
+    private record OperationDayDispatchLock(String status, UUID dispatchPlanId) {
     }
 
     public void createGenerating(
@@ -166,7 +381,7 @@ public class DispatchPlanRepository {
         var result = optimization.result();
         var metrics = optimization.metrics();
         var hub = optimization.hubExecution();
-        jdbcTemplate.update("""
+        int updated = jdbcTemplate.update("""
                 UPDATE dispatch_plan
                 SET status = ?,
                     result_json = ?,
@@ -200,22 +415,15 @@ public class DispatchPlanRepository {
                 timestamp(hub.redistributionCompletedAt()),
                 timestamp(metrics.completedAt()),
                 dispatchPlanId);
-    }
-
-    public void markFailed(UUID dispatchPlanId, String code, String message) {
-        jdbcTemplate.update("""
-                UPDATE dispatch_plan
-                SET status = 'FAILED',
-                    failure_code = ?,
-                    failure_message = ?,
-                    completed_processing_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND status = 'GENERATING'
-                """, code, truncate(message, 1000), dispatchPlanId);
+        if (updated != 1) {
+            throw new DispatchConflictException(
+                    "Le résultat de ce calcul ne peut plus être enregistré.");
+        }
     }
 
     public void updateCourierResults(UUID dispatchPlanId, List<DispatchCourierResult> couriers) {
         for (DispatchCourierResult courier : couriers) {
-            jdbcTemplate.update("""
+            int updated = jdbcTemplate.update("""
                     UPDATE dispatch_plan_courier
                     SET used = ?,
                         collection_role = ?,
@@ -243,6 +451,9 @@ public class DispatchPlanRepository {
                     courier.routeDurationSeconds(),
                     dispatchPlanId,
                     courier.courierId());
+            if (updated != 1) {
+                throw new IllegalStateException("Un livreur du plan est introuvable.");
+            }
         }
     }
 

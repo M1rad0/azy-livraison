@@ -3,7 +3,8 @@ package com.azylivraison.delivery.api;
 import java.util.Comparator;
 import java.util.List;
 
-import com.azylivraison.delivery.service.CapacityConfirmationRequiredException;
+import com.azylivraison.delivery.service.DailyCapacityExceededException;
+import com.azylivraison.delivery.service.DeliveryDateClosedException;
 import com.azylivraison.delivery.service.DeliveryRequestNotFoundException;
 import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
 import com.azylivraison.pricing.service.DestinationOutsidePricingZonesException;
@@ -22,16 +23,27 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 })
 public class DeliveryRequestExceptionHandler {
 
-    @ExceptionHandler(CapacityConfirmationRequiredException.class)
-    ResponseEntity<CapacityConfirmationErrorResponse> capacityConfirmationRequired(
-            CapacityConfirmationRequiredException exception) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(new CapacityConfirmationErrorResponse(
-                "DAILY_CAPACITY_CONFIRMATION_REQUIRED",
+    @ExceptionHandler(DailyCapacityExceededException.class)
+    ResponseEntity<DailyCapacityErrorResponse> dailyCapacityExceeded(
+            DailyCapacityExceededException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new DailyCapacityErrorResponse(
+                "DAILY_CAPACITY_EXCEEDED",
                 exception.getMessage(),
+                exception.requestedDate(),
                 exception.limit(),
                 exception.current(),
                 exception.requested(),
-                exception.projected()));
+                exception.projected(),
+                exception.remaining(),
+                exception.excess()));
+    }
+
+    @ExceptionHandler(DeliveryDateClosedException.class)
+    ResponseEntity<DeliveryApiErrorResponse> deliveryDateClosed(DeliveryDateClosedException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new DeliveryApiErrorResponse(
+                "DELIVERY_DATE_CLOSED",
+                exception.getMessage(),
+                List.of()));
     }
 
     @ExceptionHandler(DestinationOutsidePricingZonesException.class)

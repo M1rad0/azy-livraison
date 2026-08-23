@@ -3,6 +3,7 @@ package com.azylivraison.administration.api;
 import java.math.BigDecimal;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -35,6 +36,7 @@ public record OperationalSettingsUpdateRequest(
         Integer lateToleranceMinutes,
         @NotNull(message = "La limite de temps de l'optimisation est obligatoire.")
         @Positive(message = "La limite de temps de l'optimisation doit être positive.")
+        @Max(value = 1200, message = "La limite de temps de l'optimisation ne peut pas dépasser 1200 secondes.")
         Integer optimizationTimeLimitSeconds,
         @NotNull(message = "Le profil routier est obligatoire.")
         RoutingPreset routingPreset,

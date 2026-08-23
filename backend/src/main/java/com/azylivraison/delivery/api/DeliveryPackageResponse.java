@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
 
@@ -27,6 +28,13 @@ public record DeliveryPackageResponse(
         PackageWeightSource weightSource,
         DeliveryPackageStatus status,
         String unassignedReason,
+        DeliveryPackageOutcome finalOutcome,
+        Long actualCollectedAriary,
+        String outcomeNote,
+        Instant outcomeRecordedAt,
+        Instant returnCompletedAt,
+        UUID carriedForwardFromPackageId,
+        UUID dispatchPlanId,
         long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -51,6 +59,13 @@ public record DeliveryPackageResponse(
                 deliveryPackage.weightSource(),
                 deliveryPackage.status(),
                 deliveryPackage.unassignedReason(),
+                deliveryPackage.finalOutcome(),
+                deliveryPackage.actualCollectedAriary(),
+                deliveryPackage.outcomeNote(),
+                deliveryPackage.outcomeRecordedAt(),
+                deliveryPackage.returnCompletedAt(),
+                deliveryPackage.carriedForwardFromPackageId(),
+                deliveryPackage.dispatchPlanId(),
                 deliveryPackage.version(),
                 deliveryPackage.createdAt(),
                 deliveryPackage.updatedAt());

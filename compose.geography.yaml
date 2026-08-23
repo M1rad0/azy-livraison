@@ -52,9 +52,9 @@ services:
       - --algorithm
       - mld
       - --max-table-size
-      - "${OSRM_MAX_TABLE_SIZE:-100}"
+      - "${OSRM_MAX_TABLE_SIZE:-250}"
       - --max-viaroute-size
-      - "${OSRM_MAX_ROUTE_POINTS:-100}"
+      - "${OSRM_MAX_ROUTE_POINTS:-250}"
       - "/data/${OSRM_DATASET:-madagascar-latest}.osrm"
     depends_on:
       osrm-prepare:

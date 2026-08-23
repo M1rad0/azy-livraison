@@ -52,7 +52,8 @@ public record DeliveryRequestResponse(
                 request.updatedAt(),
                 request.packages().stream()
                         .filter(deliveryPackage -> !pendingOnly
-                                || deliveryPackage.status() == DeliveryPackageStatus.PENDING)
+                                || (deliveryPackage.status() == DeliveryPackageStatus.PENDING
+                                    && deliveryPackage.finalOutcome() == null))
                         .map(DeliveryPackageResponse::from)
                         .toList());
     }

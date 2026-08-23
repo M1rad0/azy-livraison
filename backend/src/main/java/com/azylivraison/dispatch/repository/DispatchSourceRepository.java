@@ -40,7 +40,8 @@ public class DispatchSourceRepository {
             LEFT JOIN dispatch_package_reservation reservation
                    ON reservation.delivery_package_id = p.id
             WHERE p.status = 'PENDING'
-              AND dr.requested_date <= :serviceDate
+              AND p.final_outcome IS NULL
+              AND dr.requested_date = :serviceDate
               AND reservation.delivery_package_id IS NULL
             """;
 
@@ -50,28 +51,27 @@ public class DispatchSourceRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<DispatchSourcePackage> findPending(
-            LocalDate serviceDate,
-            List<UUID> requestedPackageIds) {
-        String packageFilter = requestedPackageIds == null || requestedPackageIds.isEmpty()
-                ? ""
-                : " AND p.id IN (:packageIds)";
+    public void lockAdmissionGate() {
+        jdbcTemplate.getJdbcTemplate().queryForObject("""
+                SELECT id FROM operational_settings WHERE id = 1 FOR UPDATE
+                """, Integer.class);
+    }
+
+    public List<DispatchSourcePackage> findPending(LocalDate serviceDate) {
         MapSqlParameterSource parameters = new MapSqlParameterSource("serviceDate", serviceDate);
-        if (!packageFilter.isEmpty()) {
-            parameters.addValue("packageIds", requestedPackageIds);
-        }
         return jdbcTemplate.query(
-                SELECT_PENDING + packageFilter + " ORDER BY dr.requested_date, dr.created_at, p.sequence_number, p.id",
+                SELECT_PENDING + " ORDER BY p.priority_at, dr.requested_date, dr.created_at, p.sequence_number, p.id",
                 parameters,
                 (resultSet, rowNumber) -> map(resultSet));
     }
 
     public void markAssigned(UUID dispatchPlanId, List<UUID> packageIds) {
         if (packageIds.isEmpty()) return;
-        jdbcTemplate.update("""
+        int updated = jdbcTemplate.update("""
                 UPDATE delivery_package
                 SET status = 'DISPATCHED',
                     unassigned_reason = NULL,
+                    dispatch_plan_id = :dispatchPlanId,
                     version = version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id IN (:packageIds)
@@ -81,14 +81,18 @@ public class DispatchSourceRepository {
                         AND reservation.dispatch_plan_id = :dispatchPlanId
                   )
                 """, Map.of("packageIds", packageIds, "dispatchPlanId", dispatchPlanId));
+        if (updated != packageIds.size()) {
+            throw new IllegalStateException("Tous les colis affectés n'étaient plus réservés par ce plan.");
+        }
     }
 
     public void markUnassigned(UUID dispatchPlanId, Map<UUID, String> reasons) {
         for (Map.Entry<UUID, String> reason : reasons.entrySet()) {
-            jdbcTemplate.update("""
+            int updated = jdbcTemplate.update("""
                     UPDATE delivery_package
-                    SET status = 'PENDING',
+                    SET status = 'DISPATCHED',
                         unassigned_reason = :reason,
+                        dispatch_plan_id = :dispatchPlanId,
                         version = version + 1,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :packageId
@@ -101,23 +105,28 @@ public class DispatchSourceRepository {
                             "reason", reason.getValue(),
                             "packageId", reason.getKey(),
                             "dispatchPlanId", dispatchPlanId));
+            if (updated != 1) {
+                throw new IllegalStateException("Un colis non affecté n'était plus réservé par ce plan.");
+            }
         }
     }
 
     public void recomputeRequestStatuses(List<UUID> requestIds) {
         for (UUID requestId : requestIds.stream().distinct().toList()) {
-            jdbcTemplate.update("""
+            int updated = jdbcTemplate.update("""
                     UPDATE delivery_request
                     SET status = CASE
                             WHEN NOT EXISTS (
                                 SELECT 1 FROM delivery_package p
                                 WHERE p.delivery_request_id = delivery_request.id
+                                  AND p.final_outcome IS NULL
                                   AND p.status <> 'DISPATCHED'
                             ) THEN 'DISPATCHED'
                             WHEN EXISTS (
                                 SELECT 1 FROM delivery_package p
                                 WHERE p.delivery_request_id = delivery_request.id
                                   AND p.status = 'DISPATCHED'
+                                  AND p.final_outcome IS NULL
                             ) THEN 'PARTIALLY_DISPATCHED'
                             ELSE 'PENDING'
                         END,
@@ -125,6 +134,9 @@ public class DispatchSourceRepository {
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :requestId
                     """, Map.of("requestId", requestId));
+            if (updated != 1) {
+                throw new IllegalStateException("Une demande du plan est introuvable.");
+            }
         }
     }
 
