@@ -44,6 +44,14 @@ Chaque colis contient :
 
 Lorsque le poids n'est pas fourni, sa valeur effective est copiée depuis `defaultPackageWeightKg` au moment de l'enregistrement. La demande conserve donc le poids réellement utilisé et sa provenance (`PROVIDED` ou `DEFAULT_SETTING`), même si le réglage change ensuite.
 
+### Tarification géographique
+
+La destination confirmée de chaque colis est comparée à des paliers concentriques configurables autour d'un point central commun. Le premier rayon qui couvre le point fournit le nom de la zone et les frais de livraison. Au-delà du dernier rayon, la destination est explicitement considérée comme non couverte et la demande n'est pas enregistrée partiellement.
+
+La configuration initiale utilise le centre Antsahavola–Antaninarenina et les paliers `2,5 / 4,5 / 8 / 10,5 / 16,5 km` aux prix respectifs de `3 000 / 4 000 / 5 000 / 6 000 / 8 000 Ar`. Elle a été calibrée avec OpenStreetMap à partir des quartiers du document métier ; le [rapport de géocodage et de calibration](schemas/examples/pricing-zones-osm-analysis.json) conserve les correspondances, ambiguïtés et limites de cette approximation radiale.
+
+Le tarif est calculé côté backend au moment de l'enregistrement et copié dans un snapshot du colis. Un changement ultérieur des zones ne réécrit donc pas l'historique. Les frais sont affichés comme la part livraison du total déclaré, sans modifier automatiquement `amountToCollectAriary`. L'indicateur `faritra` et le type de véhicule restent indépendants de la tarification dans cette première version.
+
 ### Capacité journalière et confirmation
 
 La limite journalière correspond actuellement à un **nombre de colis**, pas à un nombre de demandes ni à un poids total. Lors de la création, le backend compare les colis déjà en attente pour la date, la limite configurée et les nouveaux colis.
@@ -58,6 +66,7 @@ L'administrateur peut :
 - créer, modifier, désactiver et réactiver les profils de livreurs ;
 - choisir le véhicule, le départ habituel, l'heure de départ et les éventuelles valeurs personnalisées de capacité ou de vitesse ;
 - modifier les préréglages `MOTO` et `BICYCLE` ;
+- modifier le point central, les rayons et les prix des zones de livraison ;
 - régler la limite journalière, le poids par défaut, le siège par défaut, les durées de service, les tolérances horaires, le délai OR-Tools et le profil routier ;
 - sélectionner les colis et les livreurs d'une journée, éventuellement remplacer le siège, puis générer un dispatch persistant.
 
@@ -261,6 +270,7 @@ account/        comptes, rôles, profils clients, login et jetons
 administration/ réglages opérationnels, préréglages et profils livreurs
 delivery/       demandes persistées, colis, file et règles de capacité
 dispatch/       sélection, snapshots et résultats VIA_HUB persistés
+pricing/        paliers géographiques, devis et snapshots tarifaires
 planning/       modèle du plan et règles de validation
 geography/      fournisseurs de géocodage, cache et ambiguïtés
 routing/        OSRM, matrices, profils et géométries

@@ -1,0 +1,3586 @@
+{
+  "schemaVersion": "1.0",
+  "generatedOn": "2026-08-23",
+  "purpose": "Configuration tarifaire initiale dérivée du document Répartition.pdf et des données OpenStreetMap locales de Madagascar.",
+  "source": {
+    "document": "schemas/examples/Répartition.pdf",
+    "geocoder": "Nominatim local 5.3.2",
+    "queryPattern": "<libelle>, Antananarivo, Madagascar, avec reprise Analamanga et desambiguïsation manuelle prudente",
+    "distanceModel": "haversine"
+  },
+  "recommendedConfiguration": {
+    "center": {
+      "latitude": -18.9096,
+      "longitude": 47.5236,
+      "osmReverseLabel": "Antsahavola, Antaninarenina, Antananarivo, Madagascar",
+      "method": "Recherche d'un centre commun minimisant les erreurs ordinales sur les quartiers OSM retenus"
+    },
+    "zones": [
+      {
+        "position": 1,
+        "name": "Centre-ville",
+        "maxRadiusKm": 2.5,
+        "priceMga": 3000
+      },
+      {
+        "position": 2,
+        "name": "Périphérie",
+        "maxRadiusKm": 4.5,
+        "priceMga": 4000
+      },
+      {
+        "position": 3,
+        "name": "Périphérie+",
+        "maxRadiusKm": 8.0,
+        "priceMga": 5000
+      },
+      {
+        "position": 4,
+        "name": "Périphérie++",
+        "maxRadiusKm": 10.5,
+        "priceMga": 6000
+      },
+      {
+        "position": 5,
+        "name": "Périphérie+++",
+        "maxRadiusKm": 16.5,
+        "priceMga": 8000
+      }
+    ],
+    "outsideCoverage": {
+      "name": "Zone non couverte",
+      "priceMga": null,
+      "deliveryAllowed": false
+    }
+  },
+  "geocodingAudit": {
+    "sourceLabelCount": 117,
+    "resolvedCount": 113,
+    "resolvedRate": 0.9658119658,
+    "confidenceCounts": {
+      "high": 91,
+      "medium": 16,
+      "low": 6,
+      "unresolved": 4
+    },
+    "unresolvedLabels": [
+      "AMBOHITANATY",
+      "ANKAROBATO",
+      "RAVITOTO",
+      "AMBOHIMPANJA"
+    ],
+    "lowConfidenceInterpretations": [
+      {
+        "source": "AMBOLAKOANDRINA",
+        "selectedOsmReference": "Cite des Professeurs Ambolokandrina",
+        "reason": "Probable variante orthographique d'AMBOLOKANDRINA, classee dans un autre palier"
+      },
+      {
+        "source": "ANDRONDRANA",
+        "selectedOsmReference": "Androndrakely",
+        "reason": "Variante orthographique probable mais non certaine"
+      },
+      {
+        "source": "MOSAILE",
+        "selectedOsmReference": "Mausolee national Andrainarivo",
+        "reason": "Interpretation phonetique du libelle du PDF"
+      },
+      {
+        "source": "BY PASS",
+        "selectedOsmReference": "By-pass, Antananarivo",
+        "reason": "Voie lineaire representee par un seul point arbitraire; exclue de la calibration"
+      },
+      {
+        "source": "ALAKAMISY NY AMBOHIDRATRIMO",
+        "selectedOsmReference": "Alakamisy Anosiala",
+        "reason": "Interpretation par la commune Alakamisy situee dans le district d'Ambohidratrimo"
+      },
+      {
+        "source": "AMBOHIJANAHARY",
+        "selectedOsmReference": "Ambohijanahary (natural/peak), Antananarivo",
+        "reason": "Seul objet OSM urbain portant ce nom; sa nature et sa position sont incompatibles avec le palier source, donc le point est exclu de la calibration"
+      }
+    ],
+    "otherManualCorrections": [
+      "ANTANINDRANO -> Antaninandro",
+      "ANTOHAMADINIKA -> Antohomadinika",
+      "ANKADIMBAOKA -> Ankadimbahoaka",
+      "ANDRAISOORO -> Andraisoro",
+      "ANTSOFONDRY -> Antsofinondry",
+      "ALAKAMISY NY FENOARIVO -> Alakamisy Fenoarivo",
+      "LA HAUTE -> Haute Ville"
+    ],
+    "resolvedLabelAuditMethod": {
+      "coordinateSystem": "WGS84",
+      "automaticCandidateBounds": {
+        "minLatitude": -19.25,
+        "maxLatitude": -18.55,
+        "minLongitude": 47.2,
+        "maxLongitude": 47.85
+      },
+      "automaticCandidateOrder": [
+        "Nom normalisé exact avant correspondance partielle",
+        "Objet OSM de catégorie place avant un simple repère",
+        "Candidat restant le plus proche du centre de référence"
+      ],
+      "normalization": "Insensible à la casse, aux accents et aux caractères non alphanumériques",
+      "manualSelection": "Une correctionUsed non nulle décrit toute correction, désambiguïsation ou dérivation manuelle",
+      "distance": "Haversine en kilomètres avec un rayon terrestre moyen de 6371,0088 km"
+    },
+    "resolvedLabels": [
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBANIDIA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9188124,
+          "longitude": 47.5391554
+        },
+        "osm": {
+          "type": "node",
+          "id": 5680854302,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambanidia",
+        "confidence": "high",
+        "distanceToCenterKm": 1.93,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMBANIDIA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBATOMENA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9087326,
+          "longitude": 47.5239158
+        },
+        "osm": {
+          "type": "node",
+          "id": 12504457190,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Ambatomena",
+        "confidence": "high",
+        "distanceToCenterKm": 0.102,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMBATOMENA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBATONAKANGA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9129111,
+          "longitude": 47.5270921
+        },
+        "osm": {
+          "type": "node",
+          "id": 686543334,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Ambatonakanga",
+        "confidence": "high",
+        "distanceToCenterKm": 0.52,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMBATONAKANGA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBODIVONA",
+        "correctionUsed": "Sélection du quartier d’Antananarivo parmi les homonymes OSM",
+        "coordinate": {
+          "latitude": -18.8929323,
+          "longitude": 47.5294192
+        },
+        "osm": {
+          "type": "node",
+          "id": 722738057,
+          "category": "amenity",
+          "featureType": "bank"
+        },
+        "returnedName": "Ambodivona",
+        "confidence": "high",
+        "distanceToCenterKm": 1.952,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Ambodivona, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBOHIJATOVO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9114876,
+          "longitude": 47.5286639
+        },
+        "osm": {
+          "type": "node",
+          "id": 686543335,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohijatovo",
+        "confidence": "high",
+        "distanceToCenterKm": 0.573,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMBOHIJATOVO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBOHITRAKELY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9038048,
+          "longitude": 47.5436005
+        },
+        "osm": {
+          "type": "node",
+          "id": 11224960451,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohitrakely",
+        "confidence": "high",
+        "distanceToCenterKm": 2.2,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMBOHITRAKELY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMBONDRONA",
+        "correctionUsed": "Utilisation du bureau du fokontany, le quartier n’étant pas indexé comme lieu",
+        "coordinate": {
+          "latitude": -18.9054599,
+          "longitude": 47.5273382
+        },
+        "osm": {
+          "type": "node",
+          "id": 12641343387,
+          "category": "office",
+          "featureType": "government"
+        },
+        "returnedName": "Bureau Fokotany Ambondrona-Tsiazotafo",
+        "confidence": "medium",
+        "distanceToCenterKm": 0.605,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Bureau Fokotany Ambondrona-Tsiazotafo, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMPAHIBE",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9092429,
+          "longitude": 47.5384057
+        },
+        "osm": {
+          "type": "node",
+          "id": 681428134,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ampahibe",
+        "confidence": "high",
+        "distanceToCenterKm": 1.558,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMPAHIBE, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMPANDRANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9038641,
+          "longitude": 47.533741
+        },
+        "osm": {
+          "type": "node",
+          "id": 687191170,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ampandrana",
+        "confidence": "high",
+        "distanceToCenterKm": 1.243,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMPANDRANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AMPEFILOHA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9132011,
+          "longitude": 47.5170925
+        },
+        "osm": {
+          "type": "node",
+          "id": 837558571,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ampefiloha",
+        "confidence": "high",
+        "distanceToCenterKm": 0.793,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMPEFILOHA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANALAKELY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9083181,
+          "longitude": 47.5262845
+        },
+        "osm": {
+          "type": "node",
+          "id": 574547485,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Analakely",
+        "confidence": "high",
+        "distanceToCenterKm": 0.316,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANALAKELY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANDAVAMAMBA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9182911,
+          "longitude": 47.5084372
+        },
+        "osm": {
+          "type": "node",
+          "id": 686366948,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Andavamamba",
+        "confidence": "high",
+        "distanceToCenterKm": 1.865,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANDAVAMAMBA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANDRAVOHANGY",
+        "correctionUsed": "Utilisation d’un repère nommé dans le quartier, absent comme objet place",
+        "coordinate": {
+          "latitude": -18.896687,
+          "longitude": 47.5328341
+        },
+        "osm": {
+          "type": "node",
+          "id": 11869101522,
+          "category": "shop",
+          "featureType": "hardware"
+        },
+        "returnedName": "Mascar Andravohangy",
+        "confidence": "medium",
+        "distanceToCenterKm": 1.734,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Mascar Andravohangy, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANJANAHARY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8952195,
+          "longitude": 47.5372416
+        },
+        "osm": {
+          "type": "node",
+          "id": 687164484,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Anjanahary",
+        "confidence": "high",
+        "distanceToCenterKm": 2.149,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANJANAHARY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANKADIFOTSY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8978507,
+          "longitude": 47.5258109
+        },
+        "osm": {
+          "type": "node",
+          "id": 681227159,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankadifotsy",
+        "confidence": "high",
+        "distanceToCenterKm": 1.327,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANKADIFOTSY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANKADIVATO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9088275,
+          "longitude": 47.5338925
+        },
+        "osm": {
+          "type": "node",
+          "id": 681393255,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankadivato",
+        "confidence": "high",
+        "distanceToCenterKm": 1.086,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANKADIVATO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANKAZOMANGA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8918482,
+          "longitude": 47.5135602
+        },
+        "osm": {
+          "type": "node",
+          "id": 690711883,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankazomanga",
+        "confidence": "high",
+        "distanceToCenterKm": 2.239,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANKAZOMANGA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANKORAHOTRA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9140766,
+          "longitude": 47.5368673
+        },
+        "osm": {
+          "type": "node",
+          "id": 688357090,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankorahotra",
+        "confidence": "high",
+        "distanceToCenterKm": 1.482,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANKORAHOTRA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANKORONDRANO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8859714,
+          "longitude": 47.522924
+        },
+        "osm": {
+          "type": "node",
+          "id": 844529035,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankorondrano",
+        "confidence": "high",
+        "distanceToCenterKm": 2.628,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANKORONDRANO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANOSIBE",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9249254,
+          "longitude": 47.5143932
+        },
+        "osm": {
+          "type": "node",
+          "id": 686376916,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Anosibe",
+        "confidence": "high",
+        "distanceToCenterKm": 1.96,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANOSIBE, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANOSY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.917129,
+          "longitude": 47.5199786
+        },
+        "osm": {
+          "type": "node",
+          "id": 837558566,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Anosy",
+        "confidence": "high",
+        "distanceToCenterKm": 0.92,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANOSY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANTANIMENA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8976398,
+          "longitude": 47.5207728
+        },
+        "osm": {
+          "type": "node",
+          "id": 843310804,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Antanimena",
+        "confidence": "high",
+        "distanceToCenterKm": 1.363,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANTANIMENA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANTANINARENINA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9102957,
+          "longitude": 47.5250179
+        },
+        "osm": {
+          "type": "node",
+          "id": 574646963,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Antaninarenina",
+        "confidence": "high",
+        "distanceToCenterKm": 0.168,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANTANINARENINA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANTANINDRANO",
+        "correctionUsed": "ANTANINDRANO interprété comme Antaninandro",
+        "coordinate": {
+          "latitude": -18.902412,
+          "longitude": 47.5310999
+        },
+        "osm": {
+          "type": "node",
+          "id": 4045184449,
+          "category": "office",
+          "featureType": "government"
+        },
+        "returnedName": "Fokontany Antaninandro Ampandrana , Antaninandro Afovoany",
+        "confidence": "medium",
+        "distanceToCenterKm": 1.123,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Fokontany Antaninandro Ampandrana, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANTOHAMADINIKA",
+        "correctionUsed": "Correction orthographique ANTOHAMADINIKA → Antohomadinika",
+        "coordinate": {
+          "latitude": -18.90466,
+          "longitude": 47.5153853
+        },
+        "osm": {
+          "type": "node",
+          "id": 690711890,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Antohomadinika",
+        "confidence": "high",
+        "distanceToCenterKm": 1.024,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Antohomadinika, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ANTSAKAVIRO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9113363,
+          "longitude": 47.5365023
+        },
+        "osm": {
+          "type": "node",
+          "id": 688357091,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Antsakaviro",
+        "confidence": "high",
+        "distanceToCenterKm": 1.371,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ANTSAKAVIRO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "AVARADOHA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9001063,
+          "longitude": 47.5438721
+        },
+        "osm": {
+          "type": "node",
+          "id": 681428137,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Avaradoha",
+        "confidence": "high",
+        "distanceToCenterKm": 2.38,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AVARADOHA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "BEHORIRIKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9023148,
+          "longitude": 47.5256863
+        },
+        "osm": {
+          "type": "node",
+          "id": 837567373,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Behoririka",
+        "confidence": "high",
+        "distanceToCenterKm": 0.839,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "BEHORIRIKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "BESARETY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9016339,
+          "longitude": 47.5362974
+        },
+        "osm": {
+          "type": "node",
+          "id": 688379376,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Besarety",
+        "confidence": "high",
+        "distanceToCenterKm": 1.603,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "BESARETY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "FARAVOHITRA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9097137,
+          "longitude": 47.5297512
+        },
+        "osm": {
+          "type": "node",
+          "id": 686545015,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Faravohitra",
+        "confidence": "high",
+        "distanceToCenterKm": 0.647,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "FARAVOHITRA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ISORAKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9118395,
+          "longitude": 47.5208522
+        },
+        "osm": {
+          "type": "node",
+          "id": 620027471,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Isoraka",
+        "confidence": "high",
+        "distanceToCenterKm": 0.382,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ISORAKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "ISOTRY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9099527,
+          "longitude": 47.5161466
+        },
+        "osm": {
+          "type": "node",
+          "id": 574265718,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Isotry",
+        "confidence": "high",
+        "distanceToCenterKm": 0.785,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "ISOTRY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "MAHAMASINA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9184037,
+          "longitude": 47.5248045
+        },
+        "osm": {
+          "type": "node",
+          "id": 574551024,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Mahamasina",
+        "confidence": "high",
+        "distanceToCenterKm": 0.987,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "MAHAMASINA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "MANJAKARAY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8904911,
+          "longitude": 47.5333981
+        },
+        "osm": {
+          "type": "node",
+          "id": 687168439,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Manjakaray",
+        "confidence": "high",
+        "distanceToCenterKm": 2.362,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "MANJAKARAY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "METEO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.897124,
+          "longitude": 47.5461788
+        },
+        "osm": {
+          "type": "node",
+          "id": 5415736296,
+          "category": "highway",
+          "featureType": "bus_stop"
+        },
+        "returnedName": "Météo",
+        "confidence": "medium",
+        "distanceToCenterKm": 2.751,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "METEO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "NAMONTANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9363166,
+          "longitude": 47.5185995
+        },
+        "osm": {
+          "type": "node",
+          "id": 686271708,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Madera Namontana",
+        "confidence": "high",
+        "distanceToCenterKm": 3.017,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "NAMONTANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "TSARALALANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9065351,
+          "longitude": 47.5203307
+        },
+        "osm": {
+          "type": "node",
+          "id": 574539686,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Tsaralalàna",
+        "confidence": "high",
+        "distanceToCenterKm": 0.484,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "TSARALALANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "sourceLabel": "TSIADANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9182962,
+          "longitude": 47.5449553
+        },
+        "osm": {
+          "type": "node",
+          "id": 681400105,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Tsiadana",
+        "confidence": "high",
+        "distanceToCenterKm": 2.446,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "TSIADANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "67HA",
+        "correctionUsed": "Utilisation du centroïde de la cité 67 ha Nord-Est",
+        "coordinate": {
+          "latitude": -18.9016532,
+          "longitude": 47.5128431
+        },
+        "osm": {
+          "type": "way",
+          "id": 334598338,
+          "category": "landuse",
+          "featureType": "residential"
+        },
+        "returnedName": "Cité 67ha Nord Est",
+        "confidence": "medium",
+        "distanceToCenterKm": 1.436,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Cité 67ha Nord Est, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ALAROBIA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8713408,
+          "longitude": 47.5212985
+        },
+        "osm": {
+          "type": "node",
+          "id": 687168436,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Alarobia",
+        "confidence": "high",
+        "distanceToCenterKm": 4.261,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ALAROBIA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBATOROKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9238832,
+          "longitude": 47.5418577
+        },
+        "osm": {
+          "type": "node",
+          "id": 694070647,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambatoroka",
+        "confidence": "high",
+        "distanceToCenterKm": 2.492,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "AMBATOROKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBODIMITA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8680654,
+          "longitude": 47.4878271
+        },
+        "osm": {
+          "type": "node",
+          "id": 668739133,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambodimita",
+        "confidence": "high",
+        "distanceToCenterKm": 5.958,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "AMBODIMITA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBODITSIRY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8844741,
+          "longitude": 47.5371424
+        },
+        "osm": {
+          "type": "node",
+          "id": 681447076,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Amboditsiry",
+        "confidence": "high",
+        "distanceToCenterKm": 3.136,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "AMBODITSIRY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBOHIDROA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8543139,
+          "longitude": 47.4859663
+        },
+        "osm": {
+          "type": "node",
+          "id": 668739135,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohidroa",
+        "confidence": "high",
+        "distanceToCenterKm": 7.312,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "AMBOHIDROA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBOHIMANARINA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8748308,
+          "longitude": 47.5015291
+        },
+        "osm": {
+          "type": "node",
+          "id": 667624395,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohimanarina",
+        "confidence": "high",
+        "distanceToCenterKm": 4.51,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "AMBOHIMANARINA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBOHIMIANDRA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9297013,
+          "longitude": 47.5435412
+        },
+        "osm": {
+          "type": "node",
+          "id": 681393174,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohimiandra",
+        "confidence": "high",
+        "distanceToCenterKm": 3.065,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "AMBOHIMIANDRA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBOHIMIRARY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8967036,
+          "longitude": 47.5507314
+        },
+        "osm": {
+          "type": "node",
+          "id": 687191172,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohimirary",
+        "confidence": "high",
+        "distanceToCenterKm": 3.194,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "AMBOHIMIRARY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBOHIPO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9259831,
+          "longitude": 47.5577342
+        },
+        "osm": {
+          "type": "node",
+          "id": 5680854300,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohipo",
+        "confidence": "high",
+        "distanceToCenterKm": 4.026,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "AMBOHIPO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMBOLAKOANDRINA",
+        "correctionUsed": "Variante probable d’AMBOLOKANDRINA; conflit de palier conservé",
+        "coordinate": {
+          "latitude": -18.9217818,
+          "longitude": 47.5751583
+        },
+        "osm": {
+          "type": "way",
+          "id": 367877430,
+          "category": "landuse",
+          "featureType": "residential"
+        },
+        "returnedName": "Cité des Professeurs Ambolokandrina",
+        "confidence": "low",
+        "distanceToCenterKm": 5.59,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "Cité des Professeurs Ambolokandrina, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "AMPASIKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9099381,
+          "longitude": 47.4967267
+        },
+        "osm": {
+          "type": "node",
+          "id": 738247099,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Ampasika",
+        "confidence": "high",
+        "distanceToCenterKm": 2.827,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "AMPASIKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANALAMAHITSY",
+        "correctionUsed": "Milieu calculé entre les deux quartiers OSM Analamahitsy Cité et Tanàna",
+        "coordinate": {
+          "latitude": -18.8736937,
+          "longitude": 47.5452939
+        },
+        "osm": null,
+        "returnedName": "Milieu Analamahitsy Cité / Tanàna",
+        "confidence": "medium",
+        "distanceToCenterKm": 4.599,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "derivedFromOsm": [
+          {
+            "query": "Analamahitsy Cité, Antananarivo, Madagascar",
+            "type": "node",
+            "id": 687168437,
+            "category": "place",
+            "featureType": "suburb",
+            "name": "Analamahitsy Cité",
+            "latitude": -18.8709181,
+            "longitude": 47.5468255
+          },
+          {
+            "query": "Analamahitsy Tanàna, Antananarivo, Madagascar",
+            "type": "node",
+            "id": 5537450303,
+            "category": "place",
+            "featureType": "suburb",
+            "name": "Analamahitsy Tanàna",
+            "latitude": -18.8764692,
+            "longitude": 47.5468858
+          }
+        ],
+        "queriesUsed": [
+          "Analamahitsy Cité, Antananarivo, Madagascar",
+          "Analamahitsy Tanàna, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANDOHANY MANDROSEZA",
+        "correctionUsed": "Libellé composé réduit au quartier Mandroseza",
+        "coordinate": {
+          "latitude": -18.9343683,
+          "longitude": 47.550035
+        },
+        "osm": {
+          "type": "node",
+          "id": 686378314,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Mandroseza",
+        "confidence": "medium",
+        "distanceToCenterKm": 3.914,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "Mandroseza, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANDOHATAPENAKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9044672,
+          "longitude": 47.4987598
+        },
+        "osm": {
+          "type": "node",
+          "id": 686366965,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Andohatapenaka",
+        "confidence": "high",
+        "distanceToCenterKm": 2.675,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANDOHATAPENAKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANDRAHARO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8842626,
+          "longitude": 47.5087729
+        },
+        "osm": {
+          "type": "node",
+          "id": 703740357,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Andraharo",
+        "confidence": "high",
+        "distanceToCenterKm": 3.22,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANDRAHARO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANDRANOBEVAVA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8819994,
+          "longitude": 47.5421328
+        },
+        "osm": {
+          "type": "node",
+          "id": 687164483,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Andranobevava",
+        "confidence": "high",
+        "distanceToCenterKm": 3.636,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANDRANOBEVAVA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANDRANOMENA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8489392,
+          "longitude": 47.5572073
+        },
+        "osm": {
+          "type": "node",
+          "id": 5271851712,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Andranomena",
+        "confidence": "high",
+        "distanceToCenterKm": 7.616,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "ANDRANOMENA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANDRONDRANA",
+        "correctionUsed": "ANDRONDRANA interprété comme Androndrakely",
+        "coordinate": {
+          "latitude": -18.946544,
+          "longitude": 47.5330182
+        },
+        "osm": {
+          "type": "node",
+          "id": 686378280,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Androndrakely",
+        "confidence": "low",
+        "distanceToCenterKm": 4.226,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "Androndrakely, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANKADIMBAOKA",
+        "correctionUsed": "Correction orthographique ANKADIMBAOKA → Ankadimbahoaka",
+        "coordinate": {
+          "latitude": -18.9430303,
+          "longitude": 47.5234133
+        },
+        "osm": {
+          "type": "node",
+          "id": 686271703,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankadimbahoaka",
+        "confidence": "high",
+        "distanceToCenterKm": 3.717,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "Ankadimbahoaka, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANKADINDRAMAMY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8919636,
+          "longitude": 47.5590641
+        },
+        "osm": {
+          "type": "node",
+          "id": 687164486,
+          "category": "place",
+          "featureType": "quarter"
+        },
+        "returnedName": "Ankadindramamy",
+        "confidence": "high",
+        "distanceToCenterKm": 4.215,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANKADINDRAMAMY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANKATSO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9146676,
+          "longitude": 47.5493354
+        },
+        "osm": {
+          "type": "node",
+          "id": 13337796213,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankatso",
+        "confidence": "high",
+        "distanceToCenterKm": 2.765,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANKATSO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANKERANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8880879,
+          "longitude": 47.556178
+        },
+        "osm": {
+          "type": "node",
+          "id": 687164481,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ankerana",
+        "confidence": "high",
+        "distanceToCenterKm": 4.179,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANKERANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANOSIPATRANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9289111,
+          "longitude": 47.4966245
+        },
+        "osm": {
+          "type": "node",
+          "id": 9878925459,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Anosipatrana",
+        "confidence": "high",
+        "distanceToCenterKm": 3.558,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANOSIPATRANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANOSIVAVAKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8758682,
+          "longitude": 47.5057452
+        },
+        "osm": {
+          "type": "way",
+          "id": 359369846,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Anosivavaka",
+        "confidence": "high",
+        "distanceToCenterKm": 4.195,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANOSIVAVAKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "ANOSIZATO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9378531,
+          "longitude": 47.4999013
+        },
+        "osm": {
+          "type": "way",
+          "id": 28823447,
+          "category": "highway",
+          "featureType": "primary"
+        },
+        "returnedName": "Anosizato",
+        "confidence": "medium",
+        "distanceToCenterKm": 4.01,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "ANOSIZATO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "FASANKARANA",
+        "correctionUsed": "Sélection du terminus de destination, pas de l’arrêt de départ de Tsaralalàna",
+        "coordinate": {
+          "latitude": -18.8553344,
+          "longitude": 47.4801194
+        },
+        "osm": {
+          "type": "node",
+          "id": 3642704595,
+          "category": "amenity",
+          "featureType": "bus_station"
+        },
+        "returnedName": "Terminus 194 Fasankarana",
+        "confidence": "medium",
+        "distanceToCenterKm": 7.572,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "Terminus 194 Fasankarana, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "IVANDRY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8758484,
+          "longitude": 47.5236374
+        },
+        "osm": {
+          "type": "node",
+          "id": 687168428,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ivandry",
+        "confidence": "high",
+        "distanceToCenterKm": 3.753,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "IVANDRY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "LA HAUTE",
+        "correctionUsed": "LA HAUTE interprété comme Haute Ville",
+        "coordinate": {
+          "latitude": -18.9274809,
+          "longitude": 47.5316057
+        },
+        "osm": {
+          "type": "node",
+          "id": 12504457188,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Haute Ville",
+        "confidence": "medium",
+        "distanceToCenterKm": 2.159,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Haute Ville, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "MAHAZOARIVO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.938896,
+          "longitude": 47.5459118
+        },
+        "osm": {
+          "type": "node",
+          "id": 686378306,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Mahazoarivo",
+        "confidence": "high",
+        "distanceToCenterKm": 4.015,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "MAHAZOARIVO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "MANAKAMBAHINY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9309737,
+          "longitude": 47.5366168
+        },
+        "osm": {
+          "type": "node",
+          "id": 845962439,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Manakambahiny",
+        "confidence": "high",
+        "distanceToCenterKm": 2.743,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "MANAKAMBAHINY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "MOSAILE",
+        "correctionUsed": "MOSAILE interprété phonétiquement comme Mausolée",
+        "coordinate": {
+          "latitude": -18.9118651,
+          "longitude": 47.5468597
+        },
+        "osm": {
+          "type": "node",
+          "id": 659656261,
+          "category": "historic",
+          "featureType": "monument"
+        },
+        "returnedName": "Mausolée national Andrainarivo",
+        "confidence": "low",
+        "distanceToCenterKm": 2.46,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Mausolée national Andrainarivo, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "NANISANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8898644,
+          "longitude": 47.5488231
+        },
+        "osm": {
+          "type": "node",
+          "id": 681434750,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Nanisana",
+        "confidence": "high",
+        "distanceToCenterKm": 3.443,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "NANISANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "SAROPODY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9519934,
+          "longitude": 47.5371578
+        },
+        "osm": {
+          "type": "node",
+          "id": 12061261553,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Saropody",
+        "confidence": "high",
+        "distanceToCenterKm": 4.925,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "SAROPODY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "SOANIERANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9381282,
+          "longitude": 47.524023
+        },
+        "osm": {
+          "type": "node",
+          "id": 686271697,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Soanierana",
+        "confidence": "high",
+        "distanceToCenterKm": 3.173,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "SOANIERANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "SOAVIMASOANDRO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8627913,
+          "longitude": 47.5182153
+        },
+        "osm": {
+          "type": "node",
+          "id": 687168430,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Soavimasoandro",
+        "confidence": "high",
+        "distanceToCenterKm": 5.236,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "SOAVIMASOANDRO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "TANJOMBATO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9578923,
+          "longitude": 47.528189
+        },
+        "osm": {
+          "type": "node",
+          "id": 687180729,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Tanjombato",
+        "confidence": "high",
+        "distanceToCenterKm": 5.392,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "TANJOMBATO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "TSARAHONENANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9037083,
+          "longitude": 47.55076
+        },
+        "osm": {
+          "type": "node",
+          "id": 5680854207,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Tsarahonenana",
+        "confidence": "high",
+        "distanceToCenterKm": 2.931,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "TSARAHONENANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "sourceLabel": "TSIMBAZAZA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.934937,
+          "longitude": 47.528413
+        },
+        "osm": {
+          "type": "node",
+          "id": 5550689150,
+          "category": "highway",
+          "featureType": "bus_stop"
+        },
+        "returnedName": "Tsimbazaza",
+        "confidence": "medium",
+        "distanceToCenterKm": 2.862,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "TSIMBAZAZA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "ALASORA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9553235,
+          "longitude": 47.5674821
+        },
+        "osm": {
+          "type": "node",
+          "id": 687180726,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Alasora",
+        "confidence": "high",
+        "distanceToCenterKm": 6.867,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "ALASORA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBATOBE",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8793892,
+          "longitude": 47.5585948
+        },
+        "osm": {
+          "type": "node",
+          "id": 573536052,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambatobe",
+        "confidence": "high",
+        "distanceToCenterKm": 4.984,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "AMBATOBE, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBATOMARO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9007445,
+          "longitude": 47.5630467
+        },
+        "osm": {
+          "type": "node",
+          "id": 681137790,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambatomaro",
+        "confidence": "high",
+        "distanceToCenterKm": 4.265,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "AMBATOMARO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBOHIBAO",
+        "correctionUsed": "Sélection du faubourg métropolitain parmi les homonymes",
+        "coordinate": {
+          "latitude": -18.8457468,
+          "longitude": 47.4738693
+        },
+        "osm": {
+          "type": "node",
+          "id": 668739130,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohibao",
+        "confidence": "high",
+        "distanceToCenterKm": 8.82,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "Ambohibao, Ambohidratrimo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBOHIJANAHARY",
+        "correctionUsed": "Sélection du seul repère nommé Ambohijanahary dans la ville; objet OSM natural/peak exclu de la calibration",
+        "coordinate": {
+          "latitude": -18.9254781,
+          "longitude": 47.5248651
+        },
+        "osm": {
+          "type": "node",
+          "id": 686271700,
+          "category": "natural",
+          "featureType": "peak"
+        },
+        "returnedName": "Ambohijanahary",
+        "confidence": "low",
+        "distanceToCenterKm": 1.771,
+        "predictedTier": {
+          "position": 1,
+          "name": "Centre-ville"
+        },
+        "queriesUsed": [
+          "Ambohijanahary, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBOHIMAHITSY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8972908,
+          "longitude": 47.5710932
+        },
+        "osm": {
+          "type": "node",
+          "id": 681137737,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohimahitsy",
+        "confidence": "high",
+        "distanceToCenterKm": 5.18,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "AMBOHIMAHITSY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBOHIMANGAKELY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9009809,
+          "longitude": 47.5991011
+        },
+        "osm": {
+          "type": "node",
+          "id": 681137750,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Ambohimangakely",
+        "confidence": "high",
+        "distanceToCenterKm": 8.0,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "AMBOHIMANGAKELY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMBOLOKANDRINA",
+        "correctionUsed": "Utilisation du repère OSM Ambolokandrina/Ambolonkandrina",
+        "coordinate": {
+          "latitude": -18.9217818,
+          "longitude": 47.5751583
+        },
+        "osm": {
+          "type": "way",
+          "id": 367877430,
+          "category": "landuse",
+          "featureType": "residential"
+        },
+        "returnedName": "Cité des Professeurs Ambolokandrina",
+        "confidence": "medium",
+        "distanceToCenterKm": 5.59,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "Cité des Professeurs Ambolokandrina, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "AMPITATAFIKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.936994,
+          "longitude": 47.4783843
+        },
+        "osm": {
+          "type": "node",
+          "id": 687173783,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ampitatafika",
+        "confidence": "high",
+        "distanceToCenterKm": 5.648,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "AMPITATAFIKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "ANDOHARANOFOTSY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9790181,
+          "longitude": 47.5333348
+        },
+        "osm": {
+          "type": "node",
+          "id": 687180725,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Andoharanofotsy",
+        "confidence": "high",
+        "distanceToCenterKm": 7.787,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "ANDOHARANOFOTSY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "ANDRAISOORO",
+        "correctionUsed": "Correction orthographique ANDRAISOORO → Andraisoro",
+        "coordinate": {
+          "latitude": -18.9053244,
+          "longitude": 47.5555546
+        },
+        "osm": {
+          "type": "node",
+          "id": 694182857,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Andraisoro",
+        "confidence": "high",
+        "distanceToCenterKm": 3.395,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "Andraisoro, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "ANDRANOTAPAHINA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8595653,
+          "longitude": 47.4623246
+        },
+        "osm": {
+          "type": "way",
+          "id": 730778121,
+          "category": "highway",
+          "featureType": "secondary"
+        },
+        "returnedName": "Andranotapahina | Ambohitrimanjaka",
+        "confidence": "medium",
+        "distanceToCenterKm": 8.516,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "ANDRANOTAPAHINA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "ANKADIKELY ILAFY",
+        "correctionUsed": "Utilisation du siège de la commune comme point représentatif",
+        "coordinate": {
+          "latitude": -18.8488338,
+          "longitude": 47.5537877
+        },
+        "osm": {
+          "type": "way",
+          "id": 529504517,
+          "category": "office",
+          "featureType": "government"
+        },
+        "returnedName": "Kaominina Ankadikely Ilafy",
+        "confidence": "medium",
+        "distanceToCenterKm": 7.466,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "Kaominina Ankadikely Ilafy, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "BY PASS",
+        "correctionUsed": "Point représentatif unique choisi sur une voie linéaire",
+        "coordinate": {
+          "latitude": -18.9319851,
+          "longitude": 47.5816767
+        },
+        "osm": {
+          "type": "way",
+          "id": 28820374,
+          "category": "highway",
+          "featureType": "primary"
+        },
+        "returnedName": "by-pass",
+        "confidence": "low",
+        "distanceToCenterKm": 6.597,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "By-pass, Antananarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "IFARIHY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9623001,
+          "longitude": 47.5442898
+        },
+        "osm": {
+          "type": "node",
+          "id": 12504457167,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ifarihy",
+        "confidence": "high",
+        "distanceToCenterKm": 6.251,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "IFARIHY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "IMERINAFOVOANY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8419134,
+          "longitude": 47.4667291
+        },
+        "osm": {
+          "type": "node",
+          "id": 672735040,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Imerinafovoany",
+        "confidence": "high",
+        "distanceToCenterKm": 9.615,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "IMERINAFOVOANY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "ITAOSY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9181185,
+          "longitude": 47.4708415
+        },
+        "osm": {
+          "type": "node",
+          "id": 687175200,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Itaosy",
+        "confidence": "high",
+        "distanceToCenterKm": 5.63,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "ITAOSY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "MAHAZO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8949784,
+          "longitude": 47.5614083
+        },
+        "osm": {
+          "type": "node",
+          "id": 687164485,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Mahazo",
+        "confidence": "high",
+        "distanceToCenterKm": 4.297,
+        "predictedTier": {
+          "position": 2,
+          "name": "Périphérie"
+        },
+        "queriesUsed": [
+          "MAHAZO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "SABOTSY NAMEHANA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8348151,
+          "longitude": 47.5556302
+        },
+        "osm": {
+          "type": "node",
+          "id": 5291775177,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Sabotsy Namehana",
+        "confidence": "high",
+        "distanceToCenterKm": 8.973,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "SABOTSY NAMEHANA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "SOAMANANDRARINY",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8910451,
+          "longitude": 47.5654386
+        },
+        "osm": {
+          "type": "node",
+          "id": 687164488,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Soamanandrariny",
+        "confidence": "high",
+        "distanceToCenterKm": 4.861,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "SOAMANANDRARINY, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "SOAVIMASOANDRO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8627913,
+          "longitude": 47.5182153
+        },
+        "osm": {
+          "type": "node",
+          "id": 687168430,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Soavimasoandro",
+        "confidence": "high",
+        "distanceToCenterKm": 5.236,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "SOAVIMASOANDRO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "SOAVINA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9593135,
+          "longitude": 47.5032816
+        },
+        "osm": {
+          "type": "node",
+          "id": 931752010,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Soavina",
+        "confidence": "high",
+        "distanceToCenterKm": 5.927,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "SOAVINA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "sourceLabel": "TONGARIVO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9676391,
+          "longitude": 47.5277716
+        },
+        "osm": {
+          "type": "node",
+          "id": 694218753,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Tongarivo",
+        "confidence": "high",
+        "distanceToCenterKm": 6.469,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "TONGARIVO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "AMBOHIDRATRIMO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8186405,
+          "longitude": 47.4395021
+        },
+        "osm": {
+          "type": "node",
+          "id": 637715770,
+          "category": "place",
+          "featureType": "town"
+        },
+        "returnedName": "Ambohidratrimo",
+        "confidence": "high",
+        "distanceToCenterKm": 13.439,
+        "predictedTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "queriesUsed": [
+          "AMBOHIDRATRIMO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "AMBOHIJANAKA",
+        "correctionUsed": "Sélection du village au sud d’Antananarivo parmi les homonymes",
+        "coordinate": {
+          "latitude": -18.997713,
+          "longitude": 47.5608229
+        },
+        "osm": {
+          "type": "node",
+          "id": 9526219379,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Ambohijanaka",
+        "confidence": "high",
+        "distanceToCenterKm": 10.551,
+        "predictedTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "queriesUsed": [
+          "Ambohijanaka, Antananarivo Atsimondrano, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "AMBOHIMANAMBOLA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9471278,
+          "longitude": 47.5992243
+        },
+        "osm": {
+          "type": "node",
+          "id": 681157137,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Ambohimanambola",
+        "confidence": "high",
+        "distanceToCenterKm": 8.982,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "AMBOHIMANAMBOLA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "AMBOHITRIMANJAKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.867544,
+          "longitude": 47.4538064
+        },
+        "osm": {
+          "type": "node",
+          "id": 7176802092,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ambohitrimanjaka",
+        "confidence": "high",
+        "distanceToCenterKm": 8.705,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "AMBOHITRIMANJAKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "ANTSOFONDRY",
+        "correctionUsed": "ANTSOFONDRY interprété comme Antsofinondry",
+        "coordinate": {
+          "latitude": -18.8288436,
+          "longitude": 47.5575048
+        },
+        "osm": {
+          "type": "node",
+          "id": 5538613938,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Antsofinondry",
+        "confidence": "medium",
+        "distanceToCenterKm": 9.662,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "Antsofinondry, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "BEVALALA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9766078,
+          "longitude": 47.516485
+        },
+        "osm": {
+          "type": "node",
+          "id": 687180724,
+          "category": "place",
+          "featureType": "neighbourhood"
+        },
+        "returnedName": "Bevalala",
+        "confidence": "high",
+        "distanceToCenterKm": 7.488,
+        "predictedTier": {
+          "position": 3,
+          "name": "Périphérie+"
+        },
+        "queriesUsed": [
+          "BEVALALA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "FENOARIVO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9329992,
+          "longitude": 47.4354336
+        },
+        "osm": {
+          "type": "node",
+          "id": 687173776,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Fenoarivo",
+        "confidence": "high",
+        "distanceToCenterKm": 9.632,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "FENOARIVO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "IAVOLOHA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9968572,
+          "longitude": 47.5370593
+        },
+        "osm": {
+          "type": "node",
+          "id": 687180731,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Iavoloha",
+        "confidence": "high",
+        "distanceToCenterKm": 9.805,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "IAVOLOHA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "IMERIMANJAKA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.9797615,
+          "longitude": 47.546441
+        },
+        "osm": {
+          "type": "node",
+          "id": 12506457104,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Imerimanjaka",
+        "confidence": "high",
+        "distanceToCenterKm": 8.163,
+        "predictedTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "queriesUsed": [
+          "IMERIMANJAKA, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 4,
+          "name": "Périphérie++"
+        },
+        "sourceLabel": "IVATO",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8082449,
+          "longitude": 47.4816019
+        },
+        "osm": {
+          "type": "node",
+          "id": 7218266391,
+          "category": "place",
+          "featureType": "suburb"
+        },
+        "returnedName": "Ivato",
+        "confidence": "high",
+        "distanceToCenterKm": 12.106,
+        "predictedTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "queriesUsed": [
+          "IVATO, Analamanga, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "sourceLabel": "ALAKAMISY NY AMBOHIDRATRIMO",
+        "correctionUsed": "Interprétation comme Alakamisy Anosiala dans le district d’Ambohidratrimo",
+        "coordinate": {
+          "latitude": -18.7956173,
+          "longitude": 47.4276539
+        },
+        "osm": {
+          "type": "node",
+          "id": 845913880,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Alakamisy Anosiala",
+        "confidence": "low",
+        "distanceToCenterKm": 16.204,
+        "predictedTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "queriesUsed": [
+          "Alakamisy Anosiala, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "sourceLabel": "ALAKAMISY NY FENOARIVO",
+        "correctionUsed": "Utilisation du siège de la commune Alakamisy Fenoarivo",
+        "coordinate": {
+          "latitude": -18.9471676,
+          "longitude": 47.4302544
+        },
+        "osm": {
+          "type": "way",
+          "id": 1012370521,
+          "category": "building",
+          "featureType": "yes"
+        },
+        "returnedName": "Commune Rurale Alakamisy Fenoarivo",
+        "confidence": "medium",
+        "distanceToCenterKm": 10.67,
+        "predictedTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "queriesUsed": [
+          "Commune Rurale Alakamisy Fenoarivo, Madagascar"
+        ]
+      },
+      {
+        "sourceTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "sourceLabel": "ANOSY AVARATRA",
+        "correctionUsed": null,
+        "coordinate": {
+          "latitude": -18.8187582,
+          "longitude": 47.5626053
+        },
+        "osm": {
+          "type": "node",
+          "id": 5538621277,
+          "category": "place",
+          "featureType": "village"
+        },
+        "returnedName": "Anosy Avaratra",
+        "confidence": "high",
+        "distanceToCenterKm": 10.903,
+        "predictedTier": {
+          "position": 5,
+          "name": "Périphérie+++"
+        },
+        "queriesUsed": [
+          "ANOSY AVARATRA, Analamanga, Madagascar"
+        ]
+      }
+    ]
+  },
+  "calibrationAudit": {
+    "fitPointCount": 107,
+    "excludedFromFit": [
+      {
+        "label": "SOAVIMASOANDRO",
+        "reason": "Le meme libelle figure en Peripherie et en Peripherie+"
+      },
+      {
+        "label": "AMBOLAKOANDRINA / AMBOLOKANDRINA",
+        "reason": "Deux orthographes probablement equivalentes figurent dans deux paliers consecutifs"
+      },
+      {
+        "label": "AMBOHIJANAHARY",
+        "reason": "Le seul resultat OSM pertinent est un sommet central incompatible avec le palier source"
+      },
+      {
+        "label": "BY PASS",
+        "reason": "Une route ne possede pas de centroide tarifaire unique fiable"
+      }
+    ],
+    "sourceClassCountsUsed": [
+      38,
+      37,
+      19,
+      10,
+      3
+    ],
+    "confusionMatrix": {
+      "orientation": "Chaque ligne est le palier du PDF; chaque colonne est le palier predit par les cercles 1 a 5",
+      "values": [
+        [
+          35,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          25,
+          8,
+          0,
+          0
+        ],
+        [
+          0,
+          3,
+          11,
+          5,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          6,
+          3
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          3
+        ]
+      ]
+    },
+    "exactAccuracy": 0.7476635514,
+    "macroRecall": 0.7551351351,
+    "meanAbsoluteTierError": 0.2523364486,
+    "recallBySourceTier": [
+      0.9210526316,
+      0.6756756757,
+      0.5789473684,
+      0.6,
+      1.0
+    ],
+    "notableRadialMismatches": [
+      {
+        "label": "AMBOHIDROA",
+        "sourceTier": 2,
+        "predictedTier": 3,
+        "distanceKm": 7.312
+      },
+      {
+        "label": "ANDRANOMENA",
+        "sourceTier": 2,
+        "predictedTier": 3,
+        "distanceKm": 7.616
+      },
+      {
+        "label": "FASANKARANA",
+        "sourceTier": 2,
+        "predictedTier": 3,
+        "distanceKm": 7.572
+      },
+      {
+        "label": "ANDRAISOORO",
+        "sourceTier": 3,
+        "predictedTier": 2,
+        "distanceKm": 3.395
+      },
+      {
+        "label": "AMBOHIDRATRIMO",
+        "sourceTier": 4,
+        "predictedTier": 5,
+        "distanceKm": 13.439
+      },
+      {
+        "label": "IVATO",
+        "sourceTier": 4,
+        "predictedTier": 5,
+        "distanceKm": 12.106
+      }
+    ]
+  },
+  "sourceLabelsByTier": [
+    {
+      "position": 1,
+      "name": "Centre-ville",
+      "labels": [
+        "AMBANIDIA",
+        "AMBATOMENA",
+        "AMBATONAKANGA",
+        "AMBODIVONA",
+        "AMBOHIJATOVO",
+        "AMBOHITRAKELY",
+        "AMBONDRONA",
+        "AMPAHIBE",
+        "AMPANDRANA",
+        "AMPEFILOHA",
+        "ANALAKELY",
+        "ANDAVAMAMBA",
+        "ANDRAVOHANGY",
+        "ANJANAHARY",
+        "ANKADIFOTSY",
+        "ANKADIVATO",
+        "ANKAZOMANGA",
+        "ANKORAHOTRA",
+        "ANKORONDRANO",
+        "ANOSIBE",
+        "ANOSY",
+        "ANTANIMENA",
+        "ANTANINARENINA",
+        "ANTANINDRANO",
+        "ANTOHAMADINIKA",
+        "ANTSAKAVIRO",
+        "AVARADOHA",
+        "BEHORIRIKA",
+        "BESARETY",
+        "FARAVOHITRA",
+        "ISORAKA",
+        "ISOTRY",
+        "MAHAMASINA",
+        "MANJAKARAY",
+        "METEO",
+        "NAMONTANA",
+        "TSARALALANA",
+        "TSIADANA"
+      ]
+    },
+    {
+      "position": 2,
+      "name": "Périphérie",
+      "labels": [
+        "67HA",
+        "ALAROBIA",
+        "AMBATOROKA",
+        "AMBODIMITA",
+        "AMBODITSIRY",
+        "AMBOHIDROA",
+        "AMBOHIMANARINA",
+        "AMBOHIMIANDRA",
+        "AMBOHIMIRARY",
+        "AMBOHIPO",
+        "AMBOLAKOANDRINA",
+        "AMPASIKA",
+        "ANALAMAHITSY",
+        "ANDOHANY MANDROSEZA",
+        "ANDOHATAPENAKA",
+        "ANDRAHARO",
+        "ANDRANOBEVAVA",
+        "ANDRANOMENA",
+        "ANDRONDRANA",
+        "ANKADIMBAOKA",
+        "ANKADINDRAMAMY",
+        "ANKATSO",
+        "ANKERANA",
+        "ANOSIPATRANA",
+        "ANOSIVAVAKA",
+        "ANOSIZATO",
+        "FASANKARANA",
+        "IVANDRY",
+        "LA HAUTE",
+        "MAHAZOARIVO",
+        "MANAKAMBAHINY",
+        "MOSAILE",
+        "NANISANA",
+        "SAROPODY",
+        "SOANIERANA",
+        "SOAVIMASOANDRO",
+        "TANJOMBATO",
+        "TSARAHONENANA",
+        "TSIMBAZAZA"
+      ]
+    },
+    {
+      "position": 3,
+      "name": "Périphérie+",
+      "labels": [
+        "ALASORA",
+        "AMBATOBE",
+        "AMBATOMARO",
+        "AMBOHIBAO",
+        "AMBOHIJANAHARY",
+        "AMBOHIMAHITSY",
+        "AMBOHIMANGAKELY",
+        "AMBOHITANATY",
+        "AMBOLOKANDRINA",
+        "AMPITATAFIKA",
+        "ANDOHARANOFOTSY",
+        "ANDRAISOORO",
+        "ANDRANOTAPAHINA",
+        "ANKADIKELY ILAFY",
+        "ANKAROBATO",
+        "BY PASS",
+        "IFARIHY",
+        "IMERINAFOVOANY",
+        "ITAOSY",
+        "MAHAZO",
+        "RAVITOTO",
+        "SABOTSY NAMEHANA",
+        "SOAMANANDRARINY",
+        "SOAVIMASOANDRO",
+        "SOAVINA",
+        "TONGARIVO"
+      ]
+    },
+    {
+      "position": 4,
+      "name": "Périphérie++",
+      "labels": [
+        "AMBOHIDRATRIMO",
+        "AMBOHIJANAKA",
+        "AMBOHIMANAMBOLA",
+        "AMBOHIMPANJA",
+        "AMBOHITRIMANJAKA",
+        "ANTSOFONDRY",
+        "BEVALALA",
+        "FENOARIVO",
+        "IAVOLOHA",
+        "IMERIMANJAKA",
+        "IVATO"
+      ]
+    },
+    {
+      "position": 5,
+      "name": "Périphérie+++",
+      "labels": [
+        "ALAKAMISY NY AMBOHIDRATRIMO",
+        "ALAKAMISY NY FENOARIVO",
+        "ANOSY AVARATRA"
+      ]
+    }
+  ],
+  "limitations": [
+    "Le PDF decrit des quartiers et non des cercles mathematiques; une reproduction parfaite par rayons concentriques est impossible.",
+    "Les distances sont geodesiques. Elles servent au tarif par perimetre et ne representent pas une distance routiere.",
+    "Le rayon externe de 16,5 km couvre le point de reference fiable le plus eloigne avec un arrondi de securite de 500 m.",
+    "Cette configuration est un seed administrable; toute modification future doit etre versionnee en base sans recalcul retroactif du prix deja enregistre sur un colis."
+  ]
+}
