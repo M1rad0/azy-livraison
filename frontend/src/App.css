@@ -1764,7 +1764,7 @@ tbody tr:last-child td {
 
 .location-modal-overlay {
   position: fixed;
-  z-index: 1100;
+  z-index: 5000;
   inset: 0;
   display: grid;
   place-items: center;
@@ -2304,7 +2304,7 @@ tbody tr:last-child td {
 
 .map-preview-overlay {
   position: fixed;
-  z-index: 1000;
+  z-index: 5000;
   inset: 0;
   display: grid;
   place-items: center;
@@ -4612,7 +4612,7 @@ tbody tr:last-child td {
 
 .planning-editor-overlay {
   position: fixed;
-  z-index: 1050;
+  z-index: 5000;
   inset: 0;
   display: grid;
   place-items: center;

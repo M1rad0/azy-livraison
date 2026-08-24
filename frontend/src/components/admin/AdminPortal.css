@@ -1110,7 +1110,7 @@
 .admin-courier-list > article > footer { display: flex; gap: .45rem; margin-top: .7rem; }
 .admin-courier-list > article > footer .admin-button { min-height: 2.35rem; flex: 1; padding: .5rem; font-size: .66rem; }
 
-.admin-modal-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: rgba(4, 22, 38, .66); backdrop-filter: blur(8px); }
+.admin-modal-overlay { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 1rem; background: rgba(4, 22, 38, .66); backdrop-filter: blur(8px); }
 .admin-modal { width: min(760px, 100%); max-height: calc(100vh - 2rem); overflow: auto; background: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 1.3rem; box-shadow: 0 30px 90px rgba(4,22,38,.35); }
 .admin-modal > header { position: sticky; top: 0; z-index: 2; padding: 1rem 1.2rem; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--admin-line); backdrop-filter: blur(14px); }
 .admin-modal h3 { font-size: 1.25rem; }
