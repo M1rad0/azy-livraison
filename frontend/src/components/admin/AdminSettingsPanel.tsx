@@ -221,7 +221,7 @@ export function AdminSettingsPanel({
               <article key={preset.vehicleType}>
                 <header><Bike aria-hidden="true" /><strong>{vehicleLabel(preset.vehicleType)}</strong></header>
                 <label><span>Capacité maximale</span><div className="admin-input-unit"><input required type="number" min="0.01" step="0.01" value={Number.isNaN(preset.maxWeightKg) ? '' : preset.maxWeightKg} onChange={(event) => updatePreset(index, 'maxWeightKg', event.target.value)} /><b>kg</b></div></label>
-                <label><span>Vitesse moyenne</span><div className="admin-input-unit"><input required type="number" min="0.01" step="0.1" value={Number.isNaN(preset.averageSpeedKmh) ? '' : preset.averageSpeedKmh} onChange={(event) => updatePreset(index, 'averageSpeedKmh', event.target.value)} /><b>km/h</b></div></label>
+                <label><span>Vitesse moyenne</span><div className="admin-input-unit"><input required type="number" min="0.01" step="0.01" value={Number.isNaN(preset.averageSpeedKmh) ? '' : preset.averageSpeedKmh} onChange={(event) => updatePreset(index, 'averageSpeedKmh', event.target.value)} /><b>km/h</b></div></label>
                 <p><Gauge aria-hidden="true" />Ces valeurs restent modifiables livreur par livreur.</p>
               </article>
             ))}

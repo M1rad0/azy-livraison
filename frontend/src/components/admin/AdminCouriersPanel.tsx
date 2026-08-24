@@ -209,7 +209,7 @@ function CourierEditor({
             </label>
             <label>
               <span>Vitesse personnalisée <small>facultatif</small></span>
-              <input min="0.01" step="0.1" type="number" value={draft.averageSpeedKmh} onChange={(event) => setDraft({ ...draft, averageSpeedKmh: event.target.value })} placeholder={preset ? `${preset.averageSpeedKmh} km/h par défaut` : 'km/h'} />
+              <input min="0.01" step="0.01" type="number" value={draft.averageSpeedKmh} onChange={(event) => setDraft({ ...draft, averageSpeedKmh: event.target.value })} placeholder={preset ? `${preset.averageSpeedKmh} km/h par défaut` : 'km/h'} />
             </label>
             <label>
               <span>Part personnalisée <small>facultatif</small></span>
