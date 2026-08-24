@@ -121,6 +121,54 @@ final class DailyReportTestFixture {
                 packages);
     }
 
+    static DailyReport clientOneReportWithComment(String comment) {
+        DailyReport source = report();
+        PackageLine template = source.packages().getFirst();
+        PackageLine packageWithComment = new PackageLine(
+                template.packageId(),
+                template.deliveryRequestId(),
+                template.sequenceNumber(),
+                template.ownerAccountId(),
+                template.clientDisplayName(),
+                template.recipientName(),
+                template.recipientContact(),
+                template.pickupLabel(),
+                template.destinationLabel(),
+                template.pricingZoneName(),
+                template.outcome(),
+                template.plannedCourierId(),
+                template.plannedCourierName(),
+                template.actualCourierId(),
+                template.actualCourierName(),
+                template.expectedAmountToCollectAriary(),
+                template.actualAmountCollectedAriary(),
+                template.appliedDeliveryFeeAriary(),
+                template.amountToRemitAriary(),
+                template.mobileMoneyPaid(),
+                template.faritra(),
+                template.finalizedAt(),
+                comment,
+                template.returnedToSender(),
+                template.returnedToSenderAt(),
+                template.replacementPackageId(),
+                template.postponedToDate(),
+                template.replacementPickupLabel());
+        List<PackageLine> packages = new ArrayList<>(source.packages());
+        packages.set(0, packageWithComment);
+        return new DailyReport(
+                source.reportId(),
+                source.serviceDate(),
+                source.dispatchPlanId(),
+                source.hubLabel(),
+                source.sourcePlanCount(),
+                source.generatedAt(),
+                source.closure(),
+                source.totals(),
+                source.clients(),
+                source.couriers(),
+                packages);
+    }
+
     private static PackageLine deliveredMobileMoney() {
         return new PackageLine(
                 UUID.fromString("86000000-0000-0000-0000-000000000001"),

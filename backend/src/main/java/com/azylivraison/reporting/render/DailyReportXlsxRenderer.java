@@ -40,6 +40,7 @@ public final class DailyReportXlsxRenderer {
 
     private static final ZoneId ANTANANARIVO = ZoneId.of("Indian/Antananarivo");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.FRANCE);
+    private static final DateTimeFormatter DATE_LONG = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter
             .ofPattern("dd/MM/yyyy HH:mm", Locale.FRANCE)
             .withZone(ANTANANARIVO);
@@ -69,11 +70,9 @@ public final class DailyReportXlsxRenderer {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Styles styles = new Styles(workbook);
             Sheet sheet = workbook.createSheet("Rapport client");
-            title(sheet, styles, "AZY Livraison · Rapport client", 8);
+            clientHeader(sheet, styles, client.displayName(), report.serviceDate());
 
-            int rowIndex = 2;
-            rowIndex = keyValue(sheet, styles, rowIndex, "Date d'activité", DATE.format(report.serviceDate()));
-            rowIndex = keyValue(sheet, styles, rowIndex, "Client", value(client.displayName()));
+            int rowIndex = 3;
             if (client.phone() != null && !client.phone().isBlank()) {
                 rowIndex = keyValue(sheet, styles, rowIndex, "Contact", client.phone().strip());
             }
@@ -90,40 +89,43 @@ public final class DailyReportXlsxRenderer {
 
             String[] headers = {
                 "Destinataire", "Contact", "Destination", "État", "Mobile Money",
-                "Récupéré (Ar)", "Frais (Ar)", "À reverser (Ar)"
+                "Commentaire", "Récupéré (Ar)", "Frais (Ar)", "À reverser (Ar)"
             };
             int tableHeaderRow = rowIndex;
             header(sheet, styles, tableHeaderRow, headers);
             rowIndex++;
             for (PackageLine item : packages) {
                 Row row = sheet.createRow(rowIndex++);
+                int estimatedCommentLines = item.outcomeNote() == null
+                        ? 1
+                        : Math.max(1, (item.outcomeNote().strip().length() + 54) / 55);
+                row.setHeightInPoints(Math.min(390, Math.max(30, estimatedCommentLines * 15)));
                 text(row, 0, item.recipientName(), styles.body);
                 text(row, 1, item.recipientContact(), styles.body);
                 text(row, 2, item.destinationLabel(), styles.body);
                 text(row, 3, clientOutcomeLabel(item), styles.body);
                 text(row, 4, yesNo(item.mobileMoneyPaid()), styles.information);
-                money(row, 5, item.actualAmountCollectedAriary(), styles.money);
-                money(row, 6, item.appliedDeliveryFeeAriary(), styles.money);
-                money(row, 7, item.amountToRemitAriary(), styles.money);
+                text(row, 5, item.outcomeNote(), styles.body);
+                money(row, 6, item.actualAmountCollectedAriary(), styles.money);
+                money(row, 7, item.appliedDeliveryFeeAriary(), styles.money);
+                money(row, 8, item.amountToRemitAriary(), styles.money);
             }
 
             int tableLastRow = Math.max(tableHeaderRow, rowIndex - 1);
-            rowIndex += 2;
+            rowIndex += 3;
             rowIndex = section(sheet, styles, rowIndex, "Synthèse");
-            rowIndex = keyValue(sheet, styles, rowIndex, "Colis", client.totals().packageCount());
-            rowIndex = keyValue(sheet, styles, rowIndex, "Livrés", client.totals().deliveredCount());
-            rowIndex = keyValue(sheet, styles, rowIndex, "Annulés", client.totals().cancelledCount());
-            rowIndex = keyValue(sheet, styles, rowIndex, "Reportés", client.totals().postponedCount());
-            rowIndex = keyValue(sheet, styles, rowIndex, "À retourner", client.totals().returnRequiredCount());
-            rowIndex = keyValue(sheet, styles, rowIndex, "Déjà retournés", client.totals().returnedToSenderCount());
-            rowIndex += 1;
-            rowIndex = moneyKeyValue(sheet, styles, rowIndex, "Total récupéré",
-                    client.totals().amountCollectedAriary());
-            rowIndex = moneyKeyValue(sheet, styles, rowIndex, "Frais de livraison",
-                    client.totals().deliveryFeesAriary());
-            moneyKeyValue(sheet, styles, rowIndex, "Total à reverser", client.totals().amountToRemitAriary());
+            Row summary = sheet.createRow(rowIndex);
+            summary.setHeightInPoints(30);
+            text(summary, 0, "Colis", styles.key);
+            number(summary, 1, client.totals().packageCount(), styles.integer);
+            text(summary, 2, "Total récupéré", styles.key);
+            money(summary, 3, client.totals().amountCollectedAriary(), styles.moneyEmphasis);
+            text(summary, 4, "Frais de livraison", styles.key);
+            money(summary, 5, client.totals().deliveryFeesAriary(), styles.moneyEmphasis);
+            text(summary, 6, "Total à reverser", styles.key);
+            money(summary, 7, client.totals().amountToRemitAriary(), styles.moneyEmphasis);
 
-            int[] widths = {28, 18, 36, 22, 22, 20, 16, 20};
+            int[] widths = {28, 18, 34, 20, 20, 36, 20, 16, 20};
             for (int index = 0; index < widths.length; index++) {
                 sheet.setColumnWidth(index, widths[index] * 256);
             }
@@ -344,6 +346,20 @@ public final class DailyReportXlsxRenderer {
         sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, width - 1));
     }
 
+    private void clientHeader(Sheet sheet, Styles styles, String clientName, java.time.LocalDate serviceDate) {
+        title(sheet, styles, "AZY Livraison · Rapport client", 9);
+        Row identity = sheet.createRow(1);
+        identity.setHeightInPoints(34);
+        for (int column = 0; column < 9; column++) {
+            Cell cell = identity.createCell(column);
+            cell.setCellStyle(column < 6 ? styles.clientName : styles.clientDate);
+        }
+        identity.getCell(0).setCellValue(value(clientName));
+        identity.getCell(6).setCellValue(DATE_LONG.format(serviceDate));
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 5));
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 6, 8));
+    }
+
     private int section(Sheet sheet, Styles styles, int rowIndex, String title) {
         Row row = sheet.createRow(rowIndex);
         Cell cell = row.createCell(0);
@@ -445,6 +461,8 @@ public final class DailyReportXlsxRenderer {
     private static final class Styles {
 
         private final XSSFCellStyle title;
+        private final XSSFCellStyle clientName;
+        private final XSSFCellStyle clientDate;
         private final XSSFCellStyle section;
         private final XSSFCellStyle header;
         private final XSSFCellStyle key;
@@ -471,6 +489,16 @@ public final class DailyReportXlsxRenderer {
             title.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             title.setFont(titleFont);
             title.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            clientName = workbook.createCellStyle();
+            clientName.setFillForegroundColor(navy);
+            clientName.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            clientName.setFont(font(workbook, true, IndexedColors.WHITE.getIndex(), 16));
+            clientName.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            clientDate = workbook.createCellStyle();
+            clientDate.cloneStyleFrom(clientName);
+            clientDate.setAlignment(HorizontalAlignment.RIGHT);
 
             section = workbook.createCellStyle();
             section.setFillForegroundColor(orange);

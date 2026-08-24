@@ -86,6 +86,7 @@ export interface ClientReportPackage {
   pickupLabel: string
   destinationLabel: string
   outcome: DeliveryPackageOutcome
+  comment?: string | null
   actualAmountCollectedAriary: number
   appliedDeliveryFeeAriary: number
   amountToRemitAriary: number
@@ -96,6 +97,7 @@ export interface ClientReportPackage {
 export interface ClientDailyReport {
   reportId: string
   serviceDate: string
+  clientDisplayName: string
   totals: ClientReportTotals
   packages: ClientReportPackage[]
 }

@@ -206,9 +206,15 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
               <div className="client-report-state"><LoaderCircle className="spin" aria-hidden="true" /><strong>Ouverture du rapport…</strong></div>
             ) : (
               <>
-                <header>
-                  <h2>{formatDate(report.serviceDate)}</h2>
-                  <div><button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('pdf')}><FileText aria-hidden="true" />{downloading === 'pdf' ? 'Préparation…' : 'PDF'}</button><button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('xlsx')}><FileSpreadsheet aria-hidden="true" />{downloading === 'xlsx' ? 'Préparation…' : 'Excel'}</button></div>
+                <header className="client-report-detail__header">
+                  <div className="client-report-detail__identity">
+                    <p className="eyebrow">Rapport client</p>
+                    <h2>{report.clientDisplayName}</h2>
+                  </div>
+                  <div className="client-report-detail__meta">
+                    <time dateTime={report.serviceDate}>{formatDate(report.serviceDate)}</time>
+                    <div className="client-report-detail__actions"><button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('pdf')}><FileText aria-hidden="true" />{downloading === 'pdf' ? 'Préparation…' : 'PDF'}</button><button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('xlsx')}><FileSpreadsheet aria-hidden="true" />{downloading === 'xlsx' ? 'Préparation…' : 'Excel'}</button></div>
+                  </div>
                 </header>
 
                 {pickupLabels.length > 0 && (
@@ -230,6 +236,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                         <th scope="col">Destination / contact</th>
                         <th scope="col">État</th>
                         <th scope="col">Mobile Money</th>
+                        <th scope="col">Commentaire</th>
                         <th scope="col" className="is-money">Récupéré</th>
                         <th scope="col" className="is-money">Frais</th>
                         <th scope="col" className="is-money">Net</th>
@@ -242,6 +249,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                           <td data-label="Destination / contact"><strong>{item.destinationLabel}</strong><small>{item.recipientContact}</small></td>
                           <td data-label="État"><span className={`client-report-package-status is-${item.outcome.toLowerCase()}`}>{outcomeLabel(item)}</span></td>
                           <td data-label="Mobile Money"><span className={`client-report-payment is-${item.mobileMoneyPaid ? 'yes' : 'no'}`}>{item.mobileMoneyPaid ? 'Oui' : 'Non'}</span></td>
+                          <td data-label="Commentaire" className="client-report-comment">{item.comment?.trim() || '—'}</td>
                           <td data-label="Récupéré" className="is-money"><strong>{formatAriary(item.actualAmountCollectedAriary)}</strong></td>
                           <td data-label="Frais" className="is-money"><strong>{formatAriary(item.appliedDeliveryFeeAriary)}</strong></td>
                           <td data-label="Net" className="is-money is-net"><strong>{formatAriary(item.amountToRemitAriary)}</strong></td>

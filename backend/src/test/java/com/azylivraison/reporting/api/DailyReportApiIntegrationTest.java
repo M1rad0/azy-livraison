@@ -169,6 +169,7 @@ class DailyReportApiIntegrationTest {
                     .contains("Destinataire Mobile Money")
                     .contains("Mobile Money")
                     .contains("Oui")
+                    .contains("Compte rendu Destinataire Mobile Money")
                     .contains("Annulation avant dispatch")
                     .contains("12 000 Ar")
                     .contains("9 000 Ar")
@@ -192,9 +193,11 @@ class DailyReportApiIntegrationTest {
             Sheet report = workbook.getSheet("Rapport client");
             Row delivered = rowWithValue(report, 0, "Destinataire Mobile Money");
             assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo("Oui");
-            assertThat(delivered.getCell(5).getNumericCellValue()).isEqualTo(12_000);
-            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(3_000);
-            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(9_000);
+            assertThat(delivered.getCell(5).getStringCellValue())
+                    .isEqualTo("Compte rendu Destinataire Mobile Money");
+            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(12_000);
+            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(delivered.getCell(8).getNumericCellValue()).isEqualTo(9_000);
             assertThat(sheetContains(report, "Boutique Rado clôture")).isTrue();
             assertThat(sheetContains(report, "Maison Soa clôture")).isFalse();
             assertThat(sheetContains(report, "Hery")).isFalse();
@@ -233,6 +236,7 @@ class DailyReportApiIntegrationTest {
                         get("/api/client/reports/{date}", SERVICE_DATE).with(client(CLIENT_ONE_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.serviceDate").value(SERVICE_DATE.toString()))
+                .andExpect(jsonPath("$.clientDisplayName").value("Boutique Rado clôture"))
                 .andExpect(jsonPath("$.dispatchPlanId").doesNotExist())
                 .andExpect(jsonPath("$.hubLabel").doesNotExist())
                 .andExpect(jsonPath("$.sourcePlanCount").doesNotExist())
@@ -253,6 +257,9 @@ class DailyReportApiIntegrationTest {
                 .andExpect(jsonPath(
                         "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].mobileMoneyPaid")
                         .value(org.hamcrest.Matchers.contains(true)))
+                .andExpect(jsonPath(
+                        "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].comment")
+                        .value(org.hamcrest.Matchers.contains("Compte rendu Destinataire Mobile Money")))
                 .andExpect(jsonPath("$.packages[0].ownerAccountId").doesNotExist())
                 .andExpect(jsonPath("$.packages[0].deliveryRequestId").doesNotExist())
                 .andExpect(jsonPath("$.packages[0].sequenceNumber").doesNotExist())

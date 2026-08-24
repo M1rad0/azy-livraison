@@ -47,6 +47,7 @@ const settlementCreatedAt = '2026-08-24T18:00:00Z'
 const report = {
   reportId: summary.reportId,
   serviceDate: summary.serviceDate,
+  clientDisplayName: 'Boutique Soa',
   totals,
   packages: [{
     packageId: 'package-1',
@@ -55,6 +56,7 @@ const report = {
     pickupLabel: 'Boutique Analakely',
     destinationLabel: 'Ankorondrano',
     outcome: 'DELIVERED',
+    comment: 'Montant confirmé avec la destinataire.',
     actualAmountCollectedAriary: 15_000,
     appliedDeliveryFeeAriary: 5_000,
     amountToRemitAriary: 10_000,
@@ -67,6 +69,7 @@ const report = {
     pickupLabel: 'Boutique Analakely',
     destinationLabel: 'Ivandry',
     outcome: 'RETURN_TO_SENDER',
+    comment: 'Commande refusée à l’arrivée.',
     actualAmountCollectedAriary: 0,
     appliedDeliveryFeeAriary: 0,
     amountToRemitAriary: 0,
@@ -167,11 +170,16 @@ describe('ClientReportsPanel', () => {
     render(<ClientReportsPanel accessToken="client-token" />)
 
     expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Boutique Soa' })).toBeInTheDocument()
+    const reportDate = screen.getByText(/24 août 2026/i, { selector: 'time' })
+    expect(reportDate.tagName).toBe('TIME')
+    expect(reportDate).toHaveAttribute('datetime', '2026-08-24')
     expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
       'Destinataire',
       'Destination / contact',
       'État',
       'Mobile Money',
+      'Commentaire',
       'Récupéré',
       'Frais',
       'Net',
@@ -179,6 +187,8 @@ describe('ClientReportsPanel', () => {
     expect(screen.getByText('Miora')).toBeInTheDocument()
     expect(screen.getByText('Ankorondrano')).toBeInTheDocument()
     expect(screen.getByText('Retourné à l’expéditeur')).toBeInTheDocument()
+    expect(screen.getByText('Montant confirmé avec la destinataire.')).toBeInTheDocument()
+    expect(screen.getByText('Commande refusée à l’arrivée.')).toBeInTheDocument()
     expect(screen.getByText('Oui')).toBeInTheDocument()
     expect(screen.getByText('Non')).toBeInTheDocument()
     expect(screen.getAllByText('Boutique Analakely')).toHaveLength(1)

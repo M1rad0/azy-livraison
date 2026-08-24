@@ -57,8 +57,7 @@ class DailyReportPdfRendererTest {
                     .isGreaterThan(document.getPage(0).getMediaBox().getHeight());
             assertThat(text)
                     .contains("Rapport client")
-                    .contains("Journée du 24/08/2026")
-                    .contains("Client")
+                    .contains("24 août 2026")
                     .contains("Maison Soa")
                     .contains("Point de récupération")
                     .contains("Retrait Ampasapito")
@@ -70,6 +69,8 @@ class DailyReportPdfRendererTest {
                     .contains("Synthèse")
                     .contains("-4 000 Ar")
                     .contains("Mme Hanitra")
+                    .contains("Destinataire indisponible.")
+                    .contains("Commande refusée à l'arrivée.")
                     .doesNotContain("Boutique Rado")
                     .doesNotContain("Mme Volana")
                     .doesNotContain("Clôture de la journée")
@@ -176,6 +177,22 @@ class DailyReportPdfRendererTest {
                     .contains("Total récupéré")
                     .contains("Frais de livraison")
                     .contains("Total à reverser");
+        }
+    }
+
+    @Test
+    void keepsAFullLongClientCommentInsteadOfSilentlyTruncatingIt() throws Exception {
+        String longComment = "Début du commentaire. " + "Information complète à conserver. ".repeat(28)
+                + "Fin intégrale du commentaire.";
+        byte[] result = renderer.renderForClient(
+                DailyReportTestFixture.clientOneReportWithComment(longComment),
+                DailyReportTestFixture.CLIENT_ONE_ID);
+
+        try (PDDocument document = Loader.loadPDF(result)) {
+            String text = new PDFTextStripper().getText(document);
+            assertThat(text)
+                    .contains("Commentaire : Début du commentaire.")
+                    .contains("Fin intégrale du commentaire.");
         }
     }
 

@@ -18,12 +18,14 @@ import com.azylivraison.reporting.domain.DailyReport.Totals;
 public record ClientDailyReport(
         UUID reportId,
         LocalDate serviceDate,
+        String clientDisplayName,
         Totals totals,
         List<PackageLine> packages) {
 
     public ClientDailyReport {
         Objects.requireNonNull(reportId, "reportId");
         Objects.requireNonNull(serviceDate, "serviceDate");
+        Objects.requireNonNull(clientDisplayName, "clientDisplayName");
         Objects.requireNonNull(totals, "totals");
         packages = List.copyOf(Objects.requireNonNull(packages, "packages"));
     }
@@ -36,6 +38,7 @@ public record ClientDailyReport(
             String pickupLabel,
             String destinationLabel,
             PackageOutcome outcome,
+            String comment,
             long actualAmountCollectedAriary,
             long appliedDeliveryFeeAriary,
             long amountToRemitAriary,

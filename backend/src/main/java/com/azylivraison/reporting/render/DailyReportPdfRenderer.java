@@ -36,6 +36,7 @@ public final class DailyReportPdfRenderer {
 
     private static final ZoneId ANTANANARIVO = ZoneId.of("Indian/Antananarivo");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.FRANCE);
+    private static final DateTimeFormatter DATE_LONG = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter
             .ofPattern("dd/MM/yyyy HH:mm", Locale.FRANCE)
             .withZone(ANTANANARIVO);
@@ -72,9 +73,8 @@ public final class DailyReportPdfRenderer {
             ClientSummary client,
             List<PackageLine> packages) {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            PdfWriter writer = new PdfWriter(document, report, "Rapport client", true);
+            PdfWriter writer = new PdfWriter(document, report, "Rapport client", text(client.displayName()));
             writer.openPage();
-            writer.line("Client", text(client.displayName()));
             if (client.phone() != null && !client.phone().isBlank()) {
                 writer.line("Contact", client.phone().strip());
             }
@@ -91,7 +91,7 @@ public final class DailyReportPdfRenderer {
             float[] widths = {118, 82, 160, 92, 88, 78, 62, 78};
             writer.tableHeader(headers, widths);
             for (PackageLine item : packages) {
-                writer.tableRow(new String[] {
+                writer.tableRowWithComment(new String[] {
                     text(item.recipientName()),
                     text(item.recipientContact()),
                     text(item.destinationLabel()),
@@ -100,10 +100,10 @@ public final class DailyReportPdfRenderer {
                     ariary(item.actualAmountCollectedAriary()),
                     ariary(item.appliedDeliveryFeeAriary()),
                     ariary(item.amountToRemitAriary())
-                }, widths);
+                }, widths, item.outcomeNote());
             }
-            writer.gap(10);
-            writeTotals(writer, client.totals());
+            writer.gap(24);
+            writeClientTotals(writer, client.totals());
             writer.close();
             document.save(output);
             return output.toByteArray();
@@ -161,6 +161,20 @@ public final class DailyReportPdfRenderer {
                 "%d colis · %d livrés · %d annulés · %d reportés · %d à retourner · %d déjà retournés",
                 totals.packageCount(), totals.deliveredCount(), totals.cancelledCount(), totals.postponedCount(),
                 totals.returnRequiredCount(), totals.returnedToSenderCount()));
+        writer.gap(5);
+    }
+
+    private void writeClientTotals(PdfWriter writer, Totals totals) throws IOException {
+        writer.keepTogether(88);
+        writer.section("Synthèse");
+        writer.summaryRow(
+                new String[] {"Colis", "Total récupéré", "Frais de livraison", "Total à reverser"},
+                new String[] {
+                    Integer.toString(totals.packageCount()),
+                    ariary(totals.amountCollectedAriary()),
+                    ariary(totals.deliveryFeesAriary()),
+                    ariary(totals.amountToRemitAriary())
+                });
         writer.gap(5);
     }
 
@@ -295,6 +309,7 @@ public final class DailyReportPdfRenderer {
         private final DailyReport report;
         private final String title;
         private final boolean clientView;
+        private final String clientName;
         private final PDRectangle pageSize;
         private final float top;
         private final float width;
@@ -307,15 +322,26 @@ public final class DailyReportPdfRenderer {
         private float[] activeTableWidths;
 
         private PdfWriter(PDDocument document, DailyReport report, String title) throws IOException {
-            this(document, report, title, false);
+            this(document, report, title, false, null);
         }
 
-        private PdfWriter(PDDocument document, DailyReport report, String title, boolean clientView)
+        private PdfWriter(PDDocument document, DailyReport report, String title, String clientName)
+                throws IOException {
+            this(document, report, title, true, clientName);
+        }
+
+        private PdfWriter(
+                PDDocument document,
+                DailyReport report,
+                String title,
+                boolean clientView,
+                String clientName)
                 throws IOException {
             this.document = document;
             this.report = report;
             this.title = title;
             this.clientView = clientView;
+            this.clientName = clientName;
             this.pageSize = clientView
                     ? new PDRectangle(PDRectangle.A4.getHeight(), PDRectangle.A4.getWidth())
                     : PDRectangle.A4;
@@ -337,22 +363,29 @@ public final class DailyReportPdfRenderer {
             content = new PDPageContentStream(document, page);
             pageNumber++;
 
+            float headerHeight = clientView ? 124 : 112;
             content.setNonStrokingColor(new Color(NAVY_RED, NAVY_GREEN, NAVY_BLUE));
-            content.addRect(0, pageSize.getHeight() - 112, pageSize.getWidth(), 112);
+            content.addRect(0, pageSize.getHeight() - headerHeight, pageSize.getWidth(), headerHeight);
             content.fill();
             content.setNonStrokingColor(new Color(ORANGE_RED, ORANGE_GREEN, ORANGE_BLUE));
-            content.addRect(0, pageSize.getHeight() - 117, pageSize.getWidth(), 5);
+            content.addRect(0, pageSize.getHeight() - headerHeight - 5, pageSize.getWidth(), 5);
             content.fill();
             drawText("AZY LIVRAISON", MARGIN, top - 13, bold, 17, 255, 255, 255);
-            drawWrappedAt(safe(title), MARGIN, top - 36, width, regular, clientView ? 13 : 11,
-                    clientView ? 14 : 12, 255, 255, 255);
-            drawText("Journée du " + DATE.format(report.serviceDate()), MARGIN, top - 66,
-                    regular, 9, 220, 230, 238);
+            if (clientView) {
+                drawText("Rapport client", MARGIN, top - 35, regular, 9, 220, 230, 238);
+                drawClientName();
+                drawTextRight(DATE_LONG.format(report.serviceDate()), pageSize.getWidth() - MARGIN,
+                        top - 51, bold, 17, 255, 255, 255);
+            } else {
+                drawWrappedAt(safe(title), MARGIN, top - 36, width, regular, 11, 12, 255, 255, 255);
+                drawText("Journée du " + DATE.format(report.serviceDate()), MARGIN, top - 66,
+                        regular, 9, 220, 230, 238);
+            }
             String footer = clientView
                     ? "Page " + pageNumber
                     : "Page " + pageNumber + " · Généré le " + formatDateTime(report.generatedAt());
             drawText(footer, MARGIN, 17, regular, 7.5f, 90, 104, 116);
-            y = pageSize.getHeight() - 137;
+            y = pageSize.getHeight() - headerHeight - 25;
         }
 
         void section(String value) throws IOException {
@@ -405,6 +438,35 @@ public final class DailyReportPdfRenderer {
             y -= 18;
         }
 
+        void summaryRow(String[] labels, String[] values) throws IOException {
+            if (labels.length != values.length || labels.length == 0) {
+                throw new IllegalArgumentException("Synthèse horizontale invalide.");
+            }
+            ensure(56);
+            float rowTop = y;
+            float rowHeight = 48;
+            float cellWidth = width / labels.length;
+            content.setNonStrokingColor(new Color(246, 248, 250));
+            content.addRect(MARGIN, rowTop - rowHeight, width, rowHeight);
+            content.fill();
+            content.setStrokingColor(new Color(205, 213, 220));
+            content.setLineWidth(0.55f);
+            content.addRect(MARGIN, rowTop - rowHeight, width, rowHeight);
+            for (int index = 1; index < labels.length; index++) {
+                float dividerX = MARGIN + (cellWidth * index);
+                content.moveTo(dividerX, rowTop - rowHeight);
+                content.lineTo(dividerX, rowTop);
+            }
+            content.stroke();
+            for (int index = 0; index < labels.length; index++) {
+                float cellX = MARGIN + (cellWidth * index) + 11;
+                drawText(safe(labels[index]), cellX, rowTop - 15, regular, 8.5f, 70, 82, 92);
+                drawText(safe(values[index]), cellX, rowTop - 35, bold, 13,
+                        NAVY_RED, NAVY_GREEN, NAVY_BLUE);
+            }
+            y = rowTop - rowHeight - 4;
+        }
+
         void paragraph(String value) throws IOException {
             ensure(20);
             writeWrapped(safe(value), MARGIN, width, regular, 8.5f, 11, 55, 68, 78);
@@ -433,16 +495,71 @@ public final class DailyReportPdfRenderer {
             drawTableRow(activeTableHeaders, activeTableWidths, true);
         }
 
-        void tableRow(String[] values, float[] widths) throws IOException {
+        void tableRowWithComment(String[] values, float[] widths, String comment) throws IOException {
             if (values.length != widths.length) throw new IllegalArgumentException("Colonnes de tableau invalides.");
-            float required = tableRowHeight(values, widths, false);
+            boolean hasComment = comment != null && !comment.isBlank();
+            float required = tableRowHeight(values, widths, false) + (hasComment ? 26 : 0);
             if (y - required < FOOTER_HEIGHT + 12) {
                 openPage();
-                if (activeTableHeaders != null && activeTableWidths != null) {
-                    drawTableRow(activeTableHeaders, activeTableWidths, true);
-                }
+                repeatActiveTableHeader();
             }
             drawTableRow(values, widths, false);
+            tableComment(comment);
+        }
+
+        void tableComment(String value) throws IOException {
+            if (value == null || value.isBlank()) return;
+            final float fontSize = 8.8f;
+            final float leading = 11;
+            List<String> lines = wrap("Commentaire : " + safe(value), regular, fontSize, width - 20);
+            int offset = 0;
+            while (offset < lines.size()) {
+                if (y - 26 < FOOTER_HEIGHT + 12) {
+                    openPage();
+                    repeatActiveTableHeader();
+                }
+
+                float available = y - (FOOTER_HEIGHT + 12);
+                int lineCapacity = Math.max(1, (int) Math.floor((available - 12) / leading));
+                int lineCount = Math.min(lineCapacity, lines.size() - offset);
+                float rowHeight = Math.max(26, (lineCount * leading) + 12);
+                drawTableCommentChunk(lines.subList(offset, offset + lineCount), rowHeight, fontSize, leading);
+                offset += lineCount;
+
+                if (offset < lines.size()) {
+                    openPage();
+                    repeatActiveTableHeader();
+                }
+            }
+        }
+
+        private void drawTableCommentChunk(
+                List<String> lines,
+                float rowHeight,
+                float fontSize,
+                float leading) throws IOException {
+            float rowTop = y;
+            float rowBottom = rowTop - rowHeight;
+            content.setNonStrokingColor(new Color(255, 247, 242));
+            content.addRect(MARGIN, rowBottom, width, rowHeight);
+            content.fill();
+            content.setStrokingColor(new Color(225, 205, 192));
+            content.setLineWidth(0.55f);
+            content.addRect(MARGIN, rowBottom, width, rowHeight);
+            content.stroke();
+
+            float baseline = rowTop - 15;
+            for (String line : lines) {
+                drawText(line, MARGIN + 10, baseline, regular, fontSize, 69, 61, 56);
+                baseline -= leading;
+            }
+            y = rowBottom;
+        }
+
+        private void repeatActiveTableHeader() throws IOException {
+            if (activeTableHeaders != null && activeTableWidths != null) {
+                drawTableRow(activeTableHeaders, activeTableWidths, true);
+            }
         }
 
         private void drawTableRow(String[] values, float[] widths, boolean header) throws IOException {
@@ -628,6 +745,35 @@ public final class DailyReportPdfRenderer {
             content.newLineAtOffset(x, baseline);
             content.showText(safe(value));
             content.endText();
+        }
+
+        private void drawTextRight(
+                String value,
+                float right,
+                float baseline,
+                PDFont font,
+                float fontSize,
+                int red,
+                int green,
+                int blue) throws IOException {
+            String safeValue = safe(value);
+            drawText(safeValue, right - width(safeValue, font, fontSize), baseline,
+                    font, fontSize, red, green, blue);
+        }
+
+        private void drawClientName() throws IOException {
+            float fontSize = 17;
+            List<String> lines = wrap(safe(clientName), bold, fontSize, width - 225);
+            while (lines.size() > 2 && fontSize > 7) {
+                fontSize -= 0.5f;
+                lines = wrap(safe(clientName), bold, fontSize, width - 225);
+            }
+            float baseline = top - 59;
+            float leading = fontSize + 2;
+            for (String line : lines) {
+                drawText(line, MARGIN, baseline, bold, fontSize, 255, 255, 255);
+                baseline -= leading;
+            }
         }
 
         private void drawWrappedAt(

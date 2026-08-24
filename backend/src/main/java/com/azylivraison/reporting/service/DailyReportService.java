@@ -326,9 +326,14 @@ public class DailyReportService {
     }
 
     private ClientDailyReport clientApiView(DailyReport report, UUID accountId) {
+        ClientSummary client = report.clients().stream()
+                .filter(item -> item.accountId().equals(accountId))
+                .findFirst()
+                .orElseThrow();
         return new ClientDailyReport(
                 deriveClientReportId(report.reportId(), accountId),
                 report.serviceDate(),
+                client.displayName(),
                 report.totals(),
                 report.packages().stream()
                         .map(item -> new ClientDailyReport.PackageLine(
@@ -338,6 +343,7 @@ public class DailyReportService {
                                 item.pickupLabel(),
                                 item.destinationLabel(),
                                 item.outcome(),
+                                item.outcomeNote(),
                                 item.actualAmountCollectedAriary(),
                                 item.appliedDeliveryFeeAriary(),
                                 item.amountToRemitAriary(),
