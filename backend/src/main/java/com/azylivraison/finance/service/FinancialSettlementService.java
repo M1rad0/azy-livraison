@@ -4,7 +4,6 @@ import static com.azylivraison.finance.domain.FinanceModels.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -339,7 +338,8 @@ public class FinancialSettlementService {
 
     private void materializeKnownClientReports(UUID clientAccountId) {
         Account account = requireAccount(clientAccountId);
-        for (DailyReportService.ClientReportSummary summary : dailyReportService.listClientReports(clientAccountId)) {
+        for (DailyReportService.ClientReportSnapshot summary
+                : dailyReportService.listClientReportSnapshots(clientAccountId)) {
             ensureSettlement(
                     summary.reportId(), summary.serviceDate(), summary.revision(), clientAccountId,
                     account.displayName(), summary.totals().amountToRemitAriary(), summary.closedAt());
@@ -357,8 +357,7 @@ public class FinancialSettlementService {
         Optional<ClientDailySettlement> existing = repository.findSettlement(
                 serviceDate, closureRevision, clientAccountId);
         if (existing.isPresent()) return existing.get();
-        UUID clientReportId = UUID.nameUUIDFromBytes(
-                (generalReportId + "|" + clientAccountId).getBytes(StandardCharsets.UTF_8));
+        UUID clientReportId = DailyReportService.deriveClientReportId(generalReportId, clientAccountId);
         ClientDailySettlement settlement = new ClientDailySettlement(
                 UUID.randomUUID(), clientReportId, serviceDate, closureRevision, clientAccountId,
                 clientDisplayName == null || clientDisplayName.isBlank()

@@ -73,8 +73,8 @@ class FinanceApiIntegrationTest {
 
     @BeforeEach
     void setUpFinanceSnapshot() {
-        when(dailyReportService.listClientReports(CLIENT_ID)).thenReturn(List.of());
-        when(dailyReportService.listClientReports(OTHER_CLIENT_ID)).thenReturn(List.of());
+        when(dailyReportService.listClientReportSnapshots(CLIENT_ID)).thenReturn(List.of());
+        when(dailyReportService.listClientReportSnapshots(OTHER_CLIENT_ID)).thenReturn(List.of());
         insertAccount(ADMIN_ID, "finance-admin", "Admin finance", "ADMIN");
         insertAccount(CLIENT_ID, "finance-client", "Boutique finance", "CLIENT");
         insertAccount(OTHER_CLIENT_ID, "finance-other", "Autre boutique", "CLIENT");

@@ -15,6 +15,7 @@ import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.dailyworkflow.service.DailyWorkflowConflictException;
 import com.azylivraison.dailyworkflow.service.DailyWorkflowNotFoundException;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
+import com.azylivraison.reporting.domain.ClientDailyReport;
 import com.azylivraison.reporting.domain.DailyReport;
 import com.azylivraison.reporting.domain.DailyReport.ClientSummary;
 import com.azylivraison.reporting.domain.DailyReport.Closure;
@@ -86,11 +87,22 @@ public class DailyReportService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ClientReportSummary> listClientReports(UUID accountId) {
+        return listClientReportSnapshots(accountId).stream()
+                .map(report -> new ClientReportSummary(
+                        deriveClientReportId(report.reportId(), accountId),
+                        report.serviceDate(),
+                        report.totals()))
+                .toList();
+    }
+
+    /** Internal closed-report metadata used to materialize immutable settlements. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<ClientReportSnapshot> listClientReportSnapshots(UUID accountId) {
         if (accountId == null) throw new IllegalArgumentException("accountId");
         return repository.listClosedDatesForClient(accountId).stream()
                 .map(date -> {
                     DailyReport report = clientReportView(build(date), accountId);
-                    return new ClientReportSummary(
+                    return new ClientReportSnapshot(
                             report.reportId(),
                             report.serviceDate(),
                             report.closure().version(),
@@ -101,8 +113,15 @@ public class DailyReportService {
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public DailyReport getClientReport(LocalDate serviceDate, UUID accountId) {
-        return clientReportView(build(serviceDate), accountId);
+    public ClientDailyReport getClientReport(LocalDate serviceDate, UUID accountId) {
+        return clientApiView(clientReportView(build(serviceDate), accountId), accountId);
+    }
+
+    public static UUID deriveClientReportId(UUID generalReportId, UUID clientAccountId) {
+        if (generalReportId == null) throw new IllegalArgumentException("generalReportId");
+        if (clientAccountId == null) throw new IllegalArgumentException("clientAccountId");
+        return UUID.nameUUIDFromBytes(
+                (generalReportId + "|" + clientAccountId).getBytes(StandardCharsets.UTF_8));
     }
 
     private DailyReport build(LocalDate serviceDate) {
@@ -306,7 +325,34 @@ public class DailyReportService {
                 packages);
     }
 
+    private ClientDailyReport clientApiView(DailyReport report, UUID accountId) {
+        return new ClientDailyReport(
+                deriveClientReportId(report.reportId(), accountId),
+                report.serviceDate(),
+                report.totals(),
+                report.packages().stream()
+                        .map(item -> new ClientDailyReport.PackageLine(
+                                item.packageId(),
+                                item.recipientName(),
+                                item.recipientContact(),
+                                item.pickupLabel(),
+                                item.destinationLabel(),
+                                item.outcome(),
+                                item.actualAmountCollectedAriary(),
+                                item.appliedDeliveryFeeAriary(),
+                                item.amountToRemitAriary(),
+                                item.mobileMoneyPaid(),
+                                item.returnedToSender()))
+                        .toList());
+    }
+
     public record ClientReportSummary(
+            UUID reportId,
+            LocalDate serviceDate,
+            Totals totals) {
+    }
+
+    public record ClientReportSnapshot(
             UUID reportId,
             LocalDate serviceDate,
             int revision,
