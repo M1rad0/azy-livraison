@@ -76,34 +76,26 @@ export interface ClientReportTotals {
 export interface ClientReportSummary {
   reportId: string
   serviceDate: string
-  revision: number
-  closedAt: string
   totals: ClientReportTotals
 }
 
 export interface ClientReportPackage {
   packageId: string
-  sequenceNumber: number
   recipientName: string
   recipientContact: string
   pickupLabel: string
   destinationLabel: string
-  pricingZoneName?: string | null
   outcome: DeliveryPackageOutcome
-  actualCourierName?: string | null
-  expectedAmountToCollectAriary: number
   actualAmountCollectedAriary: number
   appliedDeliveryFeeAriary: number
   amountToRemitAriary: number
+  mobileMoneyPaid: boolean
   returnedToSender: boolean
-  postponedToDate?: string | null
 }
 
 export interface ClientDailyReport {
   reportId: string
   serviceDate: string
-  generatedAt: string
-  closure: { closedAt: string; version: number }
   totals: ClientReportTotals
   packages: ClientReportPackage[]
 }

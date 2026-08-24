@@ -25,12 +25,12 @@ vi.mock('../api/client', async (importOriginal) => {
 })
 
 const totals = {
-  packageCount: 1,
+  packageCount: 2,
   deliveredCount: 1,
   cancelledCount: 0,
   postponedCount: 0,
-  returnRequiredCount: 0,
-  returnedToSenderCount: 0,
+  returnRequiredCount: 1,
+  returnedToSenderCount: 1,
   amountCollectedAriary: 15_000,
   deliveryFeesAriary: 5_000,
   amountToRemitAriary: 10_000,
@@ -39,18 +39,40 @@ const totals = {
 const summary = {
   reportId: 'report-1',
   serviceDate: '2026-08-24',
-  revision: 2,
-  closedAt: '2026-08-24T18:00:00Z',
   totals,
 } satisfies ClientReportSummary
+
+const settlementCreatedAt = '2026-08-24T18:00:00Z'
 
 const report = {
   reportId: summary.reportId,
   serviceDate: summary.serviceDate,
-  generatedAt: summary.closedAt,
-  closure: { closedAt: summary.closedAt, version: summary.revision },
   totals,
-  packages: [],
+  packages: [{
+    packageId: 'package-1',
+    recipientName: 'Miora',
+    recipientContact: '034 00 000 00',
+    pickupLabel: 'Boutique Analakely',
+    destinationLabel: 'Ankorondrano',
+    outcome: 'DELIVERED',
+    actualAmountCollectedAriary: 15_000,
+    appliedDeliveryFeeAriary: 5_000,
+    amountToRemitAriary: 10_000,
+    mobileMoneyPaid: true,
+    returnedToSender: false,
+  }, {
+    packageId: 'package-2',
+    recipientName: 'Fara',
+    recipientContact: '032 00 000 00',
+    pickupLabel: 'Boutique Analakely',
+    destinationLabel: 'Ivandry',
+    outcome: 'RETURN_TO_SENDER',
+    actualAmountCollectedAriary: 0,
+    appliedDeliveryFeeAriary: 0,
+    amountToRemitAriary: 0,
+    mobileMoneyPaid: false,
+    returnedToSender: true,
+  }],
 } satisfies ClientDailyReport
 
 const finance = {
@@ -64,13 +86,13 @@ const finance = {
     id: 'settlement-1',
     reportId: summary.reportId,
     serviceDate: summary.serviceDate,
-    closureRevision: summary.revision,
+    closureRevision: 2,
     clientDisplayName: 'Boutique Soa',
     amountDueAriary: 10_000,
     confirmedSignedPaymentsAriary: 6_000,
     remainingAriary: 4_000,
     status: 'PARTIALLY_PAID',
-    createdAt: summary.closedAt,
+    createdAt: settlementCreatedAt,
   }],
   payments: [{
     id: 'payment-1',
@@ -139,5 +161,35 @@ describe('ClientReportsPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Télécharger le justificatif/ }))
     await waitFor(() => expect(downloadClientPaymentProof).toHaveBeenCalledWith('payment-1', 'client-token'))
+  })
+
+  it('présente les colis en tableau sans répéter le retrait ni exposer les détails opérationnels', async () => {
+    render(<ClientReportsPanel accessToken="client-token" />)
+
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'Destinataire',
+      'Destination / contact',
+      'État',
+      'Mobile Money',
+      'Récupéré',
+      'Frais',
+      'Net',
+    ])
+    expect(screen.getByText('Miora')).toBeInTheDocument()
+    expect(screen.getByText('Ankorondrano')).toBeInTheDocument()
+    expect(screen.getByText('Retourné à l’expéditeur')).toBeInTheDocument()
+    expect(screen.getByText('Oui')).toBeInTheDocument()
+    expect(screen.getByText('Non')).toBeInTheDocument()
+    expect(screen.getAllByText('Boutique Analakely')).toHaveLength(1)
+    expect(screen.queryByText(/Livreur/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/version 2/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/18:30|19:00/)).not.toBeInTheDocument()
+
+    const table = screen.getByRole('table')
+    const settlement = screen.getByRole('heading', { name: 'Versements liés à ce rapport' }).closest('section')
+    const summarySection = screen.getByRole('heading', { name: 'Synthèse financière' }).closest('section')
+    expect(table.compareDocumentPosition(settlement as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect((settlement as Node).compareDocumentPosition(summarySection as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
