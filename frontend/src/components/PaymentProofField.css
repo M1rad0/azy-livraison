@@ -1,0 +1,193 @@
+.payment-proof-field {
+  --payment-proof-ink: var(--ink, #0b2943);
+  --payment-proof-muted: var(--ink-soft, #71808d);
+  --payment-proof-line: var(--line, #dfe7ed);
+  --payment-proof-orange: var(--coral, #f45b0b);
+  --payment-proof-orange-soft: var(--orange-soft, #fff2e9);
+  display: grid;
+  gap: .65rem;
+  min-width: 0;
+}
+
+.payment-proof-field__heading {
+  display: grid;
+  gap: .22rem;
+}
+
+.payment-proof-field__heading > div {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.payment-proof-field__heading > div > span {
+  color: var(--payment-proof-ink);
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.payment-proof-field__heading > div > small {
+  padding: .18rem .4rem;
+  color: var(--payment-proof-muted);
+  background: #f2f6f9;
+  border-radius: 999px;
+  font-size: .56rem;
+  font-weight: 750;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.payment-proof-field__heading p {
+  margin: 0;
+  color: var(--payment-proof-muted);
+  font-size: .65rem;
+  line-height: 1.5;
+}
+
+.payment-proof-field__picker {
+  display: flex;
+  width: 100%;
+  min-height: 5.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  padding: .9rem 1rem;
+  color: var(--payment-proof-ink);
+  text-align: left;
+  background: #fbfcfd;
+  border: 1px dashed #bdcbd6;
+  border-radius: .9rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.payment-proof-field__picker:hover:not(:disabled) {
+  background: var(--payment-proof-orange-soft);
+  border-color: var(--payment-proof-orange);
+}
+
+.payment-proof-field__picker:focus-visible,
+.payment-proof-field__actions button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(244, 91, 11, .18);
+}
+
+.payment-proof-field__picker > span:first-child,
+.payment-proof-field__file-icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--payment-proof-orange);
+  background: var(--payment-proof-orange-soft);
+  border-radius: .75rem;
+}
+
+.payment-proof-field__picker svg,
+.payment-proof-field__file-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.payment-proof-field__picker > span:last-child,
+.payment-proof-field__file-copy {
+  display: grid;
+  min-width: 0;
+  gap: .12rem;
+}
+
+.payment-proof-field__picker strong,
+.payment-proof-field__file-copy strong {
+  overflow: hidden;
+  font-size: .72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payment-proof-field__picker small,
+.payment-proof-field__file-copy small {
+  color: var(--payment-proof-muted);
+  font-size: .61rem;
+}
+
+.payment-proof-field__selection {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .7rem;
+  min-height: 4.4rem;
+  padding: .75rem;
+  background: #fff;
+  border: 1px solid var(--payment-proof-line);
+  border-radius: .9rem;
+}
+
+.payment-proof-field__actions {
+  display: flex;
+  gap: .35rem;
+}
+
+.payment-proof-field__actions button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: .3rem;
+  padding: .45rem .55rem;
+  color: var(--payment-proof-ink);
+  background: #fff;
+  border: 1px solid var(--payment-proof-line);
+  border-radius: .62rem;
+  font-size: .62rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.payment-proof-field__actions button:hover:not(:disabled) {
+  background: var(--payment-proof-orange-soft);
+  border-color: #ffc7a4;
+}
+
+.payment-proof-field__actions button.is-danger {
+  color: #963b33;
+}
+
+.payment-proof-field__actions svg {
+  width: .75rem;
+  height: .75rem;
+}
+
+.payment-proof-field button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.payment-proof-field.has-error .payment-proof-field__picker,
+.payment-proof-field.has-error .payment-proof-field__selection {
+  border-color: #dc8f89;
+}
+
+.payment-proof-field__error {
+  margin: 0;
+  padding: .55rem .65rem;
+  color: #963b33;
+  background: #fff0ed;
+  border: 1px solid #f3d2cf;
+  border-radius: .65rem;
+  font-size: .64rem;
+}
+
+@media (max-width: 560px) {
+  .payment-proof-field__selection {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .payment-proof-field__actions {
+    grid-column: 1 / -1;
+  }
+
+  .payment-proof-field__actions button {
+    flex: 1;
+  }
+}

@@ -1,3 +1,5 @@
+import type { ClientFinance } from './admin'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 export interface ClientLocation {
@@ -368,6 +370,10 @@ export function listClientReports(accessToken: string): Promise<ClientReportSumm
   return clientRequest<ClientReportSummary[]>('reports', accessToken)
 }
 
+export function getClientFinance(accessToken: string): Promise<ClientFinance> {
+  return clientRequest<ClientFinance>('finance', accessToken)
+}
+
 export function getClientReport(serviceDate: string, accessToken: string): Promise<ClientDailyReport> {
   return clientRequest<ClientDailyReport>(`reports/${encodeURIComponent(serviceDate)}`, accessToken)
 }
@@ -395,5 +401,30 @@ export async function downloadClientReport(
   return {
     blob: await response.blob(),
     filename: decodeURIComponent(utf8Name ?? simpleName ?? `azy-livraison-${serviceDate}.${format}`),
+  }
+}
+
+export async function downloadClientPaymentProof(
+  paymentId: string,
+  accessToken: string,
+): Promise<ClientReportDownload> {
+  const response = await fetch(`${API_BASE_URL}/client/finance/payments/${encodeURIComponent(paymentId)}/proof`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => undefined) as ApiErrorPayload | undefined
+    throw new ClientApiError(
+      payload?.message ?? `Le justificatif n’a pas pu être téléchargé (${response.status}).`,
+      payload?.code ?? 'CLIENT_PAYMENT_PROOF_DOWNLOAD_FAILED',
+      response.status,
+      payload?.violations ?? [],
+    )
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const simpleName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  return {
+    blob: await response.blob(),
+    filename: decodeURIComponent(utf8Name ?? simpleName ?? `justificatif-${paymentId}`),
   }
 }

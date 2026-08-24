@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
+import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, Settings2, Sparkles, TriangleAlert, WalletCards } from 'lucide-react'
 import {
   cancelAdminDeliveryPackage,
   getAdminQueue,
@@ -20,6 +20,7 @@ import {
 import { AdminCouriersPanel } from './AdminCouriersPanel'
 import { AdminDispatchPanel } from './AdminDispatchPanel'
 import { AdminDailyOperationsPanel } from './AdminDailyOperationsPanel'
+import { AdminFinancePanel } from './AdminFinancePanel'
 import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
 import { AdminPricingZonesPanel } from './AdminPricingZonesPanel'
 import { antananarivoToday, errorMessage } from './adminHelpers'
@@ -27,12 +28,13 @@ import { AdminSettingsPanel } from './AdminSettingsPanel'
 import { usePortalNavigation } from '../PortalShell'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'dispatch' | 'day' | 'couriers' | 'pricing' | 'settings'
+type AdminTab = 'queue' | 'dispatch' | 'day' | 'finance' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
   { id: 'dispatch', label: 'Dispatch', detail: 'Via point de ralliement', icon: Sparkles },
   { id: 'day', label: 'Compte rendu', detail: 'Clôture et rapports', icon: ClipboardCheck },
+  { id: 'finance', label: 'Finances', detail: 'Versements et soldes', icon: WalletCards },
   { id: 'couriers', label: 'Livreurs', detail: 'Équipe et véhicules', icon: Bike },
   { id: 'pricing', label: 'Tarification', detail: 'Zones et prix', icon: BadgeDollarSign },
   { id: 'settings', label: 'Paramètres', detail: 'Règles opérationnelles', icon: Settings2 },
@@ -226,6 +228,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           }}
         />
       )}
+      {tab === 'finance' && <AdminFinancePanel accessToken={accessToken} couriers={couriers} initialDate={dispatchDate} />}
       {tab === 'couriers' && <AdminCouriersPanel accessToken={accessToken} couriers={couriers} presets={presets} onSaved={upsertCourier} />}
       {tab === 'pricing' && <AdminPricingZonesPanel accessToken={accessToken} />}
       {tab === 'settings' && (

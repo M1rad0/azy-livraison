@@ -40,12 +40,14 @@ const couriers: Courier[] = [
   {
     id: 'courier-1', name: 'Hery', contact: '034 00 000 01', active: true,
     vehicleType: 'MOTO', effectiveMaxWeightKg: 30, effectiveAverageSpeedKmh: 25,
+    effectiveCommissionNumerator: 1, effectiveCommissionDenominator: 3,
     defaultDepartureTime: '06:00:00', departureLocation: { label: 'Analakely', latitude: -18.91, longitude: 47.52 },
     version: 1, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
   },
   {
     id: 'courier-2', name: 'Tiana', contact: '034 00 000 02', active: false,
     vehicleType: 'BICYCLE', effectiveMaxWeightKg: 10, effectiveAverageSpeedKmh: 12,
+    effectiveCommissionNumerator: 1, effectiveCommissionDenominator: 3,
     defaultDepartureTime: '06:30:00', departureLocation: { label: 'Alasora', latitude: -18.96, longitude: 47.57 },
     version: 2, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-20T00:00:00Z',
   },

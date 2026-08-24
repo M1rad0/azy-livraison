@@ -109,6 +109,10 @@ export interface Courier {
   averageSpeedKmh?: number
   effectiveMaxWeightKg: number
   effectiveAverageSpeedKmh: number
+  commissionNumerator?: number | null
+  commissionDenominator?: number | null
+  effectiveCommissionNumerator: number
+  effectiveCommissionDenominator: number
   defaultDepartureTime: string
   departureLocation: ConfirmedLocation
   version: number
@@ -132,6 +136,8 @@ export interface CourierInput {
   vehicleType: VehicleType
   maxWeightKg?: number
   averageSpeedKmh?: number
+  commissionNumerator?: number | null
+  commissionDenominator?: number | null
   defaultDepartureTime: string
   departureLocation: ConfirmedLocation
   version?: number
@@ -157,6 +163,8 @@ export interface OperationalSettings {
   lateToleranceMinutes: number
   optimizationTimeLimitSeconds: number
   routingPreset: 'MAIN_ROADS'
+  defaultCourierCommissionNumerator: number
+  defaultCourierCommissionDenominator: number
   version: number
   createdAt: string
   updatedAt: string
@@ -411,6 +419,167 @@ export interface CarryForwardResult {
 export interface DownloadedReport {
   blob: Blob
   filename: string
+}
+
+export type PaymentStatus = 'CONFIRMED' | 'VOIDED'
+export type ClientPaymentDirection = 'AZY_TO_CLIENT' | 'CLIENT_TO_AZY'
+export type SettlementStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID'
+
+export interface PaymentDestination {
+  operator: string
+  accountHolder: string
+  number: string
+}
+
+export interface PaymentProof {
+  available: boolean
+  originalFilename?: string | null
+  contentType?: string | null
+  sizeBytes?: number | null
+  sha256?: string | null
+}
+
+export interface ClientSettlement {
+  id: string
+  reportId: string
+  serviceDate: string
+  closureRevision: number
+  clientDisplayName: string
+  amountDueAriary: number
+  confirmedSignedPaymentsAriary: number
+  remainingAriary: number
+  status: SettlementStatus
+  createdAt: string
+}
+
+export interface ClientPayment {
+  id: string
+  settlementId: string
+  serviceDate: string
+  direction: ClientPaymentDirection
+  amountAriary: number
+  signedAmountAriary: number
+  paymentMethod: string
+  destination?: PaymentDestination | null
+  transactionReference?: string | null
+  note?: string | null
+  proof: PaymentProof
+  status: PaymentStatus
+  confirmedAt: string
+  confirmedByAccountId?: string | null
+  voidedAt?: string | null
+  voidedByAccountId?: string | null
+  voidReason?: string | null
+  version: number
+}
+
+export interface ClientFinance {
+  clientAccountId: string
+  preferredPayoutDestination?: PaymentDestination | null
+  totalDueAriary: number
+  totalConfirmedSignedPaymentsAriary: number
+  netBalanceAriary: number
+  amountOwedToClientAriary: number
+  amountOwedByClientAriary: number
+  settlements: ClientSettlement[]
+  payments: ClientPayment[]
+}
+
+export interface CreatePaymentInput {
+  amountAriary: number
+  paymentMethod: string
+  destination?: PaymentDestination | null
+  transactionReference?: string | null
+  note?: string | null
+  confirmedAt?: string | null
+}
+
+export interface CompensationLine {
+  earningId?: string | null
+  packageId: string
+  courierId: string
+  courierName: string
+  courierContact?: string | null
+  outcome: Extract<DeliveryPackageOutcome, 'DELIVERED' | 'RETURN_TO_SENDER'>
+  eligible: boolean
+  ineligibilityReason?: string | null
+  deliveryFeeAriary: number
+  commissionNumerator: number
+  commissionDenominator: number
+  suggestedAmountAriary: number
+  finalAmountAriary?: number | null
+  overrideReason?: string | null
+  recipientName?: string | null
+  destinationLabel?: string | null
+}
+
+export interface CourierCompensation {
+  serviceDate: string
+  closureRevision: number
+  finalized: boolean
+  finalizedAt?: string | null
+  finalizedByAccountId?: string | null
+  totalSuggestedAriary: number
+  totalFinalAriary: number
+  pendingReturnCount: number
+  lines: CompensationLine[]
+}
+
+export interface CourierEarning {
+  id: string
+  serviceDate: string
+  closureRevision: number
+  packageId: string
+  outcome: Extract<DeliveryPackageOutcome, 'DELIVERED' | 'RETURN_TO_SENDER'>
+  deliveryFeeAriary: number
+  commissionNumerator: number
+  commissionDenominator: number
+  suggestedAmountAriary: number
+  finalAmountAriary: number
+  overrideReason?: string | null
+  createdAt: string
+}
+
+export interface CourierPayment {
+  id: string
+  amountAriary: number
+  paymentMethod: string
+  destination?: PaymentDestination | null
+  transactionReference?: string | null
+  note?: string | null
+  proof: PaymentProof
+  status: PaymentStatus
+  confirmedAt: string
+  confirmedByAccountId?: string | null
+  voidedAt?: string | null
+  voidedByAccountId?: string | null
+  voidReason?: string | null
+  version: number
+}
+
+export interface CourierDeliveryHistory {
+  packageId: string
+  serviceDate: string
+  clientDisplayName: string
+  recipientName: string
+  pickupLabel: string
+  destinationLabel: string
+  outcome: Extract<DeliveryPackageOutcome, 'DELIVERED' | 'RETURN_TO_SENDER'>
+  returnCompletedAt?: string | null
+  deliveryFeeAriary: number
+  earnedAmountAriary?: number | null
+}
+
+export interface CourierFinance {
+  courierId: string
+  courierName: string
+  totalEarnedAriary: number
+  totalPaidAriary: number
+  remainingToPayAriary: number
+  advanceCreditAriary: number
+  deliveries: CourierDeliveryHistory[]
+  earnings: CourierEarning[]
+  payments: CourierPayment[]
 }
 
 interface ApiErrorPayload {
@@ -749,6 +918,132 @@ export function downloadClientDailyReport(
   return downloadAdminReport(
     `delivery-days/${encodeURIComponent(serviceDate)}/reports/clients/${encodeURIComponent(accountId)}.${format}`,
     `azy-livraison-client-${serviceDate}.${format}`,
+    accessToken,
+  )
+}
+
+function paymentRequest(input: unknown, proof?: File | null): RequestInit {
+  if (!proof) return jsonRequest('POST', input)
+  const body = new FormData()
+  body.append('payment', new Blob([JSON.stringify(input)], { type: 'application/json' }))
+  body.append('proof', proof)
+  return { method: 'POST', body }
+}
+
+export function getAdminClientFinance(accountId: string, accessToken: string, signal?: AbortSignal) {
+  return adminRequest<ClientFinance>(`finance/clients/${encodeURIComponent(accountId)}`, accessToken, { signal })
+}
+
+export function createClientPayment(
+  settlementId: string,
+  input: CreatePaymentInput & { direction: ClientPaymentDirection },
+  proof: File | null,
+  accessToken: string,
+) {
+  return adminRequest<ClientPayment>(
+    `finance/client-settlements/${encodeURIComponent(settlementId)}/payments`,
+    accessToken,
+    paymentRequest(input, proof),
+  )
+}
+
+export function voidClientPayment(paymentId: string, version: number, reason: string, accessToken: string) {
+  return adminRequest<ClientPayment>(
+    `finance/client-payments/${encodeURIComponent(paymentId)}/void`,
+    accessToken,
+    jsonRequest('POST', { version, reason }),
+  )
+}
+
+export function downloadAdminClientPaymentProof(paymentId: string, accessToken: string) {
+  return downloadAdminReport(
+    `finance/client-payments/${encodeURIComponent(paymentId)}/proof`,
+    `justificatif-client-${paymentId}`,
+    accessToken,
+  )
+}
+
+export function getCourierCompensations(serviceDate: string, accessToken: string, signal?: AbortSignal) {
+  return adminRequest<CourierCompensation>(
+    `finance/delivery-days/${encodeURIComponent(serviceDate)}/courier-compensations`,
+    accessToken,
+    { signal },
+  )
+}
+
+export function finalizeCourierCompensations(
+  serviceDate: string,
+  closureRevision: number,
+  overrides: Array<{ packageId: string; finalAmountAriary: number; reason?: string | null }>,
+  accessToken: string,
+) {
+  return adminRequest<CourierCompensation>(
+    `finance/delivery-days/${encodeURIComponent(serviceDate)}/courier-compensations/finalize`,
+    accessToken,
+    jsonRequest('POST', { closureRevision, overrides }),
+  )
+}
+
+export function getCourierFinance(
+  courierId: string,
+  accessToken: string,
+  filters: { from?: string; to?: string } = {},
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams()
+  if (filters.from) query.set('from', filters.from)
+  if (filters.to) query.set('to', filters.to)
+  const suffix = query.size ? `?${query}` : ''
+  return adminRequest<CourierFinance>(
+    `finance/couriers/${encodeURIComponent(courierId)}${suffix}`,
+    accessToken,
+    { signal },
+  )
+}
+
+export function downloadCourierStatement(
+  courierId: string,
+  format: ReportFormat,
+  filters: { from?: string; to?: string },
+  accessToken: string,
+) {
+  const query = new URLSearchParams()
+  if (filters.from) query.set('from', filters.from)
+  if (filters.to) query.set('to', filters.to)
+  const suffix = query.size ? `?${query}` : ''
+  const period = [filters.from, filters.to].filter(Boolean).join('-') || 'historique'
+  return downloadAdminReport(
+    `finance/couriers/${encodeURIComponent(courierId)}/statement.${format}${suffix}`,
+    `azy-livraison-livreur-${courierId}-${period}.${format}`,
+    accessToken,
+  )
+}
+
+export function createCourierPayment(
+  courierId: string,
+  input: CreatePaymentInput,
+  proof: File | null,
+  accessToken: string,
+) {
+  return adminRequest<CourierPayment>(
+    `finance/couriers/${encodeURIComponent(courierId)}/payments`,
+    accessToken,
+    paymentRequest(input, proof),
+  )
+}
+
+export function voidCourierPayment(paymentId: string, version: number, reason: string, accessToken: string) {
+  return adminRequest<CourierPayment>(
+    `finance/courier-payments/${encodeURIComponent(paymentId)}/void`,
+    accessToken,
+    jsonRequest('POST', { version, reason }),
+  )
+}
+
+export function downloadAdminCourierPaymentProof(paymentId: string, accessToken: string) {
+  return downloadAdminReport(
+    `finance/courier-payments/${encodeURIComponent(paymentId)}/proof`,
+    `justificatif-livreur-${paymentId}`,
     accessToken,
   )
 }

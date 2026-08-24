@@ -41,6 +41,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { LocationPicker } from '../LocationPicker'
 import { AdminPackageOutcomeDialog, type PackageOutcomeInput } from './AdminPackageOutcomeDialog'
 import { AdminDeliveryFeeDialog, type DeliveryFeeInput } from './AdminDeliveryFeeDialog'
+import { AdminCourierCompensationPanel } from './AdminCourierCompensationPanel'
 import { errorMessage, formatAriary, formatDate, formatDateTime, formatTime, locationLabel } from './adminHelpers'
 
 const OUTCOME_LABELS: Record<DeliveryPackageOutcome, string> = {
@@ -438,6 +439,14 @@ export function AdminDailyOperationsPanel({
             <div><p className="admin-eyebrow">Clôture</p><h3>{day.status === 'CLOSED' ? 'Cette journée est clôturée' : day.counts.awaitingOutcome > 0 ? `${day.counts.awaitingOutcome} colis restent à finaliser` : unscheduledPostponements > 0 ? `${unscheduledPostponements} colis reporté${unscheduledPostponements > 1 ? 's restent' : ' reste'} à programmer` : 'Tous les colis ont un état final'}</h3><p>{day.status === 'CLOSED' ? 'Les rapports financiers sont disponibles. Rouvrez uniquement pour corriger une erreur.' : unscheduledPostponements > 0 ? 'Programmez chaque colis reporté pour le lendemain et confirmez son nouveau point de retrait avant de clôturer.' : 'La clôture verrouille le compte rendu et rend les rapports disponibles.'}</p></div>
             {day.status === 'CLOSED' ? <button className="admin-button admin-button--ghost" type="button" onClick={() => { setDialogError(undefined); setReopening(true) }}><RotateCcw aria-hidden="true" />Rouvrir la journée</button> : <button className="admin-button" type="button" disabled={day.status !== 'DISPATCHED' || day.counts.awaitingOutcome > 0 || unscheduledPostponements > 0} onClick={() => setClosing(true)}><PackageCheck aria-hidden="true" />Clôturer la journée</button>}
           </section>
+
+          {day.status === 'CLOSED' && (
+            <AdminCourierCompensationPanel
+              accessToken={accessToken}
+              serviceDate={date}
+              refreshKey={day.packages.reduce((total, item) => total + item.version, 0)}
+            />
+          )}
 
           <section className={`admin-reports${day.status !== 'CLOSED' ? ' is-locked' : ''}`}>
             <header><div><p className="admin-eyebrow">Documents financiers</p><h3>Rapports de la journée</h3><p>{day.status === 'CLOSED' ? 'Téléchargez le rapport général ou les documents propres à chaque compte client.' : 'Les téléchargements seront disponibles après la clôture.'}</p></div></header>
