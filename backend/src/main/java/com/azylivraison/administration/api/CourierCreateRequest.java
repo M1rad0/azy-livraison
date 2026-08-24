@@ -5,6 +5,7 @@ import java.time.LocalTime;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -29,9 +30,21 @@ public record CourierCreateRequest(
         BigDecimal maxWeightKg,
         @Positive(message = "La vitesse moyenne doit être positive.")
         BigDecimal averageSpeedKmh,
+        @Positive
+        Integer commissionNumerator,
+        @Positive
+        Integer commissionDenominator,
         @NotNull(message = "L'heure de départ habituelle est obligatoire.")
         LocalTime defaultDepartureTime,
         @NotNull(message = "Le point de départ habituel est obligatoire.")
         @Valid
         ConfirmedLocationRequest departureLocation) {
+
+    @AssertTrue(message = "Renseignez une fraction complète et inférieure ou égale à 1.")
+    public boolean isCommissionFractionValid() {
+        if (commissionNumerator == null && commissionDenominator == null) return true;
+        return commissionNumerator != null && commissionDenominator != null
+                && commissionNumerator > 0 && commissionDenominator > 0
+                && commissionNumerator <= commissionDenominator;
+    }
 }

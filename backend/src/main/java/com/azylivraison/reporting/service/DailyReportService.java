@@ -55,6 +55,16 @@ public class DailyReportService {
         return pdfRenderer.render(build(serviceDate));
     }
 
+    /**
+     * Returns the same immutable closed-day view used by every report renderer.
+     * Financial settlement materialization uses this entry point so that a
+     * client's payable amount cannot drift away from the report shown to them.
+     */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public DailyReport getGeneralReport(LocalDate serviceDate) {
+        return build(serviceDate);
+    }
+
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public byte[] renderGeneralXlsx(LocalDate serviceDate) {
         return xlsxRenderer.render(build(serviceDate));

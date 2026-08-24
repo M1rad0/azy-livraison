@@ -47,6 +47,8 @@ public class CourierProfileController {
                 request.vehicleType(),
                 request.maxWeightKg(),
                 request.averageSpeedKmh(),
+                request.commissionNumerator(),
+                request.commissionDenominator(),
                 request.defaultDepartureTime(),
                 request.departureLocation().toDomain())));
         return ResponseEntity.created(URI.create("/api/admin/couriers/" + response.id())).body(response);
@@ -71,6 +73,8 @@ public class CourierProfileController {
                 request.vehicleType(),
                 request.maxWeightKg(),
                 request.averageSpeedKmh(),
+                request.commissionNumerator(),
+                request.commissionDenominator(),
                 request.defaultDepartureTime(),
                 request.departureLocation().toDomain()), request.version()));
     }

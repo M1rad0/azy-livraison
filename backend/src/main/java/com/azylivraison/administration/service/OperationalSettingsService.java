@@ -36,6 +36,12 @@ public class OperationalSettingsService {
                 requested.lateToleranceMinutes(),
                 requested.optimizationTimeLimitSeconds(),
                 requested.routingPreset(),
+                reduceNumerator(
+                        requested.defaultCourierCommissionNumerator(),
+                        requested.defaultCourierCommissionDenominator()),
+                reduceDenominator(
+                        requested.defaultCourierCommissionNumerator(),
+                        requested.defaultCourierCommissionDenominator()),
                 current.version(),
                 current.createdAt(),
                 current.updatedAt());
@@ -50,5 +56,24 @@ public class OperationalSettingsService {
         return new AdministrationConflictException(
                 "SETTINGS_VERSION_CONFLICT",
                 "Les paramètres ont été modifiés entre-temps. Rechargez la page avant de réessayer.");
+    }
+
+    private int reduceNumerator(int numerator, int denominator) {
+        return numerator / greatestCommonDivisor(numerator, denominator);
+    }
+
+    private int reduceDenominator(int numerator, int denominator) {
+        return denominator / greatestCommonDivisor(numerator, denominator);
+    }
+
+    private int greatestCommonDivisor(int left, int right) {
+        int a = Math.abs(left);
+        int b = Math.abs(right);
+        while (b != 0) {
+            int remainder = a % b;
+            a = b;
+            b = remainder;
+        }
+        return a;
     }
 }

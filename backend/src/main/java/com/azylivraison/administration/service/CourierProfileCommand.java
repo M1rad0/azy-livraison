@@ -18,6 +18,8 @@ public record CourierProfileCommand(
         VehicleType vehicleType,
         BigDecimal maxWeightKg,
         BigDecimal averageSpeedKmh,
+        Integer commissionNumerator,
+        Integer commissionDenominator,
         LocalTime defaultDepartureTime,
         ConfirmedLocation departureLocation) {
 }

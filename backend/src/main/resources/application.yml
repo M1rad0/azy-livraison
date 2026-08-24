@@ -20,7 +20,7 @@ spring:
   servlet:
     multipart:
       max-file-size: ${MAX_IMPORT_FILE_SIZE_MB:10}MB
-      max-request-size: ${MAX_IMPORT_FILE_SIZE_MB:10}MB
+      max-request-size: ${MAX_MULTIPART_REQUEST_SIZE_MB:12}MB
 
 management:
   endpoints:

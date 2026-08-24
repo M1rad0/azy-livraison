@@ -16,6 +16,8 @@ public record OperationalSettings(
         int lateToleranceMinutes,
         int optimizationTimeLimitSeconds,
         RoutingPreset routingPreset,
+        int defaultCourierCommissionNumerator,
+        int defaultCourierCommissionDenominator,
         long version,
         Instant createdAt,
         Instant updatedAt) {

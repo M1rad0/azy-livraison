@@ -10,7 +10,10 @@ RUN mvn --batch-mode clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-RUN groupadd --system spring && useradd --system --gid spring spring
+RUN groupadd --system spring \
+    && useradd --system --gid spring spring \
+    && mkdir -p /data/payment-proofs \
+    && chown -R spring:spring /data/payment-proofs
 USER spring:spring
 
 COPY --from=build /workspace/target/backend-*.jar app.jar

@@ -18,6 +18,8 @@ public record CourierProfile(
         VehicleType vehicleType,
         BigDecimal maxWeightKg,
         BigDecimal averageSpeedKmh,
+        Integer commissionNumerator,
+        Integer commissionDenominator,
         LocalTime defaultDepartureTime,
         ConfirmedLocation departureLocation,
         long version,
@@ -27,7 +29,8 @@ public record CourierProfile(
     public CourierProfile withActive(boolean newActive) {
         return new CourierProfile(
                 id, accountId, name, contact, phoneNumber, payoutDestination, newActive, vehicleType,
-                maxWeightKg, averageSpeedKmh, defaultDepartureTime, departureLocation,
+                maxWeightKg, averageSpeedKmh, commissionNumerator, commissionDenominator,
+                defaultDepartureTime, departureLocation,
                 version, createdAt, updatedAt);
     }
 }

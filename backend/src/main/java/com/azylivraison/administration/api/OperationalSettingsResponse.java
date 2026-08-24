@@ -18,6 +18,8 @@ public record OperationalSettingsResponse(
         int lateToleranceMinutes,
         int optimizationTimeLimitSeconds,
         RoutingPreset routingPreset,
+        int defaultCourierCommissionNumerator,
+        int defaultCourierCommissionDenominator,
         long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -34,6 +36,8 @@ public record OperationalSettingsResponse(
                 settings.lateToleranceMinutes(),
                 settings.optimizationTimeLimitSeconds(),
                 settings.routingPreset(),
+                settings.defaultCourierCommissionNumerator(),
+                settings.defaultCourierCommissionDenominator(),
                 settings.version(),
                 settings.createdAt(),
                 settings.updatedAt());

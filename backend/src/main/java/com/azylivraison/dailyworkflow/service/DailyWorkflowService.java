@@ -19,6 +19,7 @@ import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
+import com.azylivraison.finance.service.FinancialSettlementService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,9 +28,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class DailyWorkflowService {
 
     private final DailyWorkflowRepository repository;
+    private final FinancialSettlementService financialSettlementService;
 
-    public DailyWorkflowService(DailyWorkflowRepository repository) {
+    public DailyWorkflowService(
+            DailyWorkflowRepository repository,
+            FinancialSettlementService financialSettlementService) {
         this.repository = repository;
+        this.financialSettlementService = financialSettlementService;
     }
 
     @Transactional(readOnly = true)
@@ -257,6 +262,7 @@ public class DailyWorkflowService {
                             + " avant la clôture.");
         }
         repository.close(day, actorAccountId, Instant.now());
+        financialSettlementService.materializeClientSettlements(serviceDate);
         return currentDetails(serviceDate);
     }
 
@@ -276,6 +282,7 @@ public class DailyWorkflowService {
         if (normalizedReason == null) {
             throw new DailyWorkflowInputException("Indiquez la raison de la réouverture.");
         }
+        financialSettlementService.assertDayCanReopen(serviceDate);
         repository.reopen(day, actorAccountId, normalizedReason, Instant.now());
         return currentDetails(serviceDate);
     }
