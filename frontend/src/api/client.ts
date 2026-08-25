@@ -20,7 +20,95 @@ export interface ClientProfile {
   displayName: string
   phone: string
   defaultPickup: ClientDefaultPickup | null
+  contactNumbers?: ClientContactNumber[]
+  payoutDestinations?: ClientPayoutDestination[]
   version: number
+}
+
+export interface ClientContactNumber {
+  id: string
+  label?: string | null
+  number: string
+  priority: number
+  active: boolean
+}
+
+export interface ClientPayoutDestination {
+  id: string
+  operator: string
+  accountHolder: string
+  number: string
+  priority: number
+  active: boolean
+}
+
+export interface ClientContactNumberInput {
+  id?: string
+  label?: string | null
+  number: string
+  priority: number
+  active: boolean
+}
+
+export interface ClientPayoutDestinationInput {
+  id?: string
+  operator: string
+  accountHolder: string
+  number: string
+  priority: number
+  active: boolean
+}
+
+export interface ClientReportTotals {
+  packageCount: number
+  deliveredCount: number
+  cancelledCount: number
+  postponedCount: number
+  returnRequiredCount: number
+  returnedToSenderCount: number
+  amountCollectedAriary: number
+  deliveryFeesAriary: number
+  amountToRemitAriary: number
+}
+
+export interface ClientReportSummary {
+  reportId: string
+  serviceDate: string
+  revision: number
+  closedAt: string
+  totals: ClientReportTotals
+}
+
+export interface ClientReportPackage {
+  packageId: string
+  sequenceNumber: number
+  recipientName: string
+  recipientContact: string
+  pickupLabel: string
+  destinationLabel: string
+  pricingZoneName?: string | null
+  outcome: DeliveryPackageOutcome
+  actualCourierName?: string | null
+  expectedAmountToCollectAriary: number
+  actualAmountCollectedAriary: number
+  appliedDeliveryFeeAriary: number
+  amountToRemitAriary: number
+  returnedToSender: boolean
+  postponedToDate?: string | null
+}
+
+export interface ClientDailyReport {
+  reportId: string
+  serviceDate: string
+  generatedAt: string
+  closure: { closedAt: string; version: number }
+  totals: ClientReportTotals
+  packages: ClientReportPackage[]
+}
+
+export interface ClientReportDownload {
+  blob: Blob
+  filename: string
 }
 
 export interface UpdateClientProfileInput {
@@ -46,6 +134,8 @@ export interface DeliveryPackageRecord {
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
+  calculatedDeliveryFeeAriary?: number | null
+  finalDeliveryFeeAriary?: number | null
   distanceFromCenterMeters?: number | null
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
@@ -210,6 +300,30 @@ export function updateClientProfile(
   })
 }
 
+export function updateClientContactNumbers(
+  version: number,
+  items: ClientContactNumberInput[],
+  accessToken: string,
+): Promise<ClientProfile> {
+  return clientRequest<ClientProfile>('profile/contact-numbers', accessToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, items }),
+  })
+}
+
+export function updateClientPayoutDestinations(
+  version: number,
+  items: ClientPayoutDestinationInput[],
+  accessToken: string,
+): Promise<ClientProfile> {
+  return clientRequest<ClientProfile>('profile/payout-destinations', accessToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, items }),
+  })
+}
+
 export function listDeliveryRequests(accessToken: string): Promise<DeliveryRequestRecord[]> {
   return clientRequest<DeliveryRequestRecord[]>('delivery-requests', accessToken)
 }
@@ -248,4 +362,38 @@ export function quoteDeliveryPrice(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ destination }),
   })
+}
+
+export function listClientReports(accessToken: string): Promise<ClientReportSummary[]> {
+  return clientRequest<ClientReportSummary[]>('reports', accessToken)
+}
+
+export function getClientReport(serviceDate: string, accessToken: string): Promise<ClientDailyReport> {
+  return clientRequest<ClientDailyReport>(`reports/${encodeURIComponent(serviceDate)}`, accessToken)
+}
+
+export async function downloadClientReport(
+  serviceDate: string,
+  format: 'pdf' | 'xlsx',
+  accessToken: string,
+): Promise<ClientReportDownload> {
+  const response = await fetch(`${API_BASE_URL}/client/reports/${encodeURIComponent(serviceDate)}.${format}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => undefined) as ApiErrorPayload | undefined
+    throw new ClientApiError(
+      payload?.message ?? `Le rapport n’a pas pu être téléchargé (${response.status}).`,
+      payload?.code ?? 'CLIENT_REPORT_DOWNLOAD_FAILED',
+      response.status,
+      payload?.violations ?? [],
+    )
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const simpleName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  return {
+    blob: await response.blob(),
+    filename: decodeURIComponent(utf8Name ?? simpleName ?? `azy-livraison-${serviceDate}.${format}`),
+  }
 }

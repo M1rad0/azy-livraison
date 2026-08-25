@@ -96,6 +96,8 @@ export function dispatchStatusLabel(status: DispatchStatus) {
     READY: 'Prêt',
     READY_WITH_WARNINGS: 'Prêt avec alertes',
     FAILED: 'Échec',
+    CANCELLED: 'Annulé',
+    SUPERSEDED: 'Remplacé',
   }[status]
 }
 

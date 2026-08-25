@@ -11,9 +11,20 @@ public record CreateDispatchCommand(
         List<UUID> courierIds,
         Location hubOverride,
         String idempotencyKey,
-        UUID actorAccountId) {
+        UUID actorAccountId,
+        List<UUID> packageIds) {
 
     public CreateDispatchCommand {
         courierIds = courierIds == null ? List.of() : List.copyOf(courierIds);
+        packageIds = packageIds == null ? null : List.copyOf(packageIds);
+    }
+
+    public CreateDispatchCommand(
+            LocalDate serviceDate,
+            List<UUID> courierIds,
+            Location hubOverride,
+            String idempotencyKey,
+            UUID actorAccountId) {
+        this(serviceDate, courierIds, hubOverride, idempotencyKey, actorAccountId, null);
     }
 }

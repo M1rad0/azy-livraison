@@ -76,6 +76,14 @@ public class AccountRepository {
                 """, displayName, phone, accountId);
     }
 
+    public void updatePhone(UUID accountId, String phone) {
+        jdbcTemplate.update("""
+                UPDATE app_account
+                SET phone = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """, phone, accountId);
+    }
+
     private String normalizeUsername(String username) {
         return username.trim().toLowerCase(Locale.ROOT);
     }

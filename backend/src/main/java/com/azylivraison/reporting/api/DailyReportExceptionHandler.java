@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = AdminDailyReportController.class)
+@RestControllerAdvice(assignableTypes = {AdminDailyReportController.class, ClientDailyReportController.class})
 public class DailyReportExceptionHandler {
 
     @ExceptionHandler(DailyWorkflowNotFoundException.class)

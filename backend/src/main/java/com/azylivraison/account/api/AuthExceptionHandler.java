@@ -4,6 +4,7 @@ import com.azylivraison.account.service.InvalidCredentialsException;
 import com.azylivraison.account.service.ClientProfileNotFoundException;
 import com.azylivraison.account.service.InvalidClientProfileException;
 import com.azylivraison.account.service.InvalidRefreshTokenException;
+import com.azylivraison.account.service.ClientProfileVersionConflictException;
 import com.azylivraison.account.service.UsernameAlreadyExistsException;
 
 import org.springframework.http.HttpStatus;
@@ -38,6 +39,13 @@ public class AuthExceptionHandler {
     public ResponseEntity<AuthErrorResponse> handleClientProfileNotFound(ClientProfileNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new AuthErrorResponse("CLIENT_PROFILE_NOT_FOUND", exception.getMessage()));
+    }
+
+    @ExceptionHandler(ClientProfileVersionConflictException.class)
+    public ResponseEntity<AuthErrorResponse> handleClientProfileVersionConflict(
+            ClientProfileVersionConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new AuthErrorResponse("CLIENT_PROFILE_VERSION_CONFLICT", exception.getMessage()));
     }
 
     @ExceptionHandler(InvalidClientProfileException.class)

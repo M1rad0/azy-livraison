@@ -19,6 +19,10 @@ public record CourierCreateRequest(
         String name,
         @Size(max = 100, message = "Le contact ne peut pas dépasser 100 caractères.")
         String contact,
+        @Size(max = 50)
+        String phoneNumber,
+        @Valid
+        CourierPayoutDestinationRequest payoutDestination,
         @NotNull(message = "Le type de véhicule est obligatoire.")
         VehicleType vehicleType,
         @Positive(message = "La capacité maximale doit être positive.")

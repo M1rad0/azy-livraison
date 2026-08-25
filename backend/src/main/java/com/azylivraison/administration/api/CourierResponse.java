@@ -15,6 +15,8 @@ public record CourierResponse(
         UUID accountId,
         String name,
         String contact,
+        String phoneNumber,
+        PayoutDestinationResponse payoutDestination,
         boolean active,
         VehicleType vehicleType,
         BigDecimal maxWeightKg,
@@ -34,6 +36,8 @@ public record CourierResponse(
                 courier.accountId(),
                 courier.name(),
                 courier.contact(),
+                courier.phoneNumber(),
+                PayoutDestinationResponse.from(courier.payoutDestination()),
                 courier.active(),
                 courier.vehicleType(),
                 courier.maxWeightKg(),
@@ -45,5 +49,13 @@ public record CourierResponse(
                 courier.version(),
                 courier.createdAt(),
                 courier.updatedAt());
+    }
+
+    public record PayoutDestinationResponse(String operator, String accountHolder, String number) {
+        private static PayoutDestinationResponse from(
+                com.azylivraison.administration.domain.CourierPayoutDestination payout) {
+            return payout == null ? null : new PayoutDestinationResponse(
+                    payout.operator(), payout.accountHolder(), payout.number());
+        }
     }
 }

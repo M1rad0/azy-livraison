@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -147,15 +148,17 @@ class DeliveryRequestApiIntegrationTest {
 
     @Test
     void keepsAPreviousDateOutOfTheNextQueueButVisibleInTheGlobalList() throws Exception {
+        LocalDate requestDate = LocalDate.now(java.time.ZoneId.of("Indian/Antananarivo"));
+        LocalDate nextQueueDate = requestDate.plusDays(1);
         mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson(false, false)
-                                .replace("2026-08-24", "2026-08-23")))
+                                .replace("2026-08-24", requestDate.toString())))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/admin/queue")
-                        .param("date", "2026-08-24")
+                        .param("date", nextQueueDate.toString())
                         .with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stats.pendingRequestCount").value(0))
@@ -163,12 +166,12 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(jsonPath("$.requests.length()").value(0));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
-                        .param("from", "2026-08-23")
-                        .param("to", "2026-08-23")
+                        .param("from", requestDate.toString())
+                        .param("to", requestDate.toString())
                         .param("pendingOnly", "true")
                         .with(admin()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].requestedDate").value("2026-08-23"));
+                .andExpect(jsonPath("$[0].requestedDate").value(requestDate.toString()));
     }
 
     @Test

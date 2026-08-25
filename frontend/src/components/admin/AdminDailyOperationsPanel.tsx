@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CalendarDays,
   CheckCircle2,
+  CircleDollarSign,
   Clock3,
   Download,
   FileSpreadsheet,
@@ -26,6 +27,7 @@ import {
   getDeliveryDay,
   markReturnCompleted,
   reopenDeliveryDay,
+  updateDeliveryPackageFee,
   updateDeliveryPackageOutcome,
   type Courier,
   type DailyOperation,
@@ -38,6 +40,7 @@ import type { Location } from '../../api/csvImports'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { LocationPicker } from '../LocationPicker'
 import { AdminPackageOutcomeDialog, type PackageOutcomeInput } from './AdminPackageOutcomeDialog'
+import { AdminDeliveryFeeDialog, type DeliveryFeeInput } from './AdminDeliveryFeeDialog'
 import { errorMessage, formatAriary, formatDate, formatDateTime, formatTime, locationLabel } from './adminHelpers'
 
 const OUTCOME_LABELS: Record<DeliveryPackageOutcome, string> = {
@@ -156,6 +159,7 @@ export function AdminDailyOperationsPanel({
   const [error, setError] = useState<string>()
   const [dialogError, setDialogError] = useState<string>()
   const [editingPackage, setEditingPackage] = useState<DailyOperationPackage>()
+  const [editingFeePackage, setEditingFeePackage] = useState<DailyOperationPackage>()
   const [carryPackage, setCarryPackage] = useState<DailyOperationPackage>()
   const [closing, setClosing] = useState(false)
   const [reopening, setReopening] = useState(false)
@@ -212,6 +216,25 @@ export function AdminDailyOperationsPanel({
       }, accessToken)
       setDay(updated)
       setEditingPackage(undefined)
+      onChanged()
+    } catch (saveError) {
+      setDialogError(errorMessage(saveError))
+    } finally {
+      setBusyAction(undefined)
+    }
+  }
+
+  async function saveDeliveryFee(input: DeliveryFeeInput) {
+    if (!editingFeePackage) return
+    setBusyAction(`fee:${editingFeePackage.packageId}`)
+    setDialogError(undefined)
+    try {
+      await updateDeliveryPackageFee(editingFeePackage.packageId, {
+        ...input,
+        version: editingFeePackage.version,
+      }, accessToken)
+      setEditingFeePackage(undefined)
+      await load()
       onChanged()
     } catch (saveError) {
       setDialogError(errorMessage(saveError))
@@ -380,7 +403,7 @@ export function AdminDailyOperationsPanel({
                       <em>Prévu : {deliveryPackage.distributorCourierName ?? 'livreur non affecté'}{deliveryPackage.estimatedDeliveryAt ? ` · ${formatTime(deliveryPackage.estimatedDeliveryAt)}` : ''}</em>
                     )}
                   </div>
-                  <div><small>{deliveryPackage.finalState ? 'Montants réalisés' : 'Montants prévus'}</small><strong>{formatAriary(deliveryPackage.finalState ? deliveryPackage.recoveredAriary : deliveryPackage.amountToCollectAriary)}</strong><em>{deliveryPackage.mobileMoneyPaid ? 'Mobile Money signalé · ' : ''}frais {formatAriary(deliveryPackage.finalState ? deliveryPackage.chargedDeliveryFeeAriary : (deliveryPackage.deliveryFeeAriary ?? 0))}</em></div>
+                  <div><small>{deliveryPackage.finalState ? 'Montants réalisés' : 'Montants prévus'}</small><strong>{formatAriary(deliveryPackage.finalState ? deliveryPackage.recoveredAriary : deliveryPackage.amountToCollectAriary)}</strong><em>{deliveryPackage.mobileMoneyPaid ? 'Mobile Money signalé · ' : ''}frais {formatAriary(deliveryPackage.finalState ? deliveryPackage.chargedDeliveryFeeAriary : (deliveryPackage.finalDeliveryFeeAriary ?? deliveryPackage.deliveryFeeAriary ?? 0))}{deliveryPackage.deliveryFeeOverrideReason ? ' · ajusté' : ''}</em></div>
                   <div className="admin-day-package__outcome">
                     <small>Situation</small>
                     <span className={`admin-outcome-chip is-${(deliveryPackage.finalOutcome ?? 'awaiting').toLowerCase()}`}>{deliveryPackage.finalOutcome ? OUTCOME_LABELS[deliveryPackage.finalOutcome] : 'À finaliser'}</span>
@@ -388,6 +411,9 @@ export function AdminDailyOperationsPanel({
                     {deliveryPackage.carriedForwardToPackageId && <em>Programmé pour demain</em>}
                   </div>
                   <div className="admin-day-package__actions">
+                    {day.status !== 'CLOSED' && deliveryPackage.finalOutcome !== 'CANCELLED' && (
+                      <button className="admin-button admin-button--ghost admin-button--small" type="button" onClick={() => { setDialogError(undefined); setEditingFeePackage(deliveryPackage) }}><CircleDollarSign aria-hidden="true" />Tarif</button>
+                    )}
                     {day.status === 'DISPATCHED'
                       && deliveryPackage.technicalStatus === 'DISPATCHED'
                       && deliveryPackage.finalOutcome !== 'CANCELLED'
@@ -440,6 +466,7 @@ export function AdminDailyOperationsPanel({
       ) : null}
 
       {editingPackage && <AdminPackageOutcomeDialog deliveryPackage={editingPackage} couriers={couriers} busy={busyAction === `outcome:${editingPackage.packageId}`} error={dialogError} onClose={() => setEditingPackage(undefined)} onSave={(input) => void saveOutcome(input)} />}
+      {editingFeePackage && <AdminDeliveryFeeDialog deliveryPackage={editingFeePackage} busy={busyAction === `fee:${editingFeePackage.packageId}`} error={dialogError} onClose={() => setEditingFeePackage(undefined)} onSave={(input) => void saveDeliveryFee(input)} />}
       {carryPackage && <CarryForwardDialog accessToken={accessToken} deliveryPackage={carryPackage} busy={busyAction === `carry:${carryPackage.packageId}`} error={dialogError} onClose={() => setCarryPackage(undefined)} onConfirm={(pickup) => void carryForward(pickup)} />}
       {closing && <ConfirmDialog title="Clôturer cette journée ?" confirmLabel="Clôturer et activer les rapports" busy={busyAction === 'close'} onClose={() => setClosing(false)} onConfirm={() => void closeDay()}><p>Les {day?.counts.total ?? 0} colis ont un état final. Le compte rendu sera verrouillé et les rapports financiers deviendront téléchargeables.</p></ConfirmDialog>}
       {reopening && <ConfirmDialog title="Rouvrir cette journée ?" confirmLabel="Rouvrir la journée" busy={busyAction === 'reopen'} danger onClose={() => { setReopening(false); setDialogError(undefined) }} onConfirm={() => void reopenDay()}><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={reopenReason} placeholder="Ex. Corriger le montant récupéré d’un colis" onChange={(event) => setReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}

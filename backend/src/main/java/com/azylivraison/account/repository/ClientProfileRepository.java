@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.azylivraison.account.domain.ClientProfile;
+import com.azylivraison.account.domain.ClientContactNumber;
+import com.azylivraison.account.domain.ClientPayoutDestination;
 import com.azylivraison.account.domain.DefaultPickupLocation;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,6 +26,14 @@ public class ClientProfileRepository {
                 INSERT INTO client_profile (account_id)
                 VALUES (?)
                 """, accountId);
+    }
+
+    public void createPrimaryContact(UUID accountId, String number) {
+        jdbcTemplate.update("""
+                INSERT INTO client_contact_number (
+                    id, account_id, label, number, priority, active
+                ) VALUES (?, ?, 'Principal', ?, 1, TRUE)
+                """, UUID.randomUUID(), accountId, number);
     }
 
     public Optional<ClientProfile> findByAccountId(UUID accountId) {
@@ -46,9 +56,85 @@ public class ClientProfileRepository {
                     return new ClientProfile(
                             resultSet.getObject("account_id", UUID.class),
                             defaultPickup,
+                            findContactNumbers(accountId),
+                            findPayoutDestinations(accountId),
                             resultSet.getLong("version"));
                 }, accountId);
         return profiles.stream().findFirst();
+    }
+
+    public boolean bumpVersion(UUID accountId, long expectedVersion) {
+        return jdbcTemplate.update("""
+                UPDATE client_profile
+                SET version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE account_id = ? AND version = ?
+                """, accountId, expectedVersion) == 1;
+    }
+
+    public void replaceContactNumbers(UUID accountId, List<ClientContactNumber> contacts) {
+        jdbcTemplate.update("DELETE FROM client_contact_number WHERE account_id = ?", accountId);
+        for (ClientContactNumber contact : contacts) {
+            jdbcTemplate.update("""
+                    INSERT INTO client_contact_number (
+                        id, account_id, label, number, priority, active
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """, contact.id(), accountId, contact.label(), contact.number(),
+                    contact.priority(), contact.active());
+        }
+    }
+
+    public void updatePrimaryContact(UUID accountId, String number) {
+        int updated = jdbcTemplate.update("""
+                UPDATE client_contact_number
+                SET number = ?, active = TRUE, updated_at = CURRENT_TIMESTAMP
+                WHERE account_id = ? AND priority = 1
+                """, number, accountId);
+        if (updated == 0) {
+            createPrimaryContact(accountId, number);
+        }
+    }
+
+    public void replacePayoutDestinations(UUID accountId, List<ClientPayoutDestination> destinations) {
+        jdbcTemplate.update("DELETE FROM client_payout_destination WHERE account_id = ?", accountId);
+        for (ClientPayoutDestination destination : destinations) {
+            jdbcTemplate.update("""
+                    INSERT INTO client_payout_destination (
+                        id, account_id, operator, account_holder, number, priority, active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, destination.id(), accountId, destination.operator(),
+                    destination.accountHolder(), destination.number(), destination.priority(),
+                    destination.active());
+        }
+    }
+
+    private List<ClientContactNumber> findContactNumbers(UUID accountId) {
+        return jdbcTemplate.query("""
+                SELECT id, label, number, priority, active
+                FROM client_contact_number
+                WHERE account_id = ?
+                ORDER BY priority, id
+                """, (resultSet, rowNumber) -> new ClientContactNumber(
+                        resultSet.getObject("id", UUID.class),
+                        resultSet.getString("label"),
+                        resultSet.getString("number"),
+                        resultSet.getInt("priority"),
+                        resultSet.getBoolean("active")), accountId);
+    }
+
+    private List<ClientPayoutDestination> findPayoutDestinations(UUID accountId) {
+        return jdbcTemplate.query("""
+                SELECT id, operator, account_holder, number, priority, active
+                FROM client_payout_destination
+                WHERE account_id = ?
+                ORDER BY priority, id
+                """, (resultSet, rowNumber) -> new ClientPayoutDestination(
+                        resultSet.getObject("id", UUID.class),
+                        resultSet.getString("operator"),
+                        resultSet.getString("account_holder"),
+                        resultSet.getString("number"),
+                        resultSet.getInt("priority"),
+                        resultSet.getBoolean("active")), accountId);
     }
 
     public void updateDefaultPickup(UUID accountId, DefaultPickupLocation pickup) {

@@ -10,6 +10,10 @@ public record DispatchPlanRecord(
         UUID id,
         LocalDate serviceDate,
         DispatchStatus status,
+        int revision,
+        DispatchMode mode,
+        long version,
+        UUID supersedesPlanId,
         UUID createdByAccountId,
         String idempotencyKey,
         String requestHash,
@@ -34,5 +38,13 @@ public record DispatchPlanRecord(
         String failureCode,
         String failureMessage,
         Instant createdAt,
-        Instant completedProcessingAt) {
+        Instant completedProcessingAt,
+        Instant archivedAt,
+        UUID archivedByAccountId,
+        String archiveReason,
+        Instant updatedAt) {
+
+    public boolean editable() {
+        return status == DispatchStatus.READY || status == DispatchStatus.READY_WITH_WARNINGS;
+    }
 }

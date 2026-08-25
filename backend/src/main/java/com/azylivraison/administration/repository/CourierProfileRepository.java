@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.azylivraison.administration.domain.ConfirmedLocation;
 import com.azylivraison.administration.domain.CourierProfile;
+import com.azylivraison.administration.domain.CourierPayoutDestination;
 import com.azylivraison.planning.domain.VehicleType;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,7 +19,9 @@ import org.springframework.stereotype.Repository;
 public class CourierProfileRepository {
 
     private static final String SELECT_COLUMNS = """
-            SELECT id, account_id, name, contact, active, vehicle_type,
+            SELECT id, account_id, name, contact, phone_number,
+                   payout_operator, payout_account_holder, payout_number,
+                   active, vehicle_type,
                    max_weight_kg_override, average_speed_kmh_override,
                    default_departure_time,
                    departure_location_label, departure_location_query,
@@ -50,17 +53,23 @@ public class CourierProfileRepository {
     public void create(CourierProfile courier) {
         jdbcTemplate.update("""
                 INSERT INTO courier_profile (
-                    id, account_id, name, contact, active, vehicle_type,
+                    id, account_id, name, contact, phone_number,
+                    payout_operator, payout_account_holder, payout_number,
+                    active, vehicle_type,
                     max_weight_kg_override, average_speed_kmh_override,
                     default_departure_time,
                     departure_location_label, departure_location_query,
                     departure_latitude, departure_longitude, version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 courier.id(),
                 courier.accountId(),
                 courier.name(),
                 courier.contact(),
+                courier.phoneNumber(),
+                courier.payoutDestination() == null ? null : courier.payoutDestination().operator(),
+                courier.payoutDestination() == null ? null : courier.payoutDestination().accountHolder(),
+                courier.payoutDestination() == null ? null : courier.payoutDestination().number(),
                 courier.active(),
                 courier.vehicleType().name(),
                 courier.maxWeightKg(),
@@ -78,6 +87,10 @@ public class CourierProfileRepository {
                 SET account_id = ?,
                     name = ?,
                     contact = ?,
+                    phone_number = ?,
+                    payout_operator = ?,
+                    payout_account_holder = ?,
+                    payout_number = ?,
                     active = ?,
                     vehicle_type = ?,
                     max_weight_kg_override = ?,
@@ -94,6 +107,10 @@ public class CourierProfileRepository {
                 courier.accountId(),
                 courier.name(),
                 courier.contact(),
+                courier.phoneNumber(),
+                courier.payoutDestination() == null ? null : courier.payoutDestination().operator(),
+                courier.payoutDestination() == null ? null : courier.payoutDestination().accountHolder(),
+                courier.payoutDestination() == null ? null : courier.payoutDestination().number(),
                 courier.active(),
                 courier.vehicleType().name(),
                 courier.maxWeightKg(),
@@ -123,6 +140,8 @@ public class CourierProfileRepository {
                 resultSet.getObject("account_id", UUID.class),
                 resultSet.getString("name"),
                 resultSet.getString("contact"),
+                resultSet.getString("phone_number"),
+                payoutDestination(resultSet),
                 resultSet.getBoolean("active"),
                 VehicleType.valueOf(resultSet.getString("vehicle_type")),
                 resultSet.getBigDecimal("max_weight_kg_override"),
@@ -136,5 +155,16 @@ public class CourierProfileRepository {
                 resultSet.getLong("version"),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant());
+    }
+
+    private CourierPayoutDestination payoutDestination(ResultSet resultSet) throws SQLException {
+        String operator = resultSet.getString("payout_operator");
+        if (operator == null) {
+            return null;
+        }
+        return new CourierPayoutDestination(
+                operator,
+                resultSet.getString("payout_account_holder"),
+                resultSet.getString("payout_number"));
     }
 }

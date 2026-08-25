@@ -10,7 +10,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.azylivraison.dispatch.domain.DispatchCourierResult;
+import com.azylivraison.dispatch.domain.DispatchMode;
 import com.azylivraison.dispatch.domain.DispatchPackageOutcome;
+import com.azylivraison.dispatch.domain.DispatchPlanCourierSnapshot;
 import com.azylivraison.dispatch.domain.DispatchPlanRecord;
 import com.azylivraison.dispatch.domain.DispatchStatus;
 import com.azylivraison.dispatch.domain.DispatchStop;
@@ -18,6 +20,7 @@ import com.azylivraison.dispatch.domain.SelectedCourierSnapshot;
 import com.azylivraison.dispatch.service.DispatchConflictException;
 import com.azylivraison.optimization.domain.ViaHubOptimizationResult;
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.planning.domain.VehicleType;
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,7 +30,10 @@ import org.springframework.stereotype.Repository;
 public class DispatchPlanRepository {
 
     private static final String SELECT_PLAN = """
-            SELECT id, service_date, status, created_by_account_id,
+            SELECT id, service_date,
+                   CASE WHEN lifecycle_status = 'ACTIVE' THEN status ELSE lifecycle_status END AS status,
+                   revision, mode, version, supersedes_plan_id,
+                   created_by_account_id,
                    idempotency_key, request_hash,
                    hub_label, hub_query, hub_latitude, hub_longitude,
                    input_snapshot_json, policy_snapshot_json,
@@ -38,7 +44,8 @@ public class DispatchPlanRepository {
                    total_distance_meters, total_duration_seconds,
                    meeting_at, redistribution_completed_at, completed_at,
                    failure_code, failure_message,
-                   created_at, completed_processing_at
+                   created_at, completed_processing_at,
+                   archived_at, archived_by_account_id, archive_reason, updated_at
             FROM dispatch_plan
             """;
 
@@ -61,6 +68,15 @@ public class DispatchPlanRepository {
     public Optional<DispatchPlanRecord> findById(UUID id) {
         return jdbcTemplate.query(
                         SELECT_PLAN + " WHERE id = ?",
+                        (resultSet, rowNumber) -> mapPlan(resultSet),
+                        id)
+                .stream()
+                .findFirst();
+    }
+
+    public Optional<DispatchPlanRecord> findByIdForUpdate(UUID id) {
+        return jdbcTemplate.query(
+                        SELECT_PLAN + " WHERE id = ? FOR UPDATE",
                         (resultSet, rowNumber) -> mapPlan(resultSet),
                         id)
                 .stream()
@@ -178,7 +194,7 @@ public class DispatchPlanRepository {
                 "DELETE FROM dispatch_day_reservation WHERE dispatch_plan_id = ?", dispatchPlanId);
         int reopened = jdbcTemplate.update("""
                 UPDATE delivery_operation_day
-                SET status = 'OPEN', admissions_closed_at = NULL, dispatch_plan_id = NULL,
+                SET status = 'OPEN', dispatch_plan_id = NULL,
                     version = version + 1, updated_at = CURRENT_TIMESTAMP
                 WHERE service_date = ? AND status = 'DISPATCHING' AND dispatch_plan_id = ?
                 """, serviceDate, dispatchPlanId);
@@ -271,7 +287,7 @@ public class DispatchPlanRepository {
         LocalDate serviceDate = dates.getFirst();
         int reopened = jdbcTemplate.update("""
                 UPDATE delivery_operation_day
-                SET status = 'OPEN', admissions_closed_at = NULL, dispatch_plan_id = NULL,
+                SET status = 'OPEN', dispatch_plan_id = NULL,
                     version = version + 1, updated_at = CURRENT_TIMESTAMP
                 WHERE service_date = ? AND status = 'DISPATCHING' AND dispatch_plan_id = ?
                 """, serviceDate, dispatchPlanId);
@@ -306,14 +322,19 @@ public class DispatchPlanRepository {
             int courierCount) {
         jdbcTemplate.update("""
                 INSERT INTO dispatch_plan (
-                    id, service_date, status, strategy, created_by_account_id,
+                    id, service_date, status, strategy, revision, mode,
+                    created_by_account_id,
                     idempotency_key, request_hash,
                     hub_label, hub_query, hub_latitude, hub_longitude,
                     input_snapshot_json, policy_snapshot_json,
                     selected_package_count, selected_courier_count
-                ) VALUES (?, ?, 'GENERATING', 'VIA_HUB', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, 'GENERATING', 'VIA_HUB',
+                          (SELECT CAST(COUNT(*) + 1 AS INTEGER)
+                           FROM dispatch_plan existing WHERE existing.service_date = ?),
+                          'AUTOMATIC', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id,
+                serviceDate,
                 serviceDate,
                 actorId,
                 idempotencyKey,
@@ -585,6 +606,297 @@ public class DispatchPlanRepository {
                 dispatchPlanId);
     }
 
+    public List<DispatchPlanCourierSnapshot> findCouriers(UUID dispatchPlanId) {
+        return jdbcTemplate.query("""
+                SELECT courier_id, courier_name, courier_contact, vehicle_type,
+                       max_weight_kg, average_speed_kmh, departure_at,
+                       departure_label, departure_query, departure_latitude, departure_longitude,
+                       used, collection_role, distribution_role,
+                       hub_arrival_at, hub_departure_at, completed_at,
+                       load_at_hub_arrival_kg, load_at_hub_departure_kg,
+                       route_distance_meters, route_duration_seconds
+                FROM dispatch_plan_courier
+                WHERE dispatch_plan_id = ?
+                ORDER BY courier_name, courier_id
+                """, (resultSet, rowNumber) -> new DispatchPlanCourierSnapshot(
+                resultSet.getObject("courier_id", UUID.class),
+                resultSet.getString("courier_name"),
+                resultSet.getString("courier_contact"),
+                VehicleType.valueOf(resultSet.getString("vehicle_type")),
+                resultSet.getBigDecimal("max_weight_kg"),
+                resultSet.getBigDecimal("average_speed_kmh"),
+                instant(resultSet, "departure_at"),
+                new Location(
+                        resultSet.getString("departure_label"),
+                        resultSet.getString("departure_query"),
+                        resultSet.getDouble("departure_latitude"),
+                        resultSet.getDouble("departure_longitude")),
+                resultSet.getBoolean("used"),
+                resultSet.getBoolean("collection_role"),
+                resultSet.getBoolean("distribution_role"),
+                instant(resultSet, "hub_arrival_at"),
+                instant(resultSet, "hub_departure_at"),
+                instant(resultSet, "completed_at"),
+                resultSet.getBigDecimal("load_at_hub_arrival_kg"),
+                resultSet.getBigDecimal("load_at_hub_departure_kg"),
+                nullableLong(resultSet, "route_distance_meters"),
+                nullableLong(resultSet, "route_duration_seconds")),
+                dispatchPlanId);
+    }
+
+    public List<DispatchStop> findStops(UUID dispatchPlanId) {
+        return jdbcTemplate.query("""
+                SELECT id, courier_id, stop_order, stop_type,
+                       delivery_request_id, delivery_package_id, label,
+                       location_label, location_query, latitude, longitude,
+                       estimated_arrival_at, distance_from_previous_meters,
+                       duration_from_previous_seconds, cumulative_distance_meters,
+                       cumulative_duration_seconds
+                FROM dispatch_stop
+                WHERE dispatch_plan_id = ?
+                ORDER BY courier_id, stop_order
+                """, (resultSet, rowNumber) -> new DispatchStop(
+                resultSet.getObject("id", UUID.class),
+                resultSet.getObject("courier_id", UUID.class),
+                resultSet.getInt("stop_order"),
+                resultSet.getString("stop_type"),
+                resultSet.getObject("delivery_request_id", UUID.class),
+                resultSet.getObject("delivery_package_id", UUID.class),
+                resultSet.getString("label"),
+                new Location(
+                        resultSet.getString("location_label"),
+                        resultSet.getString("location_query"),
+                        resultSet.getDouble("latitude"),
+                        resultSet.getDouble("longitude")),
+                instant(resultSet, "estimated_arrival_at"),
+                resultSet.getLong("distance_from_previous_meters"),
+                resultSet.getLong("duration_from_previous_seconds"),
+                resultSet.getLong("cumulative_distance_meters"),
+                resultSet.getLong("cumulative_duration_seconds")),
+                dispatchPlanId);
+    }
+
+    public DispatchDayControlState lockDayForControl(LocalDate serviceDate) {
+        return jdbcTemplate.query("""
+                SELECT status, dispatch_plan_id, admissions_closed_at, version
+                FROM delivery_operation_day
+                WHERE service_date = ?
+                FOR UPDATE
+                """, (resultSet, rowNumber) -> new DispatchDayControlState(
+                resultSet.getString("status"),
+                resultSet.getObject("dispatch_plan_id", UUID.class),
+                instant(resultSet, "admissions_closed_at"),
+                resultSet.getLong("version")), serviceDate).stream().findFirst().orElse(null);
+    }
+
+    public int countFinalOutcomes(UUID dispatchPlanId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_package
+                WHERE dispatch_plan_id = ? AND final_outcome IS NOT NULL
+                """, Integer.class, dispatchPlanId);
+        return count == null ? 0 : count;
+    }
+
+    public boolean isActiveOperationPlan(UUID dispatchPlanId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_operation_day
+                WHERE dispatch_plan_id = ? AND status = 'DISPATCHED'
+                """, Integer.class, dispatchPlanId);
+        return count != null && count == 1;
+    }
+
+    public List<UUID> findPlanPackageIds(UUID dispatchPlanId) {
+        return jdbcTemplate.query("""
+                SELECT delivery_package_id
+                FROM dispatch_package_outcome
+                WHERE dispatch_plan_id = ?
+                ORDER BY delivery_package_id
+                """, (resultSet, rowNumber) -> resultSet.getObject(1, UUID.class), dispatchPlanId);
+    }
+
+    public DispatchPlanRecord cancelActivePlan(
+            DispatchPlanRecord plan,
+            UUID actorAccountId,
+            String reason,
+            Instant now) {
+        List<UUID> requestIds = jdbcTemplate.query("""
+                SELECT DISTINCT delivery_request_id
+                FROM delivery_package
+                WHERE dispatch_plan_id = ?
+                """, (resultSet, rowNumber) -> resultSet.getObject(1, UUID.class), plan.id());
+        int archived = jdbcTemplate.update("""
+                UPDATE dispatch_plan
+                SET lifecycle_status = 'CANCELLED', archived_at = ?, archived_by_account_id = ?,
+                    archive_reason = ?, version = version + 1, updated_at = ?
+                WHERE id = ? AND version = ? AND status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND lifecycle_status = 'ACTIVE'
+                """, timestamp(now), actorAccountId, reason, timestamp(now), plan.id(), plan.version());
+        if (archived != 1) {
+            throw new DispatchConflictException("Le plan a été modifié entre-temps.");
+        }
+        int releasedPackages = jdbcTemplate.update("""
+                UPDATE delivery_package
+                SET status = 'PENDING', unassigned_reason = NULL, dispatch_plan_id = NULL,
+                    version = version + 1, updated_at = ?
+                WHERE dispatch_plan_id = ? AND final_outcome IS NULL
+                """, timestamp(now), plan.id());
+        if (releasedPackages != plan.selectedPackageCount()) {
+            throw new IllegalStateException("Tous les colis du plan n'ont pas pu être remis en attente.");
+        }
+        for (UUID requestId : requestIds) {
+            jdbcTemplate.update("""
+                    UPDATE delivery_request
+                    SET status = CASE
+                            WHEN NOT EXISTS (
+                                SELECT 1 FROM delivery_package p
+                                WHERE p.delivery_request_id = delivery_request.id
+                                  AND p.final_outcome IS NULL AND p.status <> 'DISPATCHED'
+                            ) THEN 'DISPATCHED'
+                            WHEN EXISTS (
+                                SELECT 1 FROM delivery_package p
+                                WHERE p.delivery_request_id = delivery_request.id
+                                  AND p.final_outcome IS NULL AND p.status = 'DISPATCHED'
+                            ) THEN 'PARTIALLY_DISPATCHED'
+                            ELSE 'PENDING'
+                        END,
+                        version = version + 1, updated_at = ?
+                    WHERE id = ?
+                    """, timestamp(now), requestId);
+        }
+        int reopened = jdbcTemplate.update("""
+                UPDATE delivery_operation_day
+                SET status = 'OPEN', dispatch_plan_id = NULL,
+                    version = version + 1, updated_at = ?
+                WHERE service_date = ? AND status = 'DISPATCHED' AND dispatch_plan_id = ?
+                """, timestamp(now), plan.serviceDate(), plan.id());
+        if (reopened != 1) {
+            throw new DispatchConflictException("La journée n'est plus liée à ce plan.");
+        }
+        releaseReservations(plan.id());
+        insertDayEvent(plan.serviceDate(), "DISPATCH_CANCELLED", actorAccountId,
+                "{\"dispatchPlanId\":\"" + plan.id() + "\",\"reason\":\""
+                        + jsonEscape(reason) + "\"}");
+        return findById(plan.id()).orElseThrow();
+    }
+
+    public void linkReplacement(
+            UUID previousPlanId,
+            UUID replacementPlanId,
+            UUID actorAccountId,
+            String reason,
+            Instant now) {
+        int previous = jdbcTemplate.update("""
+                UPDATE dispatch_plan
+                SET lifecycle_status = 'SUPERSEDED', archived_at = ?, archived_by_account_id = ?,
+                    archive_reason = ?, version = version + 1, updated_at = ?
+                WHERE id = ? AND lifecycle_status = 'CANCELLED'
+                """, timestamp(now), actorAccountId, reason, timestamp(now), previousPlanId);
+        if (previous != 1) {
+            throw new DispatchConflictException("L'ancien plan ne peut plus être marqué comme remplacé.");
+        }
+        int replacement = jdbcTemplate.update("""
+                UPDATE dispatch_plan
+                SET supersedes_plan_id = ?, version = version + 1, updated_at = ?
+                WHERE id = ? AND status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND lifecycle_status = 'ACTIVE'
+                  AND supersedes_plan_id IS NULL
+                """, previousPlanId, timestamp(now), replacementPlanId);
+        if (replacement != 1) {
+            throw new DispatchConflictException("Le nouveau plan ne peut pas être lié à sa révision précédente.");
+        }
+        LocalDate serviceDate = jdbcTemplate.queryForObject(
+                "SELECT service_date FROM dispatch_plan WHERE id = ?", LocalDate.class, replacementPlanId);
+        insertDayEvent(serviceDate, "DISPATCH_SUPERSEDED", actorAccountId,
+                "{\"previousPlanId\":\"" + previousPlanId + "\",\"replacementPlanId\":\""
+                        + replacementPlanId + "\",\"reason\":\"" + jsonEscape(reason) + "\"}");
+    }
+
+    public void replaceDeliveryStops(UUID dispatchPlanId, List<DispatchStop> stops) {
+        jdbcTemplate.update(
+                "DELETE FROM dispatch_stop WHERE dispatch_plan_id = ? AND stop_type = 'DELIVERY'",
+                dispatchPlanId);
+        saveStops(dispatchPlanId, stops);
+    }
+
+    public void updateManualPackageOutcome(
+            UUID dispatchPlanId,
+            UUID packageId,
+            UUID distributorCourierId,
+            int deliveryOrder,
+            Instant estimatedAt) {
+        int updated = jdbcTemplate.update("""
+                UPDATE dispatch_package_outcome
+                SET outcome = 'ASSIGNED', distributor_courier_id = ?,
+                    transferred = collector_courier_id <> ?,
+                    estimated_delivery_at = ?, delivery_order = ?,
+                    unassigned_reason = NULL, unassigned_message = NULL
+                WHERE dispatch_plan_id = ? AND delivery_package_id = ?
+                  AND outcome = 'ASSIGNED' AND collector_courier_id IS NOT NULL
+                """, distributorCourierId, distributorCourierId, timestamp(estimatedAt), deliveryOrder,
+                dispatchPlanId, packageId);
+        if (updated != 1) {
+            throw new DispatchConflictException(
+                    "Un colis ne peut pas être réaffecté manuellement sans collecteur enregistré.");
+        }
+    }
+
+    public void updateManualCourierResult(
+            UUID dispatchPlanId,
+            UUID courierId,
+            boolean distributionRole,
+            java.math.BigDecimal loadKg,
+            Instant completedAt,
+            long routeDistanceMeters,
+            long routeDurationSeconds) {
+        int updated = jdbcTemplate.update("""
+                UPDATE dispatch_plan_courier
+                SET used = collection_role OR ?, distribution_role = ?,
+                    load_at_hub_departure_kg = ?, completed_at = ?,
+                    route_distance_meters = ?, route_duration_seconds = ?
+                WHERE dispatch_plan_id = ? AND courier_id = ?
+                """, distributionRole, distributionRole, loadKg, timestamp(completedAt),
+                routeDistanceMeters, routeDurationSeconds, dispatchPlanId, courierId);
+        if (updated != 1) throw new IllegalStateException("Un livreur du plan est introuvable.");
+    }
+
+    public DispatchPlanRecord markManual(
+            DispatchPlanRecord plan,
+            UUID actorAccountId,
+            String reason,
+            String assignmentsJson,
+            int usedCourierCount,
+            long distributionDistanceMeters,
+            long distributionDurationSeconds,
+            Instant completedAt,
+            Instant now) {
+        int updated = jdbcTemplate.update("""
+                UPDATE dispatch_plan
+                SET mode = 'MANUAL', used_courier_count = ?,
+                    total_distance_meters = ?, total_duration_seconds = ?, completed_at = ?,
+                    version = version + 1, updated_at = ?
+                WHERE id = ? AND version = ? AND status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND lifecycle_status = 'ACTIVE'
+                """, usedCourierCount, distributionDistanceMeters, distributionDurationSeconds,
+                timestamp(completedAt), timestamp(now), plan.id(), plan.version());
+        if (updated != 1) throw new DispatchConflictException("Le plan a été modifié entre-temps.");
+        insertDayEvent(plan.serviceDate(), "DISPATCH_MANUAL_LAYOUT_UPDATED", actorAccountId,
+                "{\"dispatchPlanId\":\"" + plan.id() + "\",\"reason\":\""
+                        + jsonEscape(reason) + "\",\"assignments\":" + assignmentsJson + "}");
+        return findById(plan.id()).orElseThrow();
+    }
+
+    private String jsonEscape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r", "\\r").replace("\n", "\\n");
+    }
+
+    public record DispatchDayControlState(
+            String status,
+            UUID dispatchPlanId,
+            Instant admissionsClosedAt,
+            long version) {
+    }
+
     public void releaseReservations(UUID dispatchPlanId) {
         jdbcTemplate.update("DELETE FROM dispatch_package_reservation WHERE dispatch_plan_id = ?", dispatchPlanId);
         jdbcTemplate.update("DELETE FROM dispatch_day_reservation WHERE dispatch_plan_id = ?", dispatchPlanId);
@@ -595,6 +907,10 @@ public class DispatchPlanRepository {
                 resultSet.getObject("id", UUID.class),
                 resultSet.getObject("service_date", LocalDate.class),
                 DispatchStatus.valueOf(resultSet.getString("status")),
+                resultSet.getInt("revision"),
+                DispatchMode.valueOf(resultSet.getString("mode")),
+                resultSet.getLong("version"),
+                resultSet.getObject("supersedes_plan_id", UUID.class),
                 resultSet.getObject("created_by_account_id", UUID.class),
                 resultSet.getString("idempotency_key"),
                 resultSet.getString("request_hash"),
@@ -623,7 +939,11 @@ public class DispatchPlanRepository {
                 resultSet.getString("failure_code"),
                 resultSet.getString("failure_message"),
                 instant(resultSet, "created_at"),
-                instant(resultSet, "completed_processing_at"));
+                instant(resultSet, "completed_processing_at"),
+                instant(resultSet, "archived_at"),
+                resultSet.getObject("archived_by_account_id", UUID.class),
+                resultSet.getString("archive_reason"),
+                instant(resultSet, "updated_at"));
     }
 
     private Integer nullableInteger(ResultSet resultSet, String column) throws SQLException {

@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.azylivraison.dailyworkflow.domain.DailyPackageRecord;
+import com.azylivraison.dailyworkflow.domain.DeliveryFeeMode;
 import com.azylivraison.dailyworkflow.domain.OperationDay;
 import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
@@ -72,6 +73,9 @@ public class DailyWorkflowRepository {
                        p.destination_latitude, p.destination_longitude,
                        p.contact, p.amount_to_collect_ariary, p.mobile_money_paid,
                        p.pricing_zone_id, p.pricing_zone_name, p.delivery_fee_ariary,
+                       COALESCE(p.final_delivery_fee_ariary, p.delivery_fee_ariary) AS final_delivery_fee_ariary,
+                       p.delivery_fee_override_reason, p.delivery_fee_overridden_at,
+                       p.delivery_fee_version,
                        p.status, p.unassigned_reason, p.final_outcome,
                        p.actual_collected_ariary, p.outcome_note, p.outcome_recorded_at,
                        p.return_completed_at, p.carried_forward_from_package_id,
@@ -101,6 +105,7 @@ public class DailyWorkflowRepository {
                         FROM dispatch_plan historical_plan
                         WHERE historical_plan.service_date = ?
                           AND historical_plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                          AND historical_plan.lifecycle_status = 'ACTIVE'
                     )
                    OR (dr.requested_date = ? AND p.final_outcome = 'CANCELLED')
                 ORDER BY dr.owner_account_id, p.priority_at, dr.created_at,
@@ -121,6 +126,54 @@ public class DailyWorkflowRepository {
                 FOR UPDATE
                 """, (resultSet, rowNumber) -> mapPackageForUpdate(resultSet), packageId)
                 .stream().findFirst();
+    }
+
+    public DeliveryFeeRecord updateDeliveryFee(
+            PackageForUpdate source,
+            DeliveryFeeMode mode,
+            Long finalFeeAriary,
+            String reason,
+            UUID actorAccountId,
+            Instant now) {
+        String storedReason = mode == DeliveryFeeMode.MANUAL ? reason : null;
+        Instant overriddenAt = mode == DeliveryFeeMode.MANUAL ? now : null;
+        UUID overriddenBy = mode == DeliveryFeeMode.MANUAL ? actorAccountId : null;
+        int updated = jdbcTemplate.update("""
+                UPDATE delivery_package
+                SET final_delivery_fee_ariary = ?,
+                    delivery_fee_override_reason = ?,
+                    delivery_fee_overridden_at = ?,
+                    delivery_fee_overridden_by_account_id = ?,
+                    delivery_fee_version = delivery_fee_version + 1,
+                    version = version + 1,
+                    updated_at = ?
+                WHERE id = ? AND version = ?
+                """,
+                finalFeeAriary,
+                storedReason,
+                timestamp(overriddenAt),
+                overriddenBy,
+                timestamp(now),
+                source.packageId(),
+                source.version());
+        if (updated != 1) {
+            throw new IllegalStateException("Le tarif du colis n'a pas pu être modifié.");
+        }
+        long nextFeeVersion = source.deliveryFeeVersion() + 1;
+        jdbcTemplate.update("""
+                INSERT INTO delivery_fee_change_event (
+                    id, delivery_package_id, fee_version, change_mode,
+                    calculated_fee_ariary, previous_final_fee_ariary,
+                    new_final_fee_ariary, reason, actor_account_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                UUID.randomUUID(), source.packageId(), nextFeeVersion, mode.name(),
+                source.deliveryFeeAriary(), source.finalDeliveryFeeAriary(), finalFeeAriary,
+                storedReason, actorAccountId, timestamp(now));
+        return new DeliveryFeeRecord(
+                source.packageId(), source.deliveryFeeAriary(), finalFeeAriary,
+                storedReason, overriddenAt, overriddenBy,
+                nextFeeVersion, source.version() + 1);
     }
 
     public boolean isAdmissionsClosed(LocalDate date) {
@@ -268,6 +321,7 @@ public class DailyWorkflowRepository {
                 JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
                 WHERE plan.service_date = ?
                   AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND plan.lifecycle_status = 'ACTIVE'
                   AND package.final_outcome IS NULL
                 """, Integer.class, Date.valueOf(serviceDate));
         return count == null ? 0 : count;
@@ -280,6 +334,7 @@ public class DailyWorkflowRepository {
                 JOIN dispatch_plan plan ON plan.id = source.dispatch_plan_id
                 WHERE plan.service_date = ?
                   AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND plan.lifecycle_status = 'ACTIVE'
                   AND source.final_outcome = 'POSTPONED'
                   AND NOT EXISTS (
                       SELECT 1
@@ -297,6 +352,7 @@ public class DailyWorkflowRepository {
                 JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
                 WHERE plan.service_date = ?
                   AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                  AND plan.lifecycle_status = 'ACTIVE'
                   AND package.final_outcome IN ('DELIVERED', 'RETURN_TO_SENDER')
                   AND package.actual_delivery_courier_id IS NULL
                 """, Integer.class, Date.valueOf(serviceDate));
@@ -452,6 +508,7 @@ public class DailyWorkflowRepository {
                                SELECT plan.id FROM dispatch_plan plan
                                WHERE plan.service_date = ?
                                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                                 AND plan.lifecycle_status = 'ACTIVE'
                            )
                            OR (request.requested_date = ? AND package.final_outcome = 'CANCELLED'))
                 )
@@ -513,6 +570,10 @@ public class DailyWorkflowRepository {
                 resultSet.getObject("pricing_zone_id", UUID.class),
                 resultSet.getString("pricing_zone_name"),
                 nullableLong(resultSet, "delivery_fee_ariary"),
+                nullableLong(resultSet, "final_delivery_fee_ariary"),
+                resultSet.getString("delivery_fee_override_reason"),
+                instant(resultSet, "delivery_fee_overridden_at"),
+                resultSet.getLong("delivery_fee_version"),
                 DeliveryPackageStatus.valueOf(resultSet.getString("status")),
                 resultSet.getString("unassigned_reason"),
                 finalOutcome == null ? null : DeliveryPackageOutcome.valueOf(finalOutcome),
@@ -555,6 +616,12 @@ public class DailyWorkflowRepository {
                 resultSet.getObject("pricing_zone_id", UUID.class),
                 resultSet.getString("pricing_zone_name"),
                 nullableLong(resultSet, "delivery_fee_ariary"),
+                coalesce(
+                        nullableLong(resultSet, "final_delivery_fee_ariary"),
+                        nullableLong(resultSet, "delivery_fee_ariary")),
+                resultSet.getString("delivery_fee_override_reason"),
+                instant(resultSet, "delivery_fee_overridden_at"),
+                resultSet.getLong("delivery_fee_version"),
                 nullableLong(resultSet, "distance_from_center_meters"),
                 nullableLong(resultSet, "pricing_zone_max_distance_meters"),
                 nullableLong(resultSet, "pricing_policy_version"),
@@ -586,6 +653,10 @@ public class DailyWorkflowRepository {
         return resultSet.wasNull() ? null : value;
     }
 
+    private Long coalesce(Long preferred, Long fallback) {
+        return preferred == null ? fallback : preferred;
+    }
+
     private Instant instant(ResultSet resultSet, String column) throws SQLException {
         Timestamp value = resultSet.getTimestamp(column);
         return value == null ? null : value.toInstant();
@@ -613,6 +684,17 @@ public class DailyWorkflowRepository {
     public record CourierSnapshot(UUID courierId, String name, String contact, String vehicleType) {
     }
 
+    public record DeliveryFeeRecord(
+            UUID packageId,
+            Long calculatedFeeAriary,
+            Long finalFeeAriary,
+            String overrideReason,
+            Instant overriddenAt,
+            UUID overriddenByAccountId,
+            long feeVersion,
+            long version) {
+    }
+
     public record PackageForUpdate(
             UUID packageId,
             UUID deliveryRequestId,
@@ -628,6 +710,10 @@ public class DailyWorkflowRepository {
             UUID pricingZoneId,
             String pricingZoneName,
             Long deliveryFeeAriary,
+            Long finalDeliveryFeeAriary,
+            String deliveryFeeOverrideReason,
+            Instant deliveryFeeOverriddenAt,
+            long deliveryFeeVersion,
             Long distanceFromCenterMeters,
             Long pricingZoneMaxDistanceMeters,
             Long pricingPolicyVersion,

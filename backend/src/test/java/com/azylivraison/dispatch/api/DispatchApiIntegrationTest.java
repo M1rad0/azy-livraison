@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,6 +46,11 @@ import com.azylivraison.planning.domain.DeliveryGroup;
 import com.azylivraison.planning.domain.DeliveryPackage;
 import com.azylivraison.planning.domain.DeliveryPlan;
 import com.azylivraison.planning.domain.RoutingPreset;
+import com.azylivraison.routing.domain.GeoJsonLineString;
+import com.azylivraison.routing.domain.RoutingLeg;
+import com.azylivraison.routing.domain.RoutingWaypoint;
+import com.azylivraison.routing.provider.RoutingProvider;
+import com.azylivraison.routing.provider.RoutingRouteData;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -89,9 +95,13 @@ class DispatchApiIntegrationTest {
     @MockitoBean
     private ViaHubOptimizationFacade optimizationFacade;
 
+    @MockitoBean
+    private RoutingProvider routingProvider;
+
     @BeforeEach
     void prepareQueue() {
-        reset(optimizationFacade);
+        reset(optimizationFacade, routingProvider);
+        when(routingProvider.name()).thenReturn("TEST");
         insertAccount(ADMIN_ID, "dispatch-admin", "Administrateur", "ADMIN");
         insertAccount(CLIENT_ID, "dispatch-client", "Boutique Soa", "CLIENT");
         jdbcTemplate.update("""
@@ -357,6 +367,198 @@ class DispatchApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM delivery_package WHERE id = ?", String.class, oldPackageId))
                 .isEqualTo("PENDING");
+    }
+
+    @Test
+    void cancelsAnUntouchedPlanWithoutReopeningAdmissions() throws Exception {
+        MvcResult created = createReadyPlan("cancel-ready-plan");
+        String planId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("plan").get("id").asText();
+
+        mockMvc.perform(post("/api/admin/dispatch-plans/{id}/cancel", planId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"expectedVersion":0,"reason":"Livreur indisponible"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.plan.version").value(1))
+                .andExpect(jsonPath("$.plan.archiveReason").value("Livreur indisponible"))
+                .andExpect(jsonPath("$.plan.editable").value(false));
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM delivery_package WHERE id = ?", String.class, PACKAGE_ID))
+                .isEqualTo("PENDING");
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT dispatch_plan_id FROM delivery_package WHERE id = ?", UUID.class, PACKAGE_ID))
+                .isNull();
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject("""
+                SELECT status FROM delivery_operation_day WHERE service_date = '2026-08-24'
+                """, String.class)).isEqualTo("OPEN");
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject("""
+                SELECT admissions_closed_at IS NOT NULL
+                FROM delivery_operation_day WHERE service_date = '2026-08-24'
+                """, Boolean.class)).isTrue();
+    }
+
+    @Test
+    void refusesToCancelAfterAResultWasRecorded() throws Exception {
+        MvcResult created = createReadyPlan("cancel-after-outcome");
+        String planId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("plan").get("id").asText();
+        jdbcTemplate.update("""
+                UPDATE delivery_package
+                SET final_outcome = 'DELIVERED', actual_collected_ariary = 45000,
+                    outcome_recorded_at = CURRENT_TIMESTAMP,
+                    outcome_recorded_by_account_id = ?
+                WHERE id = ?
+                """, ADMIN_ID, PACKAGE_ID);
+
+        mockMvc.perform(post("/api/admin/dispatch-plans/{id}/cancel", planId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"expectedVersion":0,"reason":"Changement tardif"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DISPATCH_CONFLICT"))
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("résultat renseigné")));
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT lifecycle_status FROM dispatch_plan WHERE id = ?", String.class, UUID.fromString(planId)))
+                .isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void regeneratesTheExactCohortAndLinksBothRevisions() throws Exception {
+        MvcResult created = createReadyPlan("regenerate-source");
+        var source = objectMapper.readTree(created.getResponse().getContentAsString()).get("plan");
+        String sourceId = source.get("id").asText();
+        UUID laterRequestId = UUID.randomUUID();
+        UUID laterPackageId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO delivery_request (
+                    id, owner_account_id, requested_date,
+                    pickup_label, pickup_latitude, pickup_longitude,
+                    capacity_limit_snapshot, capacity_current_snapshot,
+                    capacity_requested_snapshot, capacity_projected_snapshot
+                ) VALUES (?, ?, '2026-08-24', 'Retrait arrivé plus tard', -18.91, 47.52, 100, 1, 1, 2)
+                """, laterRequestId, CLIENT_ID);
+        jdbcTemplate.update("""
+                INSERT INTO delivery_package (
+                    id, delivery_request_id, sequence_number,
+                    recipient_name, faritra,
+                    destination_label, destination_latitude, destination_longitude,
+                    contact, amount_to_collect_ariary, mobile_money_paid,
+                    effective_weight_kg, weight_source, priority_at
+                ) VALUES (?, ?, 1, 'Nouvelle demande', FALSE,
+                          'Nouvelle destination', -18.90, 47.53,
+                          '034 00 000 10', 10000, FALSE,
+                          1, 'DEFAULT_SETTING', CURRENT_TIMESTAMP)
+                """, laterPackageId, laterRequestId);
+
+        MvcResult regenerated = mockMvc.perform(post("/api/admin/dispatch-plans/{id}/regenerate", sourceId)
+                        .with(admin())
+                        .header("Idempotency-Key", "regenerate-exact-cohort")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "expectedVersion": 0,
+                                  "reason": "Changer la sélection de livreurs",
+                                  "courierIds": ["%s"],
+                                  "includeNewPending": false
+                                }
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.plan.revision").value(2))
+                .andExpect(jsonPath("$.plan.supersedesPlanId").value(sourceId))
+                .andExpect(jsonPath("$.plan.selectedPackageCount").value(1))
+                .andReturn();
+
+        String replacementId = objectMapper.readTree(regenerated.getResponse().getContentAsString())
+                .get("plan").get("id").asText();
+        mockMvc.perform(get("/api/admin/dispatch-plans/{id}", sourceId).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.status").value("SUPERSEDED"));
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT dispatch_plan_id FROM delivery_package WHERE id = ?", UUID.class, PACKAGE_ID))
+                .isEqualTo(UUID.fromString(replacementId));
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM delivery_package WHERE id = ?", String.class, laterPackageId))
+                .isEqualTo("PENDING");
+        mockMvc.perform(post("/api/admin/dispatch-plans/{id}/regenerate", sourceId)
+                        .with(admin())
+                        .header("Idempotency-Key", "regenerate-exact-cohort")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "expectedVersion": 2,
+                                  "reason": "Changer la sélection de livreurs",
+                                  "courierIds": ["%s"],
+                                  "includeNewPending": false
+                                }
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.id").value(replacementId));
+        verify(optimizationFacade, times(2)).optimize(any(DeliveryPlan.class), any(ViaHubRunPolicy.class));
+    }
+
+    @Test
+    void replacesTheDistributionOrderWithAnOptimisticallyLockedManualLayout() throws Exception {
+        MvcResult created = createReadyPlan("manual-layout-source");
+        String planId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("plan").get("id").asText();
+        when(routingProvider.route(any())).thenAnswer(invocation -> {
+            List<com.azylivraison.routing.domain.RoutingPoint> points = invocation.getArgument(0);
+            return new RoutingRouteData(
+                    2_900,
+                    480,
+                    new GeoJsonLineString(List.of(
+                            List.of(points.get(0).longitude(), points.get(0).latitude()),
+                            List.of(points.get(1).longitude(), points.get(1).latitude()))),
+                    List.of(
+                            new RoutingWaypoint(points.get(0).id(), points.get(0).latitude(), points.get(0).longitude(),
+                                    points.get(0).latitude(), points.get(0).longitude(), 0, "Hub"),
+                            new RoutingWaypoint(points.get(1).id(), points.get(1).latitude(), points.get(1).longitude(),
+                                    points.get(1).latitude(), points.get(1).longitude(), 0, "Destination")),
+                    List.of(new RoutingLeg(
+                            0, 1, points.get(0).id(), points.get(1).id(), 2_900, 480, "Route test")));
+        });
+
+        mockMvc.perform(put("/api/admin/dispatch-plans/{id}/manual-layout", planId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "expectedVersion": 0,
+                                  "reason": "Ordre confirmé par l'exploitation",
+                                  "assignments": [{
+                                    "packageId": "%s",
+                                    "distributorCourierId": "%s",
+                                    "deliveryOrder": 1
+                                  }]
+                                }
+                                """.formatted(PACKAGE_ID, COURIER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.mode").value("MANUAL"))
+                .andExpect(jsonPath("$.plan.version").value(1))
+                .andExpect(jsonPath("$.packages[0].distributorCourierId").value(COURIER_ID.toString()))
+                .andExpect(jsonPath("$.packages[0].deliveryOrder").value(1))
+                .andExpect(jsonPath("$.stops[3].type").value("DELIVERY"));
+    }
+
+    private MvcResult createReadyPlan(String idempotencyKey) throws Exception {
+        return mockMvc.perform(post("/api/admin/dispatch-plans")
+                        .with(admin())
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"serviceDate":"2026-08-24","courierIds":["%s"]}
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isCreated())
+                .andReturn();
     }
 
     private ViaHubOptimizationResult successfulResult(DeliveryPlan plan, ViaHubRunPolicy policy) {

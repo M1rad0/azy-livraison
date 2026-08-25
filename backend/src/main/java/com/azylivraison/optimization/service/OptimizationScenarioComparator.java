@@ -42,6 +42,14 @@ class OptimizationScenarioComparator {
                     direct,
                     viaHub);
         }
+        if (direct.usedCourierCount() != viaHub.usedCourierCount()) {
+            return decision(
+                    largerIsHub(direct.usedCourierCount(), viaHub.usedCourierCount()),
+                    RecommendationCriterion.MORE_COURIERS,
+                    "Cette option répartit la charge entre davantage de livreurs.",
+                    direct,
+                    viaHub);
+        }
         if (direct.totalDistanceMeters() != viaHub.totalDistanceMeters()) {
             return decision(
                     smallerIsHub(direct.totalDistanceMeters(), viaHub.totalDistanceMeters()),
@@ -57,14 +65,6 @@ class OptimizationScenarioComparator {
                     completionComparison > 0,
                     RecommendationCriterion.EARLIER_COMPLETION,
                     "Cette option termine les livraisons plus tôt.",
-                    direct,
-                    viaHub);
-        }
-        if (direct.usedCourierCount() != viaHub.usedCourierCount()) {
-            return decision(
-                    smallerIsHub(direct.usedCourierCount(), viaHub.usedCourierCount()),
-                    RecommendationCriterion.FEWER_COURIERS,
-                    "Cette option mobilise moins de livreurs.",
                     direct,
                     viaHub);
         }

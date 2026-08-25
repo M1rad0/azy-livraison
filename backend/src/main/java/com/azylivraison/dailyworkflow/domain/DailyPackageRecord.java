@@ -26,6 +26,10 @@ public record DailyPackageRecord(
         UUID pricingZoneId,
         String pricingZoneName,
         Long deliveryFeeAriary,
+        Long finalDeliveryFeeAriary,
+        String deliveryFeeOverrideReason,
+        Instant deliveryFeeOverriddenAt,
+        long deliveryFeeVersion,
         DeliveryPackageStatus technicalStatus,
         String unassignedReason,
         DeliveryPackageOutcome finalOutcome,
@@ -60,7 +64,8 @@ public record DailyPackageRecord(
     }
 
     public long chargedDeliveryFeeAriary() {
-        return deliveryFeeCharged() && deliveryFeeAriary != null ? deliveryFeeAriary : 0;
+        Long appliedFee = finalDeliveryFeeAriary == null ? deliveryFeeAriary : finalDeliveryFeeAriary;
+        return deliveryFeeCharged() && appliedFee != null ? appliedFee : 0;
     }
 
     public long amountToRemitAriary() {

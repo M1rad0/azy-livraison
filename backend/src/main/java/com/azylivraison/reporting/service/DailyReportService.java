@@ -74,6 +74,27 @@ public class DailyReportService {
         return xlsxRenderer.renderForClient(report, accountId);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<ClientReportSummary> listClientReports(UUID accountId) {
+        if (accountId == null) throw new IllegalArgumentException("accountId");
+        return repository.listClosedDatesForClient(accountId).stream()
+                .map(date -> {
+                    DailyReport report = clientReportView(build(date), accountId);
+                    return new ClientReportSummary(
+                            report.reportId(),
+                            report.serviceDate(),
+                            report.closure().version(),
+                            report.closure().closedAt(),
+                            report.totals());
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public DailyReport getClientReport(LocalDate serviceDate, UUID accountId) {
+        return clientReportView(build(serviceDate), accountId);
+    }
+
     private DailyReport build(LocalDate serviceDate) {
         if (serviceDate == null) throw new IllegalArgumentException("serviceDate");
         OperationDay day = repository.findDay(serviceDate)
@@ -103,6 +124,7 @@ public class DailyReportService {
                     .append(':').append(deliveryPackage.finalOutcome())
                     .append(':').append(deliveryPackage.actualCollectedAriary())
                     .append(':').append(deliveryPackage.actualCourierId())
+                    .append(':').append(deliveryPackage.chargedDeliveryFeeAriary())
                     .append(':').append(deliveryPackage.returnCompletedAt())
                     .append(':').append(deliveryPackage.carriedForwardToPackageId());
         }
@@ -116,7 +138,7 @@ public class DailyReportService {
                 day.dispatchPlanId(),
                 source.context().hubLabel(),
                 source.context().sourcePlanCount(),
-                Instant.now(),
+                day.closedAt(),
                 new Closure(day.closedAt(), day.closedByAccountId(), closedBy, day.closureRevision()),
                 totals(source.packages()),
                 clients,
@@ -249,6 +271,37 @@ public class DailyReportService {
         if (accountId == null || report.clients().stream().noneMatch(client -> client.accountId().equals(accountId))) {
             throw new DailyWorkflowNotFoundException("Ce compte client n'a aucun colis dans cette journée.");
         }
+    }
+
+    private DailyReport clientReportView(DailyReport report, UUID accountId) {
+        requireClient(report, accountId);
+        ClientSummary client = report.clients().stream()
+                .filter(item -> item.accountId().equals(accountId))
+                .findFirst()
+                .orElseThrow();
+        List<PackageLine> packages = report.packages().stream()
+                .filter(item -> item.ownerAccountId().equals(accountId))
+                .toList();
+        return new DailyReport(
+                report.reportId(),
+                report.serviceDate(),
+                report.dispatchPlanId(),
+                report.hubLabel(),
+                report.sourcePlanCount(),
+                report.generatedAt(),
+                report.closure(),
+                client.totals(),
+                List.of(client),
+                List.of(),
+                packages);
+    }
+
+    public record ClientReportSummary(
+            UUID reportId,
+            LocalDate serviceDate,
+            int revision,
+            Instant closedAt,
+            Totals totals) {
     }
 
     private String vehicleLabel(String vehicleType) {

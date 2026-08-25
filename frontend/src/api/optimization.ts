@@ -96,7 +96,7 @@ export type RecommendationCriterion =
   | 'LOWER_TOTAL_LATENESS'
   | 'LOWER_DISTANCE'
   | 'EARLIER_COMPLETION'
-  | 'FEWER_COURIERS'
+  | 'MORE_COURIERS'
   | 'EXACT_TIE_DIRECT'
 
 export interface OperationalPolicySnapshot {

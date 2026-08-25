@@ -323,12 +323,15 @@ class HubOptimizationService {
         if (candidate.totalLatenessSeconds() != current.totalLatenessSeconds()) {
             return candidate.totalLatenessSeconds() < current.totalLatenessSeconds();
         }
+        if (candidate.usedCourierCount() != current.usedCourierCount()) {
+            return candidate.usedCourierCount() > current.usedCourierCount();
+        }
         if (candidate.totalDistanceMeters() != current.totalDistanceMeters()) {
             return candidate.totalDistanceMeters() < current.totalDistanceMeters();
         }
         int completion = compareCompletion(candidate.completedAt(), current.completedAt());
         if (completion != 0) return completion < 0;
-        return candidate.usedCourierCount() < current.usedCourierCount();
+        return false;
     }
 
     private int compareCompletion(OffsetDateTime candidate, OffsetDateTime current) {

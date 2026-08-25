@@ -1,8 +1,17 @@
 package com.azylivraison.account.service;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
 import com.azylivraison.account.api.DefaultPickupRequest;
+import com.azylivraison.account.api.UpdateClientContactNumbersRequest;
+import com.azylivraison.account.api.UpdateClientPayoutDestinationsRequest;
 import com.azylivraison.account.domain.Account;
 import com.azylivraison.account.domain.AccountRole;
+import com.azylivraison.account.domain.ClientContactNumber;
+import com.azylivraison.account.domain.ClientPayoutDestination;
 import com.azylivraison.account.domain.ClientProfile;
 import com.azylivraison.account.domain.DefaultPickupLocation;
 import com.azylivraison.account.repository.AccountRepository;
@@ -41,7 +50,45 @@ public class ClientProfileService {
         Account account = clientAccount(username);
         DefaultPickupLocation pickup = normalizePickup(pickupRequest);
         accountRepository.updateProfile(account.id(), displayName.trim(), phone.trim());
+        clientProfileRepository.updatePrimaryContact(account.id(), phone.trim());
         clientProfileRepository.updateDefaultPickup(account.id(), pickup);
+        return get(username);
+    }
+
+    @Transactional
+    public ProfileSnapshot replaceContactNumbers(
+            String username,
+            long expectedVersion,
+            List<UpdateClientContactNumbersRequest.Item> requestedItems) {
+        Account account = clientAccount(username);
+        List<ClientContactNumber> contacts = normalizeContacts(requestedItems);
+        if (contacts.stream().noneMatch(ClientContactNumber::active)) {
+            throw new InvalidClientProfileException("Conservez au moins un numéro de contact actif.");
+        }
+        if (!clientProfileRepository.bumpVersion(account.id(), expectedVersion)) {
+            throw new ClientProfileVersionConflictException();
+        }
+        clientProfileRepository.replaceContactNumbers(account.id(), contacts);
+        String primaryPhone = contacts.stream()
+                .filter(ClientContactNumber::active)
+                .findFirst()
+                .orElseThrow()
+                .number();
+        accountRepository.updatePhone(account.id(), primaryPhone);
+        return get(username);
+    }
+
+    @Transactional
+    public ProfileSnapshot replacePayoutDestinations(
+            String username,
+            long expectedVersion,
+            List<UpdateClientPayoutDestinationsRequest.Item> requestedItems) {
+        Account account = clientAccount(username);
+        List<ClientPayoutDestination> destinations = normalizePayoutDestinations(requestedItems);
+        if (!clientProfileRepository.bumpVersion(account.id(), expectedVersion)) {
+            throw new ClientProfileVersionConflictException();
+        }
+        clientProfileRepository.replacePayoutDestinations(account.id(), destinations);
         return get(username);
     }
 
@@ -77,6 +124,60 @@ public class ClientProfileService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<ClientContactNumber> normalizeContacts(
+            List<UpdateClientContactNumbersRequest.Item> requestedItems) {
+        requireOrderedPriorities(requestedItems.stream().map(UpdateClientContactNumbersRequest.Item::priority).toList());
+        Set<UUID> ids = new HashSet<>();
+        Set<String> numbers = new HashSet<>();
+        return requestedItems.stream().map(item -> {
+            UUID id = item.id() == null ? UUID.randomUUID() : item.id();
+            if (!ids.add(id)) {
+                throw new InvalidClientProfileException("Un numéro de contact est présent plusieurs fois.");
+            }
+            String number = item.number().trim();
+            if (!numbers.add(number)) {
+                throw new InvalidClientProfileException("Deux contacts utilisent le même numéro.");
+            }
+            return new ClientContactNumber(
+                    id, trimToNull(item.label()), number, item.priority(), item.active());
+        }).toList();
+    }
+
+    private List<ClientPayoutDestination> normalizePayoutDestinations(
+            List<UpdateClientPayoutDestinationsRequest.Item> requestedItems) {
+        requireOrderedPriorities(requestedItems.stream()
+                .map(UpdateClientPayoutDestinationsRequest.Item::priority).toList());
+        Set<UUID> ids = new HashSet<>();
+        Set<String> destinations = new HashSet<>();
+        return requestedItems.stream().map(item -> {
+            UUID id = item.id() == null ? UUID.randomUUID() : item.id();
+            if (!ids.add(id)) {
+                throw new InvalidClientProfileException("Une destination de versement est présente plusieurs fois.");
+            }
+            String identity = item.operator().trim().toLowerCase() + "\u0000" + item.number().trim();
+            if (!destinations.add(identity)) {
+                throw new InvalidClientProfileException(
+                        "Deux destinations de versement utilisent le même opérateur et le même numéro.");
+            }
+            return new ClientPayoutDestination(
+                    id,
+                    item.operator().trim(),
+                    item.accountHolder().trim(),
+                    item.number().trim(),
+                    item.priority(),
+                    item.active());
+        }).toList();
+    }
+
+    private void requireOrderedPriorities(List<Integer> priorities) {
+        for (int index = 0; index < priorities.size(); index++) {
+            if (priorities.get(index) == null || priorities.get(index) != index + 1) {
+                throw new InvalidClientProfileException(
+                        "Les priorités doivent être uniques et ordonnées de 1 à " + priorities.size() + ".");
+            }
+        }
     }
 
     public record ProfileSnapshot(Account account, ClientProfile profile) {

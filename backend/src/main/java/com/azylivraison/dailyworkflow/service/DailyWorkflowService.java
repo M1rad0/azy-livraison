@@ -5,11 +5,13 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.azylivraison.dailyworkflow.domain.DailyOperationDetails;
+import com.azylivraison.dailyworkflow.domain.DeliveryFeeMode;
 import com.azylivraison.dailyworkflow.domain.OperationDay;
 import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CarryForwardIds;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CourierSnapshot;
+import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.DeliveryFeeRecord;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.PackageForUpdate;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.SettingsSnapshot;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
@@ -49,6 +51,49 @@ public class DailyWorkflowService {
     }
 
     @Transactional
+    public DeliveryFeeRecord updateDeliveryFee(
+            UUID packageId,
+            DeliveryFeeMode mode,
+            Long manualFeeAriary,
+            String reason,
+            long expectedVersion,
+            UUID actorAccountId) {
+        if (mode == null) {
+            throw new DailyWorkflowInputException("Choisissez le tarif calculé ou un tarif manuel.");
+        }
+        PackageForUpdate deliveryPackage = requirePackage(packageId);
+        requireVersion(expectedVersion, deliveryPackage.version(), "Le colis a été modifié entre-temps.");
+        LocalDate operationDate = deliveryPackage.dispatchPlanId() == null
+                ? deliveryPackage.requestedDate()
+                : repository.serviceDate(deliveryPackage.dispatchPlanId());
+        repository.findDay(operationDate).ifPresent(day -> {
+            if (day.status() == OperationDayStatus.CLOSED) {
+                throw new DailyWorkflowConflictException(
+                        "Rouvrez la journée avant de corriger les frais de livraison.");
+            }
+        });
+        Long finalFee;
+        String normalizedReason = normalizeNullable(reason);
+        if (mode == DeliveryFeeMode.CALCULATED) {
+            if (deliveryPackage.deliveryFeeAriary() == null) {
+                throw new DailyWorkflowInputException(
+                        "Aucun tarif calculé n'est disponible pour ce colis. Indiquez un tarif manuel.");
+            }
+            finalFee = deliveryPackage.deliveryFeeAriary();
+        } else {
+            if (manualFeeAriary == null || manualFeeAriary < 0) {
+                throw new DailyWorkflowInputException("Indiquez un tarif manuel valide en ariary.");
+            }
+            if (normalizedReason == null) {
+                throw new DailyWorkflowInputException("Expliquez pourquoi le tarif annoncé doit être corrigé.");
+            }
+            finalFee = manualFeeAriary;
+        }
+        return repository.updateDeliveryFee(
+                deliveryPackage, mode, finalFee, normalizedReason, actorAccountId, Instant.now());
+    }
+
+    @Transactional
     public DailyOperationDetails recordOutcome(
             LocalDate serviceDate,
             UUID packageId,
@@ -84,7 +129,7 @@ public class DailyWorkflowService {
         };
         if ((outcome == DeliveryPackageOutcome.DELIVERED
                 || outcome == DeliveryPackageOutcome.RETURN_TO_SENDER)
-                && deliveryPackage.deliveryFeeAriary() == null) {
+                && deliveryPackage.finalDeliveryFeeAriary() == null) {
             throw new DailyWorkflowConflictException(
                     "Le tarif de livraison de ce colis est absent. Corrigez-le avant la clôture.");
         }
