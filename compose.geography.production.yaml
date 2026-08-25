@@ -1,0 +1,23 @@
+services:
+  nominatim:
+    # Nominatim reste accessible uniquement sur le réseau Docker.
+    ports: !reset []
+    environment:
+      NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:?NOMINATIM_PASSWORD is required in production}
+      THREADS: ${NOMINATIM_IMPORT_THREADS:-2}
+      GUNICORN_WORKERS: ${NOMINATIM_WORKERS:-2}
+      WARMUP_ON_STARTUP: ${NOMINATIM_WARMUP_ON_STARTUP:-true}
+      POSTGRES_SHARED_BUFFERS: ${NOMINATIM_POSTGRES_SHARED_BUFFERS:-512MB}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${NOMINATIM_POSTGRES_MAINTENANCE_WORK_MEM:-1GB}
+      POSTGRES_AUTOVACUUM_WORK_MEM: ${NOMINATIM_POSTGRES_AUTOVACUUM_WORK_MEM:-256MB}
+      POSTGRES_WORK_MEM: ${NOMINATIM_POSTGRES_WORK_MEM:-10MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${NOMINATIM_POSTGRES_EFFECTIVE_CACHE_SIZE:-2GB}
+
+  osrm-prepare:
+    environment:
+      OSRM_DATASET: ${OSRM_DATASET:-madagascar-latest}
+      OSRM_PREPARE_THREADS: ${OSRM_PREPARE_THREADS:-2}
+
+  osrm:
+    # OSRM reste accessible uniquement sur le réseau Docker.
+    ports: !reset []
