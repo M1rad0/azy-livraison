@@ -19,6 +19,7 @@ import com.azylivraison.delivery.domain.DeliveryRequestStatus;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
 import com.azylivraison.delivery.domain.StoredDeliveryRequest;
+import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -255,16 +256,26 @@ public class DeliveryRequestRepository {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
+                    pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
+                    distance_from_center_meters, pricing_zone_max_distance_meters,
+                    pricing_policy_version,
                     effective_weight_kg, weight_source,
                     status, unassigned_reason, version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 deliveryPackage.id(), deliveryPackage.deliveryRequestId(), deliveryPackage.sequenceNumber(),
                 deliveryPackage.recipientName(), deliveryPackage.faritra(),
                 deliveryPackage.destination().label(), deliveryPackage.destination().query(),
                 deliveryPackage.destination().latitude(), deliveryPackage.destination().longitude(),
                 deliveryPackage.contact(), deliveryPackage.amountToCollectAriary(),
-                deliveryPackage.mobileMoneyPaid(), deliveryPackage.effectiveWeightKg(),
+                deliveryPackage.mobileMoneyPaid(),
+                deliveryPackage.pricingSnapshot().pricingZoneId(),
+                deliveryPackage.pricingSnapshot().pricingZoneName(),
+                deliveryPackage.pricingSnapshot().deliveryFeeAriary(),
+                deliveryPackage.pricingSnapshot().distanceFromCenterMeters(),
+                deliveryPackage.pricingSnapshot().pricingZoneMaxDistanceMeters(),
+                deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
+                deliveryPackage.effectiveWeightKg(),
                 deliveryPackage.weightSource().name(), deliveryPackage.status().name(),
                 deliveryPackage.unassignedReason(), deliveryPackage.version(),
                 Timestamp.from(deliveryPackage.createdAt()), Timestamp.from(deliveryPackage.updatedAt()));
@@ -349,6 +360,13 @@ public class DeliveryRequestRepository {
                 resultSet.getString("contact"),
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
+                new DeliveryPricingSnapshot(
+                        resultSet.getObject("pricing_zone_id", UUID.class),
+                        resultSet.getString("pricing_zone_name"),
+                        nullableLong(resultSet, "delivery_fee_ariary"),
+                        nullableLong(resultSet, "distance_from_center_meters"),
+                        nullableLong(resultSet, "pricing_zone_max_distance_meters"),
+                        nullableLong(resultSet, "pricing_policy_version")),
                 resultSet.getBigDecimal("effective_weight_kg"),
                 PackageWeightSource.valueOf(resultSet.getString("weight_source")),
                 DeliveryPackageStatus.valueOf(resultSet.getString("status")),
@@ -356,6 +374,11 @@ public class DeliveryRequestRepository {
                 resultSet.getLong("version"),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant());
+    }
+
+    private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
     }
 
     public record OperationalSettingsSnapshot(int dailyPackageLimit, BigDecimal defaultPackageWeightKg) {

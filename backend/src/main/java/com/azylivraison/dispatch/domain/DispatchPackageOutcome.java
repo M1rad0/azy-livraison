@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 
 public record DispatchPackageOutcome(
         UUID packageId,
@@ -22,6 +23,7 @@ public record DispatchPackageOutcome(
         String contact,
         long amountToCollectAriary,
         boolean mobileMoneyPaid,
+        DeliveryPricingSnapshot pricingSnapshot,
         BigDecimal effectiveWeightKg,
         Location destination) {
 

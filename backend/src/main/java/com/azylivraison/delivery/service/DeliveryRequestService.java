@@ -22,6 +22,9 @@ import com.azylivraison.delivery.domain.StoredDeliveryRequest;
 import com.azylivraison.delivery.repository.DeliveryRequestRepository;
 import com.azylivraison.delivery.repository.DeliveryRequestRepository.OperationalSettingsSnapshot;
 import com.azylivraison.delivery.repository.DeliveryRequestRepository.QueueCounts;
+import com.azylivraison.pricing.domain.DeliveryPricingQuote;
+import com.azylivraison.pricing.domain.PricingPolicy;
+import com.azylivraison.pricing.service.DeliveryPricingService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,9 +33,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class DeliveryRequestService {
 
     private final DeliveryRequestRepository repository;
+    private final DeliveryPricingService pricingService;
 
-    public DeliveryRequestService(DeliveryRequestRepository repository) {
+    public DeliveryRequestService(
+            DeliveryRequestRepository repository,
+            DeliveryPricingService pricingService) {
         this.repository = repository;
+        this.pricingService = pricingService;
     }
 
     @Transactional
@@ -50,6 +57,7 @@ public class DeliveryRequestService {
         Instant now = Instant.now();
         UUID requestId = UUID.randomUUID();
         ConfirmedLocation pickup = location(input.pickup());
+        PricingPolicy pricingPolicy = pricingService.getPolicy();
         List<StoredDeliveryPackage> packages = new ArrayList<>(requested);
         for (int index = 0; index < requested; index++) {
             packages.add(toPackage(
@@ -57,6 +65,7 @@ public class DeliveryRequestService {
                     index + 1,
                     input.packages().get(index),
                     settings.defaultPackageWeightKg(),
+                    pricingPolicy,
                     now));
         }
 
@@ -160,18 +169,23 @@ public class DeliveryRequestService {
             int sequence,
             CreateDeliveryPackageRequest input,
             BigDecimal defaultWeight,
+            PricingPolicy pricingPolicy,
             Instant now) {
         boolean providedWeight = input.weightKg() != null;
+        ConfirmedLocation destination = location(input.destination());
+        DeliveryPricingQuote pricing = pricingService.quote(
+                pricingPolicy, destination.latitude(), destination.longitude());
         return new StoredDeliveryPackage(
                 UUID.randomUUID(),
                 requestId,
                 sequence,
                 normalize(input.recipientName()),
                 input.faritra(),
-                location(input.destination()),
+                destination,
                 normalize(input.contact()),
                 input.amountToCollectAriary(),
                 input.mobileMoneyPaid(),
+                pricing.toSnapshot(),
                 providedWeight ? input.weightKg() : defaultWeight,
                 providedWeight ? PackageWeightSource.PROVIDED : PackageWeightSource.DEFAULT_SETTING,
                 DeliveryPackageStatus.PENDING,

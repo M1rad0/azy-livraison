@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 
 /** Immutable database snapshot used to assemble one optimization input. */
 public record DispatchSourcePackage(
@@ -20,5 +21,6 @@ public record DispatchSourcePackage(
         String contact,
         long amountToCollectAriary,
         boolean mobileMoneyPaid,
+        DeliveryPricingSnapshot pricingSnapshot,
         BigDecimal effectiveWeightKg) {
 }

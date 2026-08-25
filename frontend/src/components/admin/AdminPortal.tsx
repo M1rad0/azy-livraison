@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bike, Boxes, LayoutDashboard, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
+import { BadgeDollarSign, Bike, Boxes, LayoutDashboard, Settings2, Sparkles, TriangleAlert } from 'lucide-react'
 import {
   getAdminQueue,
   getOperationalSettings,
@@ -18,16 +18,18 @@ import {
 import { AdminCouriersPanel } from './AdminCouriersPanel'
 import { AdminDispatchPanel } from './AdminDispatchPanel'
 import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
+import { AdminPricingZonesPanel } from './AdminPricingZonesPanel'
 import { antananarivoToday, errorMessage } from './adminHelpers'
 import { AdminSettingsPanel } from './AdminSettingsPanel'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'dispatch' | 'couriers' | 'settings'
+type AdminTab = 'queue' | 'dispatch' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
   { id: 'dispatch', label: 'Dispatch', detail: 'Via point de ralliement', icon: Sparkles },
   { id: 'couriers', label: 'Livreurs', detail: 'Équipe et véhicules', icon: Bike },
+  { id: 'pricing', label: 'Tarification', detail: 'Zones et prix', icon: BadgeDollarSign },
   { id: 'settings', label: 'Paramètres', detail: 'Règles opérationnelles', icon: Settings2 },
 ] as const
 
@@ -224,6 +226,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
         />
       )}
       {tab === 'couriers' && <AdminCouriersPanel accessToken={accessToken} couriers={couriers} presets={presets} onSaved={upsertCourier} />}
+      {tab === 'pricing' && <AdminPricingZonesPanel accessToken={accessToken} />}
       {tab === 'settings' && (
         <AdminSettingsPanel
           accessToken={accessToken}

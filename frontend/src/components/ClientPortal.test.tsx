@@ -2,9 +2,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CapacityConfirmationRequiredError,
+  ClientApiError,
   createDeliveryRequest,
   getClientProfile,
   listDeliveryRequests,
+  quoteDeliveryPrice,
   updateClientProfile,
   type ClientProfile,
   type DeliveryRequestRecord,
@@ -18,6 +20,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getClientProfile: vi.fn(),
     listDeliveryRequests: vi.fn(),
     createDeliveryRequest: vi.fn(),
+    quoteDeliveryPrice: vi.fn(),
     updateClientProfile: vi.fn(),
   }
 })
@@ -71,6 +74,12 @@ const request: DeliveryRequestRecord = {
     contact: '032 00 000 00',
     amountToCollectAriary: 45_000,
     mobileMoneyPaid: false,
+    pricingZoneId: 'zone-centre',
+    pricingZoneName: 'Centre-ville',
+    deliveryFeeAriary: 3_000,
+    distanceFromCenterMeters: 1_200,
+    pricingZoneMaxDistanceMeters: 4_000,
+    pricingPolicyVersion: 1,
     effectiveWeightKg: 1,
     weightSource: 'DEFAULT_SETTING',
     status: 'PENDING',
@@ -85,6 +94,14 @@ describe('ClientPortal', () => {
     vi.mocked(getClientProfile).mockResolvedValue(profile)
     vi.mocked(listDeliveryRequests).mockResolvedValue([request])
     vi.mocked(updateClientProfile).mockResolvedValue(profile)
+    vi.mocked(quoteDeliveryPrice).mockResolvedValue({
+      pricingZoneId: 'zone-centre',
+      pricingZoneName: 'Centre-ville',
+      deliveryFeeAriary: 3_000,
+      distanceFromCenterMeters: 1_200,
+      pricingZoneMaxDistanceMeters: 4_000,
+      pricingPolicyVersion: 1,
+    })
   })
 
   afterEach(() => {
@@ -101,6 +118,8 @@ describe('ClientPortal', () => {
     fireEvent.click(screen.getByText('Boutique Analakely', { selector: '.client-history-card__identity strong' }))
     expect(await screen.findByText('Rakoto')).toBeInTheDocument()
     expect(screen.getAllByText(/45.*000 Ar/, { selector: 'strong' }).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Zone Centre-ville/)).toBeInTheDocument()
+    expect(screen.getByText(/dont 3.*000 Ar de livraison/)).toBeInTheDocument()
   })
 
   it('excludes Mobile Money payments from the cash to collect', async () => {
@@ -130,14 +149,35 @@ describe('ClientPortal', () => {
     fireEvent.change(screen.getByLabelText('Contact client'), { target: { value: '034 00 000 00' } })
     fireEvent.change(screen.getByLabelText('Total à récupérer (Ar)'), { target: { value: '45000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Choisir Lieu de livraison' }))
+    expect(await screen.findByText(/3.*000 Ar de livraison/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le colis' }))
     fireEvent.click(screen.getByRole('button', { name: 'Envoyer la demande' }))
 
     expect(await screen.findByText('Capacité habituelle dépassée')).toBeInTheDocument()
     expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].acceptCapacityOverflow).toBe(false)
+    expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].packages[0]).not.toHaveProperty('pricingQuote')
+    expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].packages[0]).not.toHaveProperty('deliveryFeeAriary')
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer quand même' }))
     await waitFor(() => expect(createDeliveryRequest).toHaveBeenCalledTimes(2))
     expect(vi.mocked(createDeliveryRequest).mock.calls[1][0].acceptCapacityOverflow).toBe(true)
+  })
+
+  it('blocks a package whose destination is outside the configured coverage', async () => {
+    vi.mocked(listDeliveryRequests).mockResolvedValue([])
+    vi.mocked(quoteDeliveryPrice).mockRejectedValue(new ClientApiError(
+      'Cette destination se trouve en dehors des zones couvertes.',
+      'DELIVERY_DESTINATION_OUTSIDE_PRICING_AREA',
+      422,
+    ))
+
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByRole('button', { name: 'Nouvelle demande' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un colis' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Choisir Lieu de livraison' }))
+
+    expect(await screen.findByText('Zone non couverte')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enregistrer le colis' })).toBeDisabled()
   })
 })

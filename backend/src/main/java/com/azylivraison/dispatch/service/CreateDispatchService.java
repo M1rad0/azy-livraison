@@ -298,6 +298,7 @@ public class CreateDispatchService {
                     source.contact(),
                     source.amountToCollectAriary(),
                     source.mobileMoneyPaid(),
+                    source.pricingSnapshot(),
                     source.effectiveWeightKg(),
                     source.destination()));
         }

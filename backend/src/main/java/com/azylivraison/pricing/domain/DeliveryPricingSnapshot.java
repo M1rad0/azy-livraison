@@ -1,0 +1,39 @@
+package com.azylivraison.pricing.domain;
+
+import java.util.UUID;
+
+/** Immutable tariff values captured when a package is registered. */
+public record DeliveryPricingSnapshot(
+        UUID pricingZoneId,
+        String pricingZoneName,
+        Long deliveryFeeAriary,
+        Long distanceFromCenterMeters,
+        Long pricingZoneMaxDistanceMeters,
+        Long pricingPolicyVersion) {
+
+    public DeliveryPricingSnapshot {
+        boolean allNull = pricingZoneId == null
+                && pricingZoneName == null
+                && deliveryFeeAriary == null
+                && distanceFromCenterMeters == null
+                && pricingZoneMaxDistanceMeters == null
+                && pricingPolicyVersion == null;
+        boolean allPresent = pricingZoneId != null
+                && pricingZoneName != null
+                && deliveryFeeAriary != null
+                && distanceFromCenterMeters != null
+                && pricingZoneMaxDistanceMeters != null
+                && pricingPolicyVersion != null;
+        if (!allNull && !allPresent) {
+            throw new IllegalArgumentException("Un snapshot tarifaire doit etre complet ou absent.");
+        }
+    }
+
+    public static DeliveryPricingSnapshot absent() {
+        return new DeliveryPricingSnapshot(null, null, null, null, null, null);
+    }
+
+    public boolean present() {
+        return pricingZoneId != null;
+    }
+}

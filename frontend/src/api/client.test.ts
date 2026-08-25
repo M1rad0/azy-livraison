@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDeliveryRequest,
   getClientProfile,
+  quoteDeliveryPrice,
   updateClientProfile,
 } from './client'
 
@@ -78,5 +79,26 @@ describe('client API', () => {
       requested: 3,
       projected: 12,
     })
+  })
+
+  it('asks the backend for the delivery price of a confirmed destination', async () => {
+    const quote = {
+      pricingZoneId: 'zone-centre',
+      pricingZoneName: 'Centre-ville',
+      deliveryFeeAriary: 3_000,
+      distanceFromCenterMeters: 1_200,
+      pricingZoneMaxDistanceMeters: 4_000,
+      pricingPolicyVersion: 2,
+    }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => quote })
+    vi.stubGlobal('fetch', fetchMock)
+    const destination = { label: 'Analakely', query: 'Analakely', latitude: -18.9089, longitude: 47.5212 }
+
+    await expect(quoteDeliveryPrice(destination, 'token-client')).resolves.toEqual(quote)
+    expect(fetchMock).toHaveBeenCalledWith('/api/client/delivery-pricing/quote', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ destination }),
+      headers: expect.objectContaining({ Authorization: 'Bearer token-client' }),
+    }))
   })
 })

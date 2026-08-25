@@ -614,6 +614,36 @@
   line-height: 1.4;
 }
 
+.client-pricing-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+  padding: 0.68rem 0.75rem;
+  color: var(--ink);
+  background: #fff7f1;
+  border: 1px solid #ffd7bd;
+  border-radius: 0.78rem;
+}
+
+.client-pricing-preview > svg {
+  width: 1.1rem;
+  flex: 0 0 auto;
+  color: var(--coral);
+}
+
+.client-pricing-preview > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.client-pricing-preview strong { font-size: 0.72rem; }
+.client-pricing-preview small { color: #75848e; font-size: 0.61rem; }
+.client-pricing-preview.is-uncovered { color: #8f342c; background: #fff0ee; border-color: #f3c5c0; }
+.client-pricing-preview.is-uncovered > svg { color: #c64c40; }
+.client-pricing-preview.is-loading { background: #f8fafb; border-color: var(--line); }
+
 .client-check-card {
   display: flex;
   min-width: 0;

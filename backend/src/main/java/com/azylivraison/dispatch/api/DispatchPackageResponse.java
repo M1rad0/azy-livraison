@@ -24,6 +24,12 @@ public record DispatchPackageResponse(
         long amountToCollectAriary,
         long cashToCollectAriary,
         boolean mobileMoneyPaid,
+        UUID pricingZoneId,
+        String pricingZoneName,
+        Long deliveryFeeAriary,
+        Long distanceFromCenterMeters,
+        Long pricingZoneMaxDistanceMeters,
+        Long pricingPolicyVersion,
         BigDecimal effectiveWeightKg,
         Location destination) {
 
@@ -45,6 +51,12 @@ public record DispatchPackageResponse(
                 outcome.amountToCollectAriary(),
                 outcome.cashToCollectAriary(),
                 outcome.mobileMoneyPaid(),
+                outcome.pricingSnapshot().pricingZoneId(),
+                outcome.pricingSnapshot().pricingZoneName(),
+                outcome.pricingSnapshot().deliveryFeeAriary(),
+                outcome.pricingSnapshot().distanceFromCenterMeters(),
+                outcome.pricingSnapshot().pricingZoneMaxDistanceMeters(),
+                outcome.pricingSnapshot().pricingPolicyVersion(),
                 outcome.effectiveWeightKg(),
                 outcome.destination());
     }

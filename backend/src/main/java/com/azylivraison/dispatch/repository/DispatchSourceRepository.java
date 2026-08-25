@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.azylivraison.dispatch.domain.DispatchSourcePackage;
 import com.azylivraison.planning.domain.Location;
+import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -29,6 +30,9 @@ public class DispatchSourceRepository {
                    p.destination_label, p.destination_query,
                    p.destination_latitude, p.destination_longitude,
                    p.contact, p.amount_to_collect_ariary, p.mobile_money_paid,
+                   p.pricing_zone_id, p.pricing_zone_name, p.delivery_fee_ariary,
+                   p.distance_from_center_meters, p.pricing_zone_max_distance_meters,
+                   p.pricing_policy_version,
                    p.effective_weight_kg
             FROM delivery_package p
             JOIN delivery_request dr ON dr.id = p.delivery_request_id
@@ -146,6 +150,18 @@ public class DispatchSourceRepository {
                 resultSet.getString("contact"),
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
+                new DeliveryPricingSnapshot(
+                        resultSet.getObject("pricing_zone_id", UUID.class),
+                        resultSet.getString("pricing_zone_name"),
+                        nullableLong(resultSet, "delivery_fee_ariary"),
+                        nullableLong(resultSet, "distance_from_center_meters"),
+                        nullableLong(resultSet, "pricing_zone_max_distance_meters"),
+                        nullableLong(resultSet, "pricing_policy_version")),
                 resultSet.getBigDecimal("effective_weight_kg"));
+    }
+
+    private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
     }
 }

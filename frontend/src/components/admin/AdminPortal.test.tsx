@@ -11,6 +11,17 @@ function jsonResponse(payload: unknown) {
 
 const TEST_TODAY = antananarivoToday()
 
+const pricingPolicy = {
+  version: 1,
+  center: { label: 'Centre tarifaire', destinationQuery: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
+  zones: [
+    { id: 'zone-centre', name: 'Centre-ville', maxDistanceMeters: 4_000, deliveryFeeAriary: 3_000 },
+    { id: 'zone-peripherie', name: 'Périphérie', maxDistanceMeters: 8_000, deliveryFeeAriary: 4_000 },
+  ],
+  createdAt: '2026-08-01T00:00:00Z',
+  updatedAt: '2026-08-23T00:00:00Z',
+}
+
 function requestFixture({
   requestId = 'request-1',
   packageId = 'package-1',
@@ -68,6 +79,7 @@ function portalFetchMock(globalRequests = [requestFixture()], dayRequests: Retur
       }))
     }
     if (input.startsWith('/api/admin/dispatch-plans')) return Promise.resolve(jsonResponse([]))
+    if (input === '/api/admin/settings/pricing') return Promise.resolve(jsonResponse(pricingPolicy))
     if (input === '/api/admin/couriers') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/vehicle-presets') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/settings') return Promise.resolve(jsonResponse({
@@ -260,6 +272,25 @@ describe('AdminPortal', () => {
     expect(fetchMock.mock.calls.some(([input, init]) => (
       input === '/api/admin/dispatch-plans' && (init as RequestInit | undefined)?.method === 'POST'
     ))).toBe(false)
+  })
+
+  it('permet de modifier les rayons et prix dans un onglet dédié', async () => {
+    const fetchMock = portalFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AdminPortal accessToken="admin-token" />)
+    await screen.findByText('Boutique Rado')
+    fireEvent.click(screen.getByRole('button', { name: /Tarification/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Tarification des livraisons' })).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Centre-ville')).toBeInTheDocument()
+    fireEvent.change(screen.getAllByLabelText(/Prix de livraison/)[0], { target: { value: '3500' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la tarification' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/settings/pricing', expect.objectContaining({
+      method: 'PUT',
+      body: expect.stringContaining('"deliveryFeeAriary":3500'),
+    })))
   })
 
   it('restitue le planning détaillé des collectes avant le siège', () => {
