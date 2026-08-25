@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.UUID;
+
 import jakarta.servlet.http.Cookie;
 
 import org.junit.jupiter.api.Test;
@@ -46,7 +48,38 @@ class AuthApiIntegrationTest {
         mockMvc.perform(get("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value("admin"));
+                .andExpect(jsonPath("$.username").value("admin"))
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.displayName").value("Administrateur"));
+    }
+
+    @Test
+    void registersAClientAndRejectsDuplicateUsernames() throws Exception {
+        String username = "client-" + UUID.randomUUID();
+        String body = """
+                {
+                  "username": "%s",
+                  "password": "a-secure-password",
+                  "displayName": "Rakoto Client",
+                  "phone": "+261 34 00 000 00"
+                }
+                """.formatted(username);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.account.username").value(username))
+                .andExpect(jsonPath("$.account.role").value("CLIENT"))
+                .andExpect(jsonPath("$.account.displayName").value("Rakoto Client"))
+                .andExpect(jsonPath("$.account.phone").value("+261 34 00 000 00"))
+                .andExpect(cookie().httpOnly(RefreshCookieService.COOKIE_NAME, true));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("USERNAME_ALREADY_EXISTS"));
     }
 
     @Test
@@ -114,6 +147,7 @@ class AuthApiIntegrationTest {
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
                 .andExpect(jsonPath("$.expiresIn").value(900))
                 .andExpect(jsonPath("$.account.username").value("admin"))
+                .andExpect(jsonPath("$.account.role").value("ADMIN"))
                 .andExpect(cookie().httpOnly(RefreshCookieService.COOKIE_NAME, true))
                 .andExpect(header().string(HttpHeaders.SET_COOKIE,
                         org.hamcrest.Matchers.containsString("SameSite=Strict")))

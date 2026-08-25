@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.azylivraison.optimization.config.OptimizationProperties;
+import com.azylivraison.optimization.domain.OperationalPolicy;
 import com.azylivraison.planning.domain.Courier;
 import com.google.ortools.Loader;
 import com.google.ortools.constraintsolver.Assignment;
@@ -34,16 +35,22 @@ class HubCollectionOrToolsRoutingOptimizer {
     private static final long MAX_REGULAR_COST = PROHIBITIVE_ARC_COST / 4;
 
     private final OptimizationProperties properties;
-    private final long pickupServiceSeconds;
 
     HubCollectionOrToolsRoutingOptimizer(OptimizationProperties properties) {
         Loader.loadNativeLibraries();
         this.properties = properties;
-        this.pickupServiceSeconds = properties.operationalPolicy().pickupServiceDuration().toSeconds();
     }
 
     HubCollectionSolvedOptimization solve(HubCollectionProblem problem) {
+        return solve(problem, properties.operationalPolicy(), properties.timeLimit());
+    }
+
+    HubCollectionSolvedOptimization solve(
+            HubCollectionProblem problem,
+            OperationalPolicy policy,
+            Duration timeLimit) {
         long startedAt = System.nanoTime();
+        long pickupServiceSeconds = policy.pickupServiceDuration().toSeconds();
         OffsetDateTime reference = timeReference(problem);
         int vehicleCount = problem.couriers().size();
         int nodeCount = problem.matrixPointByNode().length;
@@ -58,7 +65,7 @@ class HubCollectionOrToolsRoutingOptimizer {
         RoutingModel routing = new RoutingModel(manager);
         Map<Integer, Integer> taskByNode = taskIndexesByNode(problem);
         long maxArcDistance = maximumFiniteDistance(problem.distancesMeters());
-        long horizon = timeHorizon(problem, reference, maxArcDistance);
+        long horizon = timeHorizon(problem, reference, maxArcDistance, pickupServiceSeconds);
         CostHierarchy costs = costHierarchy(problem, maxArcDistance, horizon);
 
         int distanceCallback = routing.registerTransitCallback((fromIndex, toIndex) -> distanceCost(
@@ -89,6 +96,7 @@ class HubCollectionOrToolsRoutingOptimizer {
                     taskByNode,
                     courierIndex,
                     reference,
+                    pickupServiceSeconds,
                     fromIndex,
                     toIndex));
             timeCapacities[vehicle] = horizon;
@@ -122,7 +130,7 @@ class HubCollectionOrToolsRoutingOptimizer {
                 .toBuilder()
                 .setFirstSolutionStrategy(FirstSolutionStrategy.Value.PARALLEL_CHEAPEST_INSERTION)
                 .setLocalSearchMetaheuristic(LocalSearchMetaheuristic.Value.GUIDED_LOCAL_SEARCH)
-                .setTimeLimit(protobufDuration(properties.timeLimit()))
+                .setTimeLimit(protobufDuration(timeLimit))
                 .build();
         Assignment solution = routing.solveWithParameters(searchParameters);
         long computationTimeMillis = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
@@ -148,7 +156,8 @@ class HubCollectionOrToolsRoutingOptimizer {
                 timeDimension,
                 solution,
                 taskByNode,
-                reference);
+                reference,
+                pickupServiceSeconds);
         long latestArrival = routes.stream()
                 .mapToLong(HubCollectionSolvedOptimization.SolvedRoute::hubArrivalOffsetSeconds)
                 .max()
@@ -169,7 +178,8 @@ class HubCollectionOrToolsRoutingOptimizer {
             RoutingDimension timeDimension,
             Assignment solution,
             Map<Integer, Integer> taskByNode,
-            OffsetDateTime reference) {
+            OffsetDateTime reference,
+            long pickupServiceSeconds) {
         List<HubCollectionSolvedOptimization.SolvedRoute> routes = new ArrayList<>();
         for (int vehicle = 0; vehicle < problem.couriers().size(); vehicle++) {
             if (!routing.isVehicleUsed(solution, vehicle)) {
@@ -248,6 +258,7 @@ class HubCollectionOrToolsRoutingOptimizer {
             Map<Integer, Integer> taskByNode,
             int courierIndex,
             OffsetDateTime reference,
+            long pickupServiceSeconds,
             long fromIndex,
             long toIndex) {
         if (routing.isStart(fromIndex) && routing.isEnd(toIndex)) {
@@ -266,7 +277,7 @@ class HubCollectionOrToolsRoutingOptimizer {
         }
         return saturatingAdd(
                 travel,
-                pickupServiceSeconds(problem, manager, taskByNode, fromIndex, toIndex),
+                pickupServiceSeconds(problem, manager, taskByNode, pickupServiceSeconds, fromIndex, toIndex),
                 PROHIBITIVE_ARC_COST);
     }
 
@@ -274,6 +285,7 @@ class HubCollectionOrToolsRoutingOptimizer {
             HubCollectionProblem problem,
             RoutingIndexManager manager,
             Map<Integer, Integer> taskByNode,
+            long pickupServiceSeconds,
             long fromIndex,
             long toIndex) {
         Integer fromTask = taskByNode.get(manager.indexToNode(fromIndex));
@@ -336,7 +348,8 @@ class HubCollectionOrToolsRoutingOptimizer {
     private long timeHorizon(
             HubCollectionProblem problem,
             OffsetDateTime reference,
-            long maxArcDistance) {
+            long maxArcDistance,
+            long pickupServiceSeconds) {
         long latestDeparture = problem.couriers().stream()
                 .map(Courier::departureAt)
                 .mapToLong(value -> secondsBetween(reference, value))

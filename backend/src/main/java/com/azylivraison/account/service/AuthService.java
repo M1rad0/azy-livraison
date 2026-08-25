@@ -1,13 +1,18 @@
 package com.azylivraison.account.service;
 
 import java.time.Instant;
+import java.util.Locale;
+import java.util.UUID;
 
 import com.azylivraison.account.domain.Account;
+import com.azylivraison.account.domain.AccountRole;
 import com.azylivraison.account.repository.AccountRepository;
+import com.azylivraison.account.repository.ClientProfileRepository;
 import com.azylivraison.account.repository.RefreshTokenRepository;
 import com.azylivraison.account.service.TokenService.AccessToken;
 import com.azylivraison.account.service.TokenService.RefreshToken;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +22,7 @@ public class AuthService {
 
     private final AccountRepository accountRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final ClientProfileRepository clientProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final String dummyPasswordHash;
@@ -24,13 +30,38 @@ public class AuthService {
     public AuthService(
             AccountRepository accountRepository,
             RefreshTokenRepository refreshTokenRepository,
+            ClientProfileRepository clientProfileRepository,
             PasswordEncoder passwordEncoder,
             TokenService tokenService) {
         this.accountRepository = accountRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.clientProfileRepository = clientProfileRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.dummyPasswordHash = passwordEncoder.encode("invalid-password-used-for-timing");
+    }
+
+    @Transactional
+    public AuthenticatedSession register(
+            String username,
+            String password,
+            String displayName,
+            String phone) {
+        Account account = new Account(
+                UUID.randomUUID(),
+                username.trim().toLowerCase(Locale.ROOT),
+                passwordEncoder.encode(password),
+                true,
+                AccountRole.CLIENT,
+                displayName.trim(),
+                phone.trim());
+        try {
+            accountRepository.create(account);
+            clientProfileRepository.create(account.id());
+        } catch (DuplicateKeyException exception) {
+            throw new UsernameAlreadyExistsException();
+        }
+        return createSession(account, Instant.now());
     }
 
     @Transactional

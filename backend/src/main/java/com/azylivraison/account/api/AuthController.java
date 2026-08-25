@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -35,6 +36,16 @@ public class AuthController {
         return withRefreshCookie(session);
     }
 
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        AuthenticatedSession session = authService.register(
+                request.username(),
+                request.password(),
+                request.displayName(),
+                request.phone());
+        return withRefreshCookie(session, HttpStatus.CREATED);
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(
             @CookieValue(name = RefreshCookieService.COOKIE_NAME, required = false) String refreshToken) {
@@ -59,7 +70,13 @@ public class AuthController {
     }
 
     private ResponseEntity<AuthResponse> withRefreshCookie(AuthenticatedSession session) {
-        return ResponseEntity.ok()
+        return withRefreshCookie(session, HttpStatus.OK);
+    }
+
+    private ResponseEntity<AuthResponse> withRefreshCookie(
+            AuthenticatedSession session,
+            HttpStatus status) {
+        return ResponseEntity.status(status)
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .header(HttpHeaders.SET_COOKIE,

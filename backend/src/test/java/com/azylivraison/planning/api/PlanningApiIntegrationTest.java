@@ -28,7 +28,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void validatesAndNormalizesAPlan() throws Exception {
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(readResource("plans/valid-plan.json")))
                 .andExpect(status().isOk())
@@ -86,7 +86,7 @@ class PlanningApiIntegrationTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidPlan))
                 .andExpect(status().isBadRequest())
@@ -108,7 +108,7 @@ class PlanningApiIntegrationTest {
         String invalidWeight = readResource("plans/valid-plan.json")
                 .replace("\"weightKg\": 4.5", "\"weightKg\": 0");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidWeight))
                 .andExpect(status().isBadRequest())
@@ -121,7 +121,7 @@ class PlanningApiIntegrationTest {
         String mismatchedOffset = readResource("plans/valid-plan.json")
                 .replace("2026-08-03T08:00:00+03:00", "2026-08-03T08:00:00+02:00");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mismatchedOffset))
                 .andExpect(status().isBadRequest())
@@ -133,7 +133,7 @@ class PlanningApiIntegrationTest {
         String invertedWindow = readResource("plans/valid-plan.json")
                 .replace("2026-08-03T11:00:00+03:00", "2026-08-03T08:30:00+03:00");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invertedWindow))
                 .andExpect(status().isBadRequest())
@@ -146,7 +146,7 @@ class PlanningApiIntegrationTest {
         String unknownProperty = readResource("plans/valid-plan.json")
                 .replace("\"schemaVersion\": \"1.0\"", "\"unknown\": true, \"schemaVersion\": \"1.0\"");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(unknownProperty))
                 .andExpect(status().isBadRequest())
@@ -158,7 +158,7 @@ class PlanningApiIntegrationTest {
         String overweightPackage = readResource("plans/valid-plan.json")
                 .replace("\"weightKg\": 4.5", "\"weightKg\": 1000");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(overweightPackage))
                 .andExpect(status().isOk())
@@ -168,7 +168,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void validatesAndNormalizesAMultiClientPlan() throws Exception {
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(multiClientPlan()))
                 .andExpect(status().isOk())
@@ -185,7 +185,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void validatesAndNormalizesACurrentHubPlan() throws Exception {
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(hubMultiClientPlan()))
                 .andExpect(status().isOk())
@@ -202,7 +202,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void keepsLegacyMultiClientFilesCompatibleWithoutInventingAHub() throws Exception {
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(multiClientPlan()))
                 .andExpect(status().isOk())
@@ -218,7 +218,7 @@ class PlanningApiIntegrationTest {
         String incompleteHubPlan = multiClientPlan()
                 .replace("\"schemaVersion\": \"2.0\"", "\"schemaVersion\": \"2.1\"");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(incompleteHubPlan))
                 .andExpect(status().isBadRequest())
@@ -241,7 +241,7 @@ class PlanningApiIntegrationTest {
                         "{ \"label\": \"Alasora\", \"latitude\": -18.9186, \"longitude\": 47.5561 }",
                         "{ \"label\": \"Alasora\", \"destinationQuery\": \"Alasora\" }");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(unconfirmedHubPlan))
                 .andExpect(status().isBadRequest())
@@ -262,14 +262,14 @@ class PlanningApiIntegrationTest {
                         "\"couriers\": [{",
                         "\"redistributionHub\": { \"latitude\": -18.8952, \"longitude\": 47.5183 }, \"couriers\": [{");
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(singlePlanWithHub))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[?(@.path == 'redistributionHub' && @.code == 'FIELD_NOT_ALLOWED')]")
                         .exists());
 
-        mockMvc.perform(post("/api/plans/validate").with(user("admin"))
+        mockMvc.perform(post("/api/plans/validate").with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(legacyMultiPlanWithHub))
                 .andExpect(status().isBadRequest())
@@ -279,7 +279,7 @@ class PlanningApiIntegrationTest {
 
     @Test
     void listsVehiclePresets() throws Exception {
-        mockMvc.perform(get("/api/vehicle-presets").with(user("admin")))
+        mockMvc.perform(get("/api/vehicle-presets").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("MOTO"))
                 .andExpect(jsonPath("$[0].maxWeightKg").value(30))

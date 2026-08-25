@@ -1,0 +1,143 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  CapacityConfirmationRequiredError,
+  createDeliveryRequest,
+  getClientProfile,
+  listDeliveryRequests,
+  updateClientProfile,
+  type ClientProfile,
+  type DeliveryRequestRecord,
+} from '../api/client'
+import { ClientPortal } from './ClientPortal'
+
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return {
+    ...actual,
+    getClientProfile: vi.fn(),
+    listDeliveryRequests: vi.fn(),
+    createDeliveryRequest: vi.fn(),
+    updateClientProfile: vi.fn(),
+  }
+})
+
+vi.mock('./LocationPicker', () => ({
+  LocationPicker: ({ title, value, onChange }: {
+    title: string
+    value: { label?: string; destinationQuery?: string; latitude?: number; longitude?: number }
+    onChange: (location: { label: string; destinationQuery: string; latitude: number; longitude: number }) => void
+  }) => (
+    <button type="button" aria-label={`Choisir ${title}`} onClick={() => onChange({
+      label: value.label || title,
+      destinationQuery: title,
+      latitude: -18.9,
+      longitude: 47.52,
+    })}>{value.label || `Choisir ${title}`}</button>
+  ),
+}))
+
+const profile: ClientProfile = {
+  accountId: 'account-1',
+  username: 'boutique-soa',
+  displayName: 'Boutique Soa',
+  phone: '034 00 000 00',
+  defaultPickup: {
+    label: 'Boutique Analakely',
+    destinationQuery: 'Analakely, Antananarivo',
+    latitude: -18.9089,
+    longitude: 47.5212,
+  },
+  version: 1,
+}
+
+const request: DeliveryRequestRecord = {
+  id: 'request-1',
+  ownerAccountId: profile.accountId,
+  ownerDisplayName: profile.displayName,
+  requestedDate: '2026-08-24',
+  pickup: { label: 'Boutique Analakely', query: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
+  capacity: { limit: 50, current: 2, requested: 1, projected: 3, warning: false, accepted: false },
+  status: 'PENDING',
+  version: 0,
+  createdAt: '2026-08-22T08:00:00Z',
+  updatedAt: '2026-08-22T08:00:00Z',
+  packages: [{
+    id: 'package-1',
+    sequenceNumber: 1,
+    recipientName: 'Rakoto',
+    faritra: false,
+    destination: { label: 'Ampasampito', query: 'Ampasampito', latitude: -18.8957, longitude: 47.5458 },
+    contact: '032 00 000 00',
+    amountToCollectAriary: 45_000,
+    mobileMoneyPaid: false,
+    effectiveWeightKg: 1,
+    weightSource: 'DEFAULT_SETTING',
+    status: 'PENDING',
+    version: 0,
+    createdAt: '2026-08-22T08:00:00Z',
+    updatedAt: '2026-08-22T08:00:00Z',
+  }],
+}
+
+describe('ClientPortal', () => {
+  beforeEach(() => {
+    vi.mocked(getClientProfile).mockResolvedValue(profile)
+    vi.mocked(listDeliveryRequests).mockResolvedValue([request])
+    vi.mocked(updateClientProfile).mockResolvedValue(profile)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+  })
+
+  it('shows the client history and its useful package summary', async () => {
+    render(<ClientPortal accessToken="client-token" />)
+
+    expect(await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })).toBeInTheDocument()
+    expect(screen.getAllByText('Boutique Analakely').length).toBeGreaterThan(0)
+    expect(screen.getByText('Demandes enregistrées').parentElement).toHaveTextContent('1')
+    fireEvent.click(screen.getByText('Boutique Analakely', { selector: '.client-history-card__identity strong' }))
+    expect(await screen.findByText('Rakoto')).toBeInTheDocument()
+    expect(screen.getAllByText(/45.*000 Ar/, { selector: 'strong' }).length).toBeGreaterThan(0)
+  })
+
+  it('excludes Mobile Money payments from the cash to collect', async () => {
+    vi.mocked(listDeliveryRequests).mockResolvedValue([{
+      ...request,
+      packages: [{ ...request.packages[0], mobileMoneyPaid: true }],
+    }])
+
+    render(<ClientPortal accessToken="client-token" />)
+
+    expect(await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })).toBeInTheDocument()
+    expect(screen.getByText('0 Ar', { selector: '.client-history-card__metric--amount strong' })).toBeInTheDocument()
+  })
+
+  it('asks for explicit confirmation when the daily capacity is exceeded', async () => {
+    vi.mocked(listDeliveryRequests).mockResolvedValue([])
+    vi.mocked(createDeliveryRequest)
+      .mockRejectedValueOnce(new CapacityConfirmationRequiredError('Cette livraison pourrait ne pas être réalisée demain.', 1, 1, 1, 2))
+      .mockResolvedValueOnce(request)
+
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByRole('button', { name: 'Nouvelle demande' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un colis' }))
+
+    fireEvent.change(screen.getByLabelText('Nom du client destinataire'), { target: { value: 'Rakoto' } })
+    fireEvent.change(screen.getByLabelText('Contact client'), { target: { value: '034 00 000 00' } })
+    fireEvent.change(screen.getByLabelText('Total à récupérer (Ar)'), { target: { value: '45000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Choisir Lieu de livraison' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le colis' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la demande' }))
+
+    expect(await screen.findByText('Capacité habituelle dépassée')).toBeInTheDocument()
+    expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].acceptCapacityOverflow).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer quand même' }))
+    await waitFor(() => expect(createDeliveryRequest).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(createDeliveryRequest).mock.calls[1][0].acceptCapacityOverflow).toBe(true)
+  })
+})

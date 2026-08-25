@@ -64,7 +64,7 @@ class GeocodingApiIntegrationTest {
     void searchesMadagascarAndMapsNominatimCandidates() throws Exception {
         mockMvc.perform(get("/api/geocoding/search")
                         .queryParam("q", "Analakely, Antananarivo")
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.query").value("Analakely, Antananarivo"))
                 .andExpect(jsonPath("$.provider").value("NOMINATIM"))
@@ -87,13 +87,13 @@ class GeocodingApiIntegrationTest {
     void reusesCacheForEquivalentQueries() throws Exception {
         mockMvc.perform(get("/api/geocoding/search")
                         .queryParam("q", "Analakely Antananarivo")
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cached").value(false));
 
         mockMvc.perform(get("/api/geocoding/search")
                         .queryParam("q", "  ANALAKELY   ANTANANARIVO ")
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cached").value(true))
                 .andExpect(jsonPath("$.cachedAt").exists())
@@ -107,7 +107,7 @@ class GeocodingApiIntegrationTest {
     void rejectsAnInvalidQuery() throws Exception {
         mockMvc.perform(get("/api/geocoding/search")
                         .queryParam("q", "a")
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_GEOCODING_QUERY"));
     }
@@ -116,7 +116,7 @@ class GeocodingApiIntegrationTest {
     void mapsProviderFailuresToBadGateway() throws Exception {
         mockMvc.perform(get("/api/geocoding/search")
                         .queryParam("q", "service unavailable")
-                        .with(user("admin")))
+                        .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("GEOCODING_UNAVAILABLE"));
     }

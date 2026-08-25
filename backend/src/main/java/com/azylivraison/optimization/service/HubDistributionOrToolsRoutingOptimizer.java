@@ -44,6 +44,13 @@ class HubDistributionOrToolsRoutingOptimizer {
     }
 
     HubDistributionSolvedOptimization solve(HubDistributionProblem problem) {
+        return solve(problem, properties.operationalPolicy(), properties.timeLimit());
+    }
+
+    HubDistributionSolvedOptimization solve(
+            HubDistributionProblem problem,
+            OperationalPolicy policy,
+            Duration timeLimit) {
         long startedAt = System.nanoTime();
         int actualNodeCount = problem.distancesMeters().size();
         int vehicleCount = problem.couriers().size();
@@ -82,7 +89,6 @@ class HubDistributionOrToolsRoutingOptimizer {
                 .toArray();
         routing.addDimensionWithVehicleCapacity(demandCallback, 0, capacities, true, "Capacity");
 
-        OperationalPolicy policy = properties.operationalPolicy();
         long deliveryServiceSeconds = policy.deliveryServiceDuration().toSeconds();
         OffsetDateTime reference = timeReference(problem);
         long horizon = timeHorizon(problem, reference, maximumDistance, policy);
@@ -136,7 +142,7 @@ class HubDistributionOrToolsRoutingOptimizer {
                 .toBuilder()
                 .setFirstSolutionStrategy(FirstSolutionStrategy.Value.PARALLEL_CHEAPEST_INSERTION)
                 .setLocalSearchMetaheuristic(LocalSearchMetaheuristic.Value.GUIDED_LOCAL_SEARCH)
-                .setTimeLimit(protobufDuration(properties.timeLimit()))
+                .setTimeLimit(protobufDuration(timeLimit))
                 .build();
         Assignment solution = routing.solveWithParameters(parameters);
         long computationMillis = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();

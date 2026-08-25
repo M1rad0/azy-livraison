@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.azylivraison.account.domain.Account;
+import com.azylivraison.account.domain.AccountRole;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -29,7 +30,8 @@ public class RefreshTokenRepository {
 
     public Optional<ActiveRefreshToken> findActiveForUpdate(String tokenHash, Instant now) {
         List<ActiveRefreshToken> tokens = jdbcTemplate.query("""
-                SELECT rt.id, a.id AS account_id, a.username, a.password_hash, a.enabled
+                SELECT rt.id, a.id AS account_id, a.username, a.password_hash, a.enabled,
+                       a.role, a.display_name, a.phone
                 FROM refresh_token rt
                 JOIN app_account a ON a.id = rt.account_id
                 WHERE rt.token_hash = ?
@@ -42,7 +44,10 @@ public class RefreshTokenRepository {
                                 resultSet.getObject("account_id", UUID.class),
                                 resultSet.getString("username"),
                                 resultSet.getString("password_hash"),
-                                resultSet.getBoolean("enabled"))),
+                                resultSet.getBoolean("enabled"),
+                                AccountRole.valueOf(resultSet.getString("role")),
+                                resultSet.getString("display_name"),
+                                resultSet.getString("phone"))),
                 tokenHash,
                 Timestamp.from(now));
         return tokens.stream().findFirst();

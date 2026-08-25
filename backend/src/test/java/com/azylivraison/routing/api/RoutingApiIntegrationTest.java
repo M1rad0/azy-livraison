@@ -56,7 +56,7 @@ class RoutingApiIntegrationTest {
     @Test
     void returnsDistanceAndDurationMatricesWithSnappedPoints() throws Exception {
         mockMvc.perform(post("/api/routing/matrix")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(twoPoints(47.522924)))
                 .andExpect(status().isOk())
@@ -78,7 +78,7 @@ class RoutingApiIntegrationTest {
     @Test
     void reportsEveryUnreachableMatrixPair() throws Exception {
         mockMvc.perform(post("/api/routing/matrix")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(twoPoints(48.0)))
                 .andExpect(status().isOk())
@@ -92,7 +92,7 @@ class RoutingApiIntegrationTest {
     @Test
     void returnsRouteGeometryLegsAndTotals() throws Exception {
         mockMvc.perform(post("/api/routing/route")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(twoPoints(47.522924)))
                 .andExpect(status().isOk())
@@ -115,7 +115,7 @@ class RoutingApiIntegrationTest {
     void rejectsDuplicatePointIdentifiers() throws Exception {
         String body = twoPoints(47.522924).replace("package-1", "pickup");
         mockMvc.perform(post("/api/routing/matrix")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -125,7 +125,7 @@ class RoutingApiIntegrationTest {
     @Test
     void rejectsMatricesAboveTheConfiguredLimit() throws Exception {
         mockMvc.perform(post("/api/routing/matrix")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"points":[
@@ -142,14 +142,14 @@ class RoutingApiIntegrationTest {
     @Test
     void mapsMissingRoutesAndProviderFailures() throws Exception {
         mockMvc.perform(post("/api/routing/route")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(twoPoints(49.8)))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("ROUTE_NOT_FOUND"));
 
         mockMvc.perform(post("/api/routing/route")
-                        .with(user("admin"))
+                        .with(user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(twoPoints(49.9)))
                 .andExpect(status().isBadGateway())
