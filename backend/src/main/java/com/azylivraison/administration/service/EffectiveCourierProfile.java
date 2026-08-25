@@ -7,5 +7,7 @@ import com.azylivraison.administration.domain.CourierProfile;
 public record EffectiveCourierProfile(
         CourierProfile courier,
         BigDecimal maxWeightKg,
-        BigDecimal averageSpeedKmh) {
+        BigDecimal averageSpeedKmh,
+        int commissionNumerator,
+        int commissionDenominator) {
 }

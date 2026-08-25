@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-import com.azylivraison.reporting.domain.DailyReport;
+import com.azylivraison.reporting.domain.ClientDailyReport;
 import com.azylivraison.reporting.service.DailyReportService;
 import com.azylivraison.reporting.service.DailyReportService.ClientReportSummary;
 
@@ -37,7 +37,7 @@ public class ClientDailyReportController {
     }
 
     @GetMapping("/{serviceDate}")
-    public DailyReport get(
+    public ClientDailyReport get(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
             @AuthenticationPrincipal Jwt jwt) {
         return service.getClientReport(serviceDate, accountId(jwt));

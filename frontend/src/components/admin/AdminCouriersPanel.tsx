@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import {
+  BadgePercent,
   Bike,
   Clock3,
   Gauge,
@@ -45,6 +46,8 @@ interface CourierDraft {
   vehicleType: VehicleType
   maxWeightKg: string
   averageSpeedKmh: string
+  commissionNumerator: string
+  commissionDenominator: string
   defaultDepartureTime: string
   departureLocation: Location
 }
@@ -60,6 +63,8 @@ function emptyDraft(): CourierDraft {
     vehicleType: 'MOTO',
     maxWeightKg: '',
     averageSpeedKmh: '',
+    commissionNumerator: '',
+    commissionDenominator: '',
     defaultDepartureTime: '06:00',
     departureLocation: {},
   }
@@ -76,6 +81,8 @@ function courierDraft(courier: Courier): CourierDraft {
     vehicleType: courier.vehicleType,
     maxWeightKg: courier.maxWeightKg?.toString() ?? '',
     averageSpeedKmh: courier.averageSpeedKmh?.toString() ?? '',
+    commissionNumerator: courier.commissionNumerator?.toString() ?? '',
+    commissionDenominator: courier.commissionDenominator?.toString() ?? '',
     defaultDepartureTime: courier.defaultDepartureTime.slice(0, 5),
     departureLocation: asPickerLocation(courier.departureLocation),
   }
@@ -126,6 +133,19 @@ function CourierEditor({
       setMessage('La vitesse personnalisée doit être un nombre positif.')
       return
     }
+    const customCommissionStarted = Boolean(
+      draft.commissionNumerator.trim() || draft.commissionDenominator.trim(),
+    )
+    const commissionNumerator = positiveNumber(draft.commissionNumerator)
+    const commissionDenominator = positiveNumber(draft.commissionDenominator)
+    if (customCommissionStarted && (
+      !Number.isInteger(commissionNumerator)
+      || !Number.isInteger(commissionDenominator)
+      || (commissionNumerator as number) > (commissionDenominator as number)
+    )) {
+      setMessage('Renseignez une fraction complète avec des nombres entiers, par exemple 1/3.')
+      return
+    }
     const hasPayoutValue = Boolean(
       draft.payoutOperator.trim() || draft.payoutAccountHolder.trim() || draft.payoutNumber.trim(),
     )
@@ -147,6 +167,8 @@ function CourierEditor({
       vehicleType: draft.vehicleType,
       maxWeightKg: positiveNumber(draft.maxWeightKg),
       averageSpeedKmh: positiveNumber(draft.averageSpeedKmh),
+      commissionNumerator: customCommissionStarted ? commissionNumerator : null,
+      commissionDenominator: customCommissionStarted ? commissionDenominator : null,
       defaultDepartureTime: draft.defaultDepartureTime,
       departureLocation,
       version: courier?.version,
@@ -187,7 +209,15 @@ function CourierEditor({
             </label>
             <label>
               <span>Vitesse personnalisée <small>facultatif</small></span>
-              <input min="0.01" step="0.1" type="number" value={draft.averageSpeedKmh} onChange={(event) => setDraft({ ...draft, averageSpeedKmh: event.target.value })} placeholder={preset ? `${preset.averageSpeedKmh} km/h par défaut` : 'km/h'} />
+              <input min="0.01" step="0.01" type="number" value={draft.averageSpeedKmh} onChange={(event) => setDraft({ ...draft, averageSpeedKmh: event.target.value })} placeholder={preset ? `${preset.averageSpeedKmh} km/h par défaut` : 'km/h'} />
+            </label>
+            <label>
+              <span>Part personnalisée <small>facultatif</small></span>
+              <div className="admin-fraction-input">
+                <input min="1" step="1" type="number" aria-label="Numérateur de la part du livreur" value={draft.commissionNumerator} onChange={(event) => setDraft({ ...draft, commissionNumerator: event.target.value })} placeholder="1" />
+                <b>/</b>
+                <input min="1" step="1" type="number" aria-label="Dénominateur de la part du livreur" value={draft.commissionDenominator} onChange={(event) => setDraft({ ...draft, commissionDenominator: event.target.value })} placeholder="3" />
+              </div>
             </label>
           </div>
           <section className="admin-courier-payout-fields">
@@ -259,6 +289,7 @@ export function AdminCouriersPanel({ accessToken, couriers, presets, onSaved }: 
                 <div><dt><PackageOpen aria-hidden="true" />Capacité</dt><dd>{courier.effectiveMaxWeightKg} kg{courier.maxWeightKg != null && <small>personnalisée</small>}</dd></div>
                 <div><dt><Gauge aria-hidden="true" />Vitesse</dt><dd>{courier.effectiveAverageSpeedKmh} km/h{courier.averageSpeedKmh != null && <small>personnalisée</small>}</dd></div>
                 <div><dt><Clock3 aria-hidden="true" />Départ</dt><dd>{courier.defaultDepartureTime.slice(0, 5)}</dd></div>
+                <div><dt><BadgePercent aria-hidden="true" />Rémunération</dt><dd>{courier.effectiveCommissionNumerator}/{courier.effectiveCommissionDenominator}{courier.commissionNumerator != null && <small>personnalisée</small>}</dd></div>
               </dl>
               <div className="admin-courier-location"><MapPin aria-hidden="true" /><span><small>Point de départ</small><strong>{locationLabel(courier.departureLocation)}</strong></span></div>
               {courier.payoutDestination && <div className="admin-courier-location"><Smartphone aria-hidden="true" /><span><small>Versement · {courier.payoutDestination.operator}</small><strong>{courier.payoutDestination.number} · {courier.payoutDestination.accountHolder}</strong></span></div>}

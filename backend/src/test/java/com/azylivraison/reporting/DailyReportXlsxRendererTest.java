@@ -60,13 +60,110 @@ class DailyReportXlsxRendererTest {
                 DailyReportTestFixture.report(), DailyReportTestFixture.CLIENT_ONE_ID);
 
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
+            assertThat(workbook.getNumberOfSheets()).isEqualTo(1);
+            Sheet report = workbook.getSheet("Rapport client");
+            assertThat(report).isNotNull();
             assertThat(workbook.getSheet("Livreurs")).isNull();
-            assertThat(workbook.getSheet("Clients").getLastRowNum()).isEqualTo(1);
-            assertThat(workbook.getSheet("Colis").getLastRowNum()).isEqualTo(2);
-            assertThat(workbook.getSheet("Colis").getRow(1).getCell(3).getStringCellValue())
-                    .isEqualTo("Boutique Rado");
-            assertThat(workbook.getSheet("Colis").getRow(2).getCell(3).getStringCellValue())
-                    .isEqualTo("Boutique Rado");
+            assertThat(workbook.getSheet("Clients")).isNull();
+            assertThat(workbook.getSheet("Colis")).isNull();
+            assertThat(workbook.getSheet("Retours et reports")).isNull();
+
+            Row header = rowWithValue(report, 0, "Destinataire");
+            Row delivered = report.getRow(header.getRowNum() + 1);
+            assertThat(delivered.getCell(0).getStringCellValue()).isEqualTo("Mme Volana");
+            assertThat(delivered.getCell(1).getStringCellValue()).isEqualTo("034 10 000 01");
+            assertThat(delivered.getCell(2).getStringCellValue()).isEqualTo("Ivandry");
+            assertThat(delivered.getCell(3).getStringCellValue()).isEqualTo("Livré");
+            assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo("Oui");
+            assertThat(delivered.getCell(5).getStringCellValue()).isEqualTo("Montant ajusté avec le client.");
+            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(40_000);
+            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(delivered.getCell(8).getNumericCellValue()).isEqualTo(37_000);
+            assertThat(rowWithValue(report, 0, "Synthèse").getRowNum()).isGreaterThan(header.getRowNum() + 2);
+            Row summary = rowWithValue(report, 0, "Colis");
+            assertThat(summary.getCell(1).getNumericCellValue()).isEqualTo(2);
+            assertThat(summary.getCell(2).getStringCellValue()).isEqualTo("Total récupéré");
+            assertThat(summary.getCell(3).getNumericCellValue()).isEqualTo(40_000);
+            assertThat(summary.getCell(4).getStringCellValue()).isEqualTo("Frais de livraison");
+            assertThat(summary.getCell(5).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(summary.getCell(6).getStringCellValue()).isEqualTo("Total à reverser");
+            assertThat(summary.getCell(7).getNumericCellValue()).isEqualTo(37_000);
+
+            assertThat(stringOccurrences(report, "Retrait Analakely")).isEqualTo(1);
+            assertThat(sheetContains(report, "Boutique Rado")).isTrue();
+            assertThat(sheetContains(report, "24 août 2026")).isTrue();
+            assertThat(report.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Boutique Rado");
+            assertThat(report.getRow(1).getCell(6).getStringCellValue()).isEqualTo("24 août 2026");
+            assertThat(workbook.getFontAt(report.getRow(1).getCell(0).getCellStyle().getFontIndex())
+                    .getFontHeightInPoints())
+                    .isGreaterThanOrEqualTo((short) 16);
+            assertThat(report.getRow(1).getCell(6).getCellStyle().getAlignment())
+                    .isEqualTo(org.apache.poi.ss.usermodel.HorizontalAlignment.RIGHT);
+            assertThat(sheetContains(report, "Hery")).isFalse();
+            assertThat(sheetContains(report, "Fara")).isFalse();
+            assertThat(sheetContains(report, "Clôturée le")).isFalse();
+            assertThat(sheetContains(report, "Généré le")).isFalse();
+            assertThat(sheetContains(report, "Plan")).isFalse();
+            assertThat(sheetContains(report, "Point de ralliement")).isFalse();
+            assertThat(sheetContains(report, "Montant prévu (Ar)")).isFalse();
         }
+    }
+
+    @Test
+    void storesManyDistinctPickupsOnSeparateRows() throws Exception {
+        byte[] result = renderer.renderForClient(
+                DailyReportTestFixture.clientOneVolumeReport(60), DailyReportTestFixture.CLIENT_ONE_ID);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
+            Sheet report = workbook.getSheet("Rapport client");
+            assertThat(stringOccurrences(report, "Points de récupération")).isEqualTo(1);
+            assertThat(stringOccurrences(report, "Retrait unique 1 — Antananarivo")).isEqualTo(1);
+            assertThat(stringOccurrences(report, "Retrait unique 60 — Antananarivo")).isEqualTo(1);
+            Row header = rowWithValue(report, 0, "Destinataire");
+            assertThat(header.getCell(4).getStringCellValue()).isEqualTo("Mobile Money");
+            assertThat(header.getCell(5).getStringCellValue()).isEqualTo("Commentaire");
+            assertThat(rowWithValue(report, 0, "Synthèse").getRowNum()).isGreaterThan(header.getRowNum() + 60);
+            assertThat(report.getPaneInformation()).isNull();
+        }
+    }
+
+    @Test
+    void storesTheFullClientCommentInTheTable() throws Exception {
+        String longComment = "Début du commentaire. " + "Information complète à conserver. ".repeat(28)
+                + "Fin intégrale du commentaire.";
+        byte[] result = renderer.renderForClient(
+                DailyReportTestFixture.clientOneReportWithComment(longComment),
+                DailyReportTestFixture.CLIENT_ONE_ID);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
+            Sheet report = workbook.getSheet("Rapport client");
+            Row delivered = rowWithValue(report, 0, "Mme Volana");
+            assertThat(delivered.getCell(5).getStringCellValue()).isEqualTo(longComment);
+            assertThat(delivered.getHeightInPoints()).isGreaterThan(90);
+        }
+    }
+
+    private Row rowWithValue(Sheet sheet, int column, String expected) {
+        for (Row row : sheet) {
+            if (row.getCell(column) != null && expected.equals(row.getCell(column).getStringCellValue())) {
+                return row;
+            }
+        }
+        throw new AssertionError("Ligne absente : " + expected);
+    }
+
+    private boolean sheetContains(Sheet sheet, String expected) {
+        return stringOccurrences(sheet, expected) > 0;
+    }
+
+    private int stringOccurrences(Sheet sheet, String expected) {
+        int count = 0;
+        for (Row row : sheet) {
+            for (var cell : row) {
+                if (cell.getCellType() == org.apache.poi.ss.usermodel.CellType.STRING
+                        && expected.equals(cell.getStringCellValue())) count++;
+            }
+        }
+        return count;
     }
 }

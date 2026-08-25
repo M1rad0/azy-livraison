@@ -53,12 +53,41 @@ class DailyReportPdfRendererTest {
 
         try (PDDocument document = Loader.loadPDF(result)) {
             String text = new PDFTextStripper().getText(document);
+            assertThat(document.getPage(0).getMediaBox().getWidth())
+                    .isGreaterThan(document.getPage(0).getMediaBox().getHeight());
             assertThat(text)
-                    .contains("Rapport client · Maison Soa")
+                    .contains("Rapport client")
+                    .contains("24 août 2026")
+                    .contains("Maison Soa")
+                    .contains("Point de récupération")
+                    .contains("Retrait Ampasapito")
+                    .contains("Destinataire")
+                    .contains("Destination")
+                    .contains("Récupéré")
+                    .contains("Frais")
+                    .contains("À reverser")
+                    .contains("Synthèse")
                     .contains("-4 000 Ar")
                     .contains("Mme Hanitra")
+                    .contains("Destinataire indisponible.")
+                    .contains("Commande refusée à l'arrivée.")
                     .doesNotContain("Boutique Rado")
-                    .doesNotContain("Mme Volana");
+                    .doesNotContain("Mme Volana")
+                    .doesNotContain("Clôture de la journée")
+                    .doesNotContain("Point de ralliement")
+                    .doesNotContain("Siège Antsahavola")
+                    .doesNotContain("Plan")
+                    .doesNotContain("Livreur")
+                    .doesNotContain("Hery")
+                    .doesNotContain("Fara")
+                    .doesNotContain("Prévu")
+                    .doesNotContain("Généré le")
+                    .doesNotContain("17:45")
+                    .doesNotContain("18:30")
+                    .doesNotContain("15:30")
+                    .doesNotContain("17:20");
+            assertThat(occurrences(text, "Retrait Ampasapito")).isEqualTo(1);
+            assertThat(text.indexOf("Synthèse")).isGreaterThan(text.indexOf("M. Naina"));
         }
     }
 
@@ -116,5 +145,64 @@ class DailyReportPdfRendererTest {
                     .contains("Iraisam-pirenena")
                     .contains("Analakely sy Ivandry");
         }
+    }
+
+    @Test
+    void paginatesManyPickupsAndKeepsTheFinalSummaryTogether() throws Exception {
+        byte[] result = renderer.renderForClient(
+                DailyReportTestFixture.clientOneVolumeReport(60), DailyReportTestFixture.CLIENT_ONE_ID);
+
+        try (PDDocument document = Loader.loadPDF(result)) {
+            assertThat(document.getNumberOfPages()).isGreaterThan(3);
+            String text = new PDFTextStripper().getText(document);
+            assertThat(text)
+                    .contains("Retrait unique 1 — Antananarivo")
+                    .contains("Retrait unique 60 — Antananarivo")
+                    .contains("Mobile Money")
+                    .contains("Oui")
+                    .contains("Non");
+            assertThat(occurrences(text, "Retrait unique 1 — Antananarivo")).isEqualTo(1);
+            assertThat(occurrences(text, "Retrait unique 60 — Antananarivo")).isEqualTo(1);
+
+            String summaryPage = null;
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                PDFTextStripper pageStripper = new PDFTextStripper();
+                pageStripper.setStartPage(page);
+                pageStripper.setEndPage(page);
+                String pageText = pageStripper.getText(document);
+                if (pageText.contains("Synthèse")) summaryPage = pageText;
+            }
+            assertThat(summaryPage)
+                    .isNotNull()
+                    .contains("Total récupéré")
+                    .contains("Frais de livraison")
+                    .contains("Total à reverser");
+        }
+    }
+
+    @Test
+    void keepsAFullLongClientCommentInsteadOfSilentlyTruncatingIt() throws Exception {
+        String longComment = "Début du commentaire. " + "Information complète à conserver. ".repeat(28)
+                + "Fin intégrale du commentaire.";
+        byte[] result = renderer.renderForClient(
+                DailyReportTestFixture.clientOneReportWithComment(longComment),
+                DailyReportTestFixture.CLIENT_ONE_ID);
+
+        try (PDDocument document = Loader.loadPDF(result)) {
+            String text = new PDFTextStripper().getText(document);
+            assertThat(text)
+                    .contains("Commentaire : Début du commentaire.")
+                    .contains("Fin intégrale du commentaire.");
+        }
+    }
+
+    private int occurrences(String value, String expected) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = value.indexOf(expected, offset)) >= 0) {
+            count++;
+            offset += expected.length();
+        }
+        return count;
     }
 }

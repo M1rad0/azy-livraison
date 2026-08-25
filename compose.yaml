@@ -41,6 +41,9 @@ services:
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       MAX_IMPORT_FILE_SIZE_MB: ${MAX_IMPORT_FILE_SIZE_MB:-10}
+      MAX_MULTIPART_REQUEST_SIZE_MB: ${MAX_MULTIPART_REQUEST_SIZE_MB:-12}
+      PAYMENT_PROOF_STORAGE_PATH: ${PAYMENT_PROOF_STORAGE_PATH:-/data/payment-proofs}
+      PAYMENT_PROOF_MAX_FILE_SIZE_MB: ${PAYMENT_PROOF_MAX_FILE_SIZE_MB:-10}
       NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-http://nominatim:8080}
       NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-AZY-Livraison/0.1 (contact@example.invalid)}
       GEOCODING_COUNTRY_CODE: ${GEOCODING_COUNTRY_CODE:-mg}
@@ -59,6 +62,8 @@ services:
       TZ: ${APP_TIMEZONE:-Indian/Antananarivo}
     ports:
       - "${API_EXPOSED_PORT:-8081}:8080"
+    volumes:
+      - ./data/payment-proofs:/data/payment-proofs
     depends_on:
       postgres:
         condition: service_healthy

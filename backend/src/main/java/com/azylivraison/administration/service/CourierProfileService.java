@@ -17,12 +17,15 @@ public class CourierProfileService {
 
     private final CourierProfileRepository repository;
     private final VehiclePresetConfigurationService presetService;
+    private final OperationalSettingsService settingsService;
 
     public CourierProfileService(
             CourierProfileRepository repository,
-            VehiclePresetConfigurationService presetService) {
+            VehiclePresetConfigurationService presetService,
+            OperationalSettingsService settingsService) {
         this.repository = repository;
         this.presetService = presetService;
+        this.settingsService = settingsService;
     }
 
     @Transactional(readOnly = true)
@@ -50,6 +53,8 @@ public class CourierProfileService {
                 command.vehicleType(),
                 command.maxWeightKg(),
                 command.averageSpeedKmh(),
+                reducedNumerator(command.commissionNumerator(), command.commissionDenominator()),
+                reducedDenominator(command.commissionNumerator(), command.commissionDenominator()),
                 command.defaultDepartureTime(),
                 command.departureLocation(),
                 0,
@@ -76,6 +81,8 @@ public class CourierProfileService {
                 command.vehicleType(),
                 command.maxWeightKg(),
                 command.averageSpeedKmh(),
+                reducedNumerator(command.commissionNumerator(), command.commissionDenominator()),
+                reducedDenominator(command.commissionNumerator(), command.commissionDenominator()),
                 command.defaultDepartureTime(),
                 command.departureLocation(),
                 current.version(),
@@ -109,10 +116,36 @@ public class CourierProfileService {
 
     private EffectiveCourierProfile withEffectiveValues(CourierProfile courier) {
         VehiclePresetConfiguration preset = presetService.findByType(courier.vehicleType());
+        var settings = settingsService.get();
         return new EffectiveCourierProfile(
                 courier,
                 courier.maxWeightKg() == null ? preset.maxWeightKg() : courier.maxWeightKg(),
-                courier.averageSpeedKmh() == null ? preset.averageSpeedKmh() : courier.averageSpeedKmh());
+                courier.averageSpeedKmh() == null ? preset.averageSpeedKmh() : courier.averageSpeedKmh(),
+                courier.commissionNumerator() == null
+                        ? settings.defaultCourierCommissionNumerator()
+                        : courier.commissionNumerator(),
+                courier.commissionDenominator() == null
+                        ? settings.defaultCourierCommissionDenominator()
+                        : courier.commissionDenominator());
+    }
+
+    private Integer reducedNumerator(Integer numerator, Integer denominator) {
+        return numerator == null || denominator == null ? null : numerator / greatestCommonDivisor(numerator, denominator);
+    }
+
+    private Integer reducedDenominator(Integer numerator, Integer denominator) {
+        return numerator == null || denominator == null ? null : denominator / greatestCommonDivisor(numerator, denominator);
+    }
+
+    private int greatestCommonDivisor(int left, int right) {
+        int a = Math.abs(left);
+        int b = Math.abs(right);
+        while (b != 0) {
+            int remainder = a % b;
+            a = b;
+            b = remainder;
+        }
+        return a;
     }
 
     private String normalizeRequired(String value) {

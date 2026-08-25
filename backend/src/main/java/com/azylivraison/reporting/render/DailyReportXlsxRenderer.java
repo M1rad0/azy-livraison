@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -39,6 +40,7 @@ public final class DailyReportXlsxRenderer {
 
     private static final ZoneId ANTANANARIVO = ZoneId.of("Indian/Antananarivo");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.FRANCE);
+    private static final DateTimeFormatter DATE_LONG = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter
             .ofPattern("dd/MM/yyyy HH:mm", Locale.FRANCE)
             .withZone(ANTANANARIVO);
@@ -58,7 +60,90 @@ public final class DailyReportXlsxRenderer {
         List<PackageLine> packages = report.packages().stream()
                 .filter(item -> item.ownerAccountId().equals(accountId))
                 .toList();
-        return renderWorkbook(report, client.totals(), List.of(client), List.of(), packages, client);
+        return renderClientWorkbook(report, client, packages);
+    }
+
+    private byte[] renderClientWorkbook(
+            DailyReport report,
+            ClientSummary client,
+            List<PackageLine> packages) {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Styles styles = new Styles(workbook);
+            Sheet sheet = workbook.createSheet("Rapport client");
+            clientHeader(sheet, styles, client.displayName(), report.serviceDate());
+
+            int rowIndex = 3;
+            if (client.phone() != null && !client.phone().isBlank()) {
+                rowIndex = keyValue(sheet, styles, rowIndex, "Contact", client.phone().strip());
+            }
+            List<String> pickups = pickupLabels(packages);
+            String pickupHeading = pickups.size() > 1 ? "Points de récupération" : "Point de récupération";
+            if (pickups.isEmpty()) {
+                rowIndex = keyValue(sheet, styles, rowIndex, pickupHeading, "—");
+            } else {
+                for (int index = 0; index < pickups.size(); index++) {
+                    rowIndex = keyValue(sheet, styles, rowIndex, index == 0 ? pickupHeading : "", pickups.get(index));
+                }
+            }
+            rowIndex += 2;
+
+            String[] headers = {
+                "Destinataire", "Contact", "Destination", "État", "Mobile Money",
+                "Commentaire", "Récupéré (Ar)", "Frais (Ar)", "À reverser (Ar)"
+            };
+            int tableHeaderRow = rowIndex;
+            header(sheet, styles, tableHeaderRow, headers);
+            rowIndex++;
+            for (PackageLine item : packages) {
+                Row row = sheet.createRow(rowIndex++);
+                int estimatedCommentLines = item.outcomeNote() == null
+                        ? 1
+                        : Math.max(1, (item.outcomeNote().strip().length() + 54) / 55);
+                row.setHeightInPoints(Math.min(390, Math.max(30, estimatedCommentLines * 15)));
+                text(row, 0, item.recipientName(), styles.body);
+                text(row, 1, item.recipientContact(), styles.body);
+                text(row, 2, item.destinationLabel(), styles.body);
+                text(row, 3, clientOutcomeLabel(item), styles.body);
+                text(row, 4, yesNo(item.mobileMoneyPaid()), styles.information);
+                text(row, 5, item.outcomeNote(), styles.body);
+                money(row, 6, item.actualAmountCollectedAriary(), styles.money);
+                money(row, 7, item.appliedDeliveryFeeAriary(), styles.money);
+                money(row, 8, item.amountToRemitAriary(), styles.money);
+            }
+
+            int tableLastRow = Math.max(tableHeaderRow, rowIndex - 1);
+            rowIndex += 3;
+            rowIndex = section(sheet, styles, rowIndex, "Synthèse");
+            Row summary = sheet.createRow(rowIndex);
+            summary.setHeightInPoints(30);
+            text(summary, 0, "Colis", styles.key);
+            number(summary, 1, client.totals().packageCount(), styles.integer);
+            text(summary, 2, "Total récupéré", styles.key);
+            money(summary, 3, client.totals().amountCollectedAriary(), styles.moneyEmphasis);
+            text(summary, 4, "Frais de livraison", styles.key);
+            money(summary, 5, client.totals().deliveryFeesAriary(), styles.moneyEmphasis);
+            text(summary, 6, "Total à reverser", styles.key);
+            money(summary, 7, client.totals().amountToRemitAriary(), styles.moneyEmphasis);
+
+            int[] widths = {28, 18, 34, 20, 20, 36, 20, 16, 20};
+            for (int index = 0; index < widths.length; index++) {
+                sheet.setColumnWidth(index, widths[index] * 256);
+            }
+            if (tableHeaderRow <= 12) {
+                sheet.createFreezePane(0, tableHeaderRow + 1);
+            }
+            if (!packages.isEmpty()) {
+                sheet.setAutoFilter(new CellRangeAddress(tableHeaderRow, tableLastRow, 0, headers.length - 1));
+            }
+            sheet.getPrintSetup().setLandscape(true);
+            sheet.setFitToPage(true);
+            sheet.getPrintSetup().setFitWidth((short) 1);
+            workbook.setActiveSheet(0);
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Le rapport Excel client n'a pas pu être généré.", exception);
+        }
     }
 
     private byte[] renderWorkbook(
@@ -232,6 +317,26 @@ public final class DailyReportXlsxRenderer {
                 : null;
     }
 
+    private static String clientOutcomeLabel(PackageLine item) {
+        if (item.outcome() == PackageOutcome.RETURN_TO_SENDER && item.returnedToSender()) {
+            return "Retourné à l'expéditeur";
+        }
+        if (item.outcome() == PackageOutcome.POSTPONED && item.postponedToDate() != null) {
+            return "Reporté au " + DATE.format(item.postponedToDate());
+        }
+        return item.outcome().frenchLabel();
+    }
+
+    private static List<String> pickupLabels(List<PackageLine> packages) {
+        LinkedHashMap<String, String> unique = new LinkedHashMap<>();
+        for (PackageLine item : packages) {
+            if (item.pickupLabel() == null || item.pickupLabel().isBlank()) continue;
+            String label = item.pickupLabel().strip();
+            unique.putIfAbsent(label.toLowerCase(Locale.ROOT), label);
+        }
+        return List.copyOf(unique.values());
+    }
+
     private void title(Sheet sheet, Styles styles, String title, int width) {
         Row row = sheet.createRow(0);
         row.setHeightInPoints(28);
@@ -239,6 +344,20 @@ public final class DailyReportXlsxRenderer {
         cell.setCellValue(title);
         cell.setCellStyle(styles.title);
         sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, width - 1));
+    }
+
+    private void clientHeader(Sheet sheet, Styles styles, String clientName, java.time.LocalDate serviceDate) {
+        title(sheet, styles, "AZY Livraison · Rapport client", 9);
+        Row identity = sheet.createRow(1);
+        identity.setHeightInPoints(34);
+        for (int column = 0; column < 9; column++) {
+            Cell cell = identity.createCell(column);
+            cell.setCellStyle(column < 6 ? styles.clientName : styles.clientDate);
+        }
+        identity.getCell(0).setCellValue(value(clientName));
+        identity.getCell(6).setCellValue(DATE_LONG.format(serviceDate));
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 5));
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 6, 8));
     }
 
     private int section(Sheet sheet, Styles styles, int rowIndex, String title) {
@@ -272,7 +391,11 @@ public final class DailyReportXlsxRenderer {
     }
 
     private void header(Sheet sheet, Styles styles, String[] headers) {
-        Row row = sheet.createRow(0);
+        header(sheet, styles, 0, headers);
+    }
+
+    private void header(Sheet sheet, Styles styles, int rowIndex, String[] headers) {
+        Row row = sheet.createRow(rowIndex);
         row.setHeightInPoints(30);
         for (int index = 0; index < headers.length; index++) {
             Cell cell = row.createCell(index);
@@ -338,6 +461,8 @@ public final class DailyReportXlsxRenderer {
     private static final class Styles {
 
         private final XSSFCellStyle title;
+        private final XSSFCellStyle clientName;
+        private final XSSFCellStyle clientDate;
         private final XSSFCellStyle section;
         private final XSSFCellStyle header;
         private final XSSFCellStyle key;
@@ -364,6 +489,16 @@ public final class DailyReportXlsxRenderer {
             title.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             title.setFont(titleFont);
             title.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            clientName = workbook.createCellStyle();
+            clientName.setFillForegroundColor(navy);
+            clientName.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            clientName.setFont(font(workbook, true, IndexedColors.WHITE.getIndex(), 16));
+            clientName.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            clientDate = workbook.createCellStyle();
+            clientDate.cloneStyleFrom(clientName);
+            clientDate.setAlignment(HorizontalAlignment.RIGHT);
 
             section = workbook.createCellStyle();
             section.setFillForegroundColor(orange);

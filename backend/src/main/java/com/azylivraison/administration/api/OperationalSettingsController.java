@@ -30,6 +30,7 @@ public class OperationalSettingsController {
 
     @PutMapping
     public OperationalSettingsResponse update(@Valid @RequestBody OperationalSettingsUpdateRequest request) {
+        OperationalSettings current = service.get();
         OperationalSettings requested = new OperationalSettings(
                 request.dailyPackageLimit(),
                 request.defaultHub() == null ? null : request.defaultHub().toDomain(),
@@ -41,6 +42,12 @@ public class OperationalSettingsController {
                 request.lateToleranceMinutes(),
                 request.optimizationTimeLimitSeconds(),
                 request.routingPreset(),
+                request.defaultCourierCommissionNumerator() == null
+                        ? current.defaultCourierCommissionNumerator()
+                        : request.defaultCourierCommissionNumerator(),
+                request.defaultCourierCommissionDenominator() == null
+                        ? current.defaultCourierCommissionDenominator()
+                        : request.defaultCourierCommissionDenominator(),
                 request.version() == null ? 0 : request.version(),
                 Instant.EPOCH,
                 Instant.EPOCH);

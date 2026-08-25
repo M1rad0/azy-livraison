@@ -13,6 +13,7 @@ import {
   Settings2,
   Sparkles,
   UserRound,
+  WalletCards,
   X,
 } from 'lucide-react'
 import {
@@ -60,6 +61,7 @@ const NAVIGATION: Record<AccountRole, PortalNavigationItem[]> = {
     { id: 'queue', label: 'Livraisons', detail: 'File globale', icon: Boxes },
     { id: 'dispatch', label: 'Dispatch', detail: 'Préparer la journée', icon: Sparkles },
     { id: 'day', label: 'Compte rendu', detail: 'Suivi et clôture', icon: ClipboardCheck },
+    { id: 'finance', label: 'Finances', detail: 'Versements et soldes', icon: WalletCards },
     { id: 'couriers', label: 'Livreurs', detail: 'Équipe et véhicules', icon: Bike },
     { id: 'pricing', label: 'Tarification', detail: 'Zones et frais', icon: BadgeDollarSign },
     { id: 'settings', label: 'Paramètres', detail: 'Règles opérationnelles', icon: Settings2 },

@@ -3,6 +3,7 @@ import {
   cancelAdminDeliveryPackage,
   closeDeliveryDay,
   createDispatchPlan,
+  downloadCourierStatement,
   downloadGeneralDailyReport,
   getDeliveryDay,
   getDeliveryPricingPolicy,
@@ -137,6 +138,31 @@ describe('API administrateur', () => {
     })
   })
 
+  it('télécharge le relevé livreur avec les filtres de période', async () => {
+    const blob = new Blob(['relevé'], { type: 'application/pdf' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Disposition': 'attachment; filename="releve-tiana.pdf"' }),
+      blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(downloadCourierStatement(
+      'courier-1',
+      'pdf',
+      { from: '2026-08-01', to: '2026-08-24' },
+      'admin-token',
+    )).resolves.toEqual({ blob, filename: 'releve-tiana.pdf' })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/finance/couriers/courier-1/statement.pdf?from=2026-08-01&to=2026-08-24',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
+      }),
+    )
+  })
+
   it('n’envoie pas les dates de lecture lors de la mise à jour des paramètres', async () => {
     const settings = {
       dailyPackageLimit: 30,
@@ -149,6 +175,8 @@ describe('API administrateur', () => {
       lateToleranceMinutes: 30,
       optimizationTimeLimitSeconds: 20,
       routingPreset: 'MAIN_ROADS',
+      defaultCourierCommissionNumerator: 1,
+      defaultCourierCommissionDenominator: 3,
       version: 2,
       createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-22T00:00:00Z',

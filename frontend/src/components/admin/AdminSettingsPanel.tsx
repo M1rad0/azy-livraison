@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import {
+  BadgePercent,
   Bike,
   Clock3,
   Gauge,
@@ -39,6 +40,8 @@ interface SettingsDraft {
   earlyToleranceMinutes: string
   lateToleranceMinutes: string
   optimizationTimeLimitSeconds: string
+  defaultCourierCommissionNumerator: string
+  defaultCourierCommissionDenominator: string
   defaultHub: Location
 }
 
@@ -52,6 +55,8 @@ function makeDraft(settings: OperationalSettings): SettingsDraft {
     earlyToleranceMinutes: String(settings.earlyToleranceMinutes),
     lateToleranceMinutes: String(settings.lateToleranceMinutes),
     optimizationTimeLimitSeconds: String(settings.optimizationTimeLimitSeconds),
+    defaultCourierCommissionNumerator: String(settings.defaultCourierCommissionNumerator),
+    defaultCourierCommissionDenominator: String(settings.defaultCourierCommissionDenominator),
     defaultHub: asPickerLocation(settings.defaultHub),
   }
 }
@@ -66,6 +71,12 @@ function readPositive(value: string, label: string, maximum?: number) {
 function readNonNegative(value: string, label: string) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${label} ne peut pas être négatif.`)
+  return parsed
+}
+
+function readPositiveInteger(value: string, label: string) {
+  const parsed = readPositive(value, label)
+  if (!Number.isInteger(parsed)) throw new Error(`${label} doit être un nombre entier.`)
   return parsed
 }
 
@@ -129,7 +140,12 @@ export function AdminSettingsPanel({
         earlyToleranceMinutes: readNonNegative(currentDraft.earlyToleranceMinutes, 'La tolérance d’avance'),
         lateToleranceMinutes: readNonNegative(currentDraft.lateToleranceMinutes, 'La tolérance de retard'),
         optimizationTimeLimitSeconds: readPositive(currentDraft.optimizationTimeLimitSeconds, 'Le temps de calcul', 1200),
+        defaultCourierCommissionNumerator: readPositiveInteger(currentDraft.defaultCourierCommissionNumerator, 'Le numérateur de la part livreur'),
+        defaultCourierCommissionDenominator: readPositiveInteger(currentDraft.defaultCourierCommissionDenominator, 'Le dénominateur de la part livreur'),
         defaultHub,
+      }
+      if (input.defaultCourierCommissionNumerator > input.defaultCourierCommissionDenominator) {
+        throw new Error('La part du livreur ne peut pas dépasser la totalité des frais de livraison.')
       }
       for (const preset of presetDrafts) {
         readPositive(String(preset.maxWeightKg), `La capacité ${vehicleLabel(preset.vehicleType).toLowerCase()}`)
@@ -205,10 +221,18 @@ export function AdminSettingsPanel({
               <article key={preset.vehicleType}>
                 <header><Bike aria-hidden="true" /><strong>{vehicleLabel(preset.vehicleType)}</strong></header>
                 <label><span>Capacité maximale</span><div className="admin-input-unit"><input required type="number" min="0.01" step="0.01" value={Number.isNaN(preset.maxWeightKg) ? '' : preset.maxWeightKg} onChange={(event) => updatePreset(index, 'maxWeightKg', event.target.value)} /><b>kg</b></div></label>
-                <label><span>Vitesse moyenne</span><div className="admin-input-unit"><input required type="number" min="0.01" step="0.1" value={Number.isNaN(preset.averageSpeedKmh) ? '' : preset.averageSpeedKmh} onChange={(event) => updatePreset(index, 'averageSpeedKmh', event.target.value)} /><b>km/h</b></div></label>
+                <label><span>Vitesse moyenne</span><div className="admin-input-unit"><input required type="number" min="0.01" step="0.01" value={Number.isNaN(preset.averageSpeedKmh) ? '' : preset.averageSpeedKmh} onChange={(event) => updatePreset(index, 'averageSpeedKmh', event.target.value)} /><b>km/h</b></div></label>
                 <p><Gauge aria-hidden="true" />Ces valeurs restent modifiables livreur par livreur.</p>
               </article>
             ))}
+          </div>
+          <div className="admin-settings-subsection">
+            <header><BadgePercent aria-hidden="true" /><div><strong>Part des livreurs</strong><small>Fraction des frais finaux appliquée par défaut</small></div></header>
+            <div className="admin-form-grid">
+              <label><span>Numérateur</span><input required type="number" min="1" step="1" value={draft.defaultCourierCommissionNumerator} onChange={(event) => { setDraft({ ...draft, defaultCourierCommissionNumerator: event.target.value }); setSaved(false) }} /></label>
+              <label><span>Dénominateur</span><input required type="number" min="1" step="1" value={draft.defaultCourierCommissionDenominator} onChange={(event) => { setDraft({ ...draft, defaultCourierCommissionDenominator: event.target.value }); setSaved(false) }} /></label>
+            </div>
+            <p className="admin-settings-hint"><BadgePercent aria-hidden="true" />Part par défaut : {draft.defaultCourierCommissionNumerator}/{draft.defaultCourierCommissionDenominator}, arrondie à l’ariary le plus proche. Chaque livreur peut avoir sa propre fraction.</p>
           </div>
         </section>
 

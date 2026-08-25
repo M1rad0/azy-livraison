@@ -2,6 +2,8 @@ package com.azylivraison.reporting;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,6 +55,118 @@ final class DailyReportTestFixture {
                         new CourierSummary(COURIER_TWO_ID, "Fara", "034 00 000 04", "Bicyclette",
                                 new Totals(1, 1, 0, 0, 0, 0, 40_000, 3_000, 37_000))),
                 List.of(deliveredMobileMoney(), cancelled(), postponed(), returned()));
+    }
+
+    static DailyReport clientOneVolumeReport(int packageCount) {
+        DailyReport source = report();
+        PackageLine template = source.packages().getFirst();
+        List<PackageLine> packages = new ArrayList<>();
+        for (int index = 0; index < packageCount; index++) {
+            int sequence = index + 1;
+            packages.add(new PackageLine(
+                    UUID.nameUUIDFromBytes(("client-report-package-" + sequence)
+                            .getBytes(StandardCharsets.UTF_8)),
+                    template.deliveryRequestId(),
+                    sequence,
+                    template.ownerAccountId(),
+                    template.clientDisplayName(),
+                    "Destinataire " + sequence,
+                    template.recipientContact(),
+                    "Retrait unique " + sequence + " — Antananarivo",
+                    "Destination " + sequence,
+                    template.pricingZoneName(),
+                    template.outcome(),
+                    template.plannedCourierId(),
+                    template.plannedCourierName(),
+                    template.actualCourierId(),
+                    template.actualCourierName(),
+                    template.expectedAmountToCollectAriary(),
+                    template.actualAmountCollectedAriary(),
+                    template.appliedDeliveryFeeAriary(),
+                    template.amountToRemitAriary(),
+                    index % 2 == 0,
+                    template.faritra(),
+                    template.finalizedAt(),
+                    null,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null));
+        }
+        Totals totals = new Totals(
+                packageCount,
+                packageCount,
+                0,
+                0,
+                0,
+                0,
+                Math.multiplyExact(template.actualAmountCollectedAriary(), packageCount),
+                Math.multiplyExact(template.appliedDeliveryFeeAriary(), packageCount),
+                Math.multiplyExact(template.amountToRemitAriary(), packageCount));
+        ClientSummary original = source.clients().getFirst();
+        ClientSummary client = new ClientSummary(
+                original.accountId(), original.displayName(), original.username(), original.phone(), totals);
+        return new DailyReport(
+                source.reportId(),
+                source.serviceDate(),
+                source.dispatchPlanId(),
+                source.hubLabel(),
+                source.sourcePlanCount(),
+                source.generatedAt(),
+                source.closure(),
+                totals,
+                List.of(client),
+                List.of(),
+                packages);
+    }
+
+    static DailyReport clientOneReportWithComment(String comment) {
+        DailyReport source = report();
+        PackageLine template = source.packages().getFirst();
+        PackageLine packageWithComment = new PackageLine(
+                template.packageId(),
+                template.deliveryRequestId(),
+                template.sequenceNumber(),
+                template.ownerAccountId(),
+                template.clientDisplayName(),
+                template.recipientName(),
+                template.recipientContact(),
+                template.pickupLabel(),
+                template.destinationLabel(),
+                template.pricingZoneName(),
+                template.outcome(),
+                template.plannedCourierId(),
+                template.plannedCourierName(),
+                template.actualCourierId(),
+                template.actualCourierName(),
+                template.expectedAmountToCollectAriary(),
+                template.actualAmountCollectedAriary(),
+                template.appliedDeliveryFeeAriary(),
+                template.amountToRemitAriary(),
+                template.mobileMoneyPaid(),
+                template.faritra(),
+                template.finalizedAt(),
+                comment,
+                template.returnedToSender(),
+                template.returnedToSenderAt(),
+                template.replacementPackageId(),
+                template.postponedToDate(),
+                template.replacementPickupLabel());
+        List<PackageLine> packages = new ArrayList<>(source.packages());
+        packages.set(0, packageWithComment);
+        return new DailyReport(
+                source.reportId(),
+                source.serviceDate(),
+                source.dispatchPlanId(),
+                source.hubLabel(),
+                source.sourcePlanCount(),
+                source.generatedAt(),
+                source.closure(),
+                source.totals(),
+                source.clients(),
+                source.couriers(),
+                packages);
     }
 
     private static PackageLine deliveredMobileMoney() {

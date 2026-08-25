@@ -608,6 +608,13 @@
   box-shadow: 0 0 0 4px rgba(244, 91, 11, 0.12);
 }
 
+.client-field > small {
+  color: var(--ink-soft);
+  font-size: .58rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 .client-field--readonly input {
   color: #7d8992;
   background: #edf1f4;
@@ -1045,7 +1052,7 @@
 
 .client-modal-overlay {
   position: fixed;
-  z-index: 1000;
+  z-index: 5000;
   inset: 0;
   display: grid;
   place-items: center;
@@ -1114,6 +1121,83 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
+}
+
+.client-profile-tabs {
+  display: grid;
+  width: min(100%, 780px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .45rem;
+  margin: 0 auto .9rem;
+  padding: .4rem;
+  background: #edf2f5;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.client-profile-tabs > button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .65rem;
+  padding: .72rem .85rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: .75rem;
+  cursor: pointer;
+  text-align: left;
+  transition: color .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+
+.client-profile-tabs > button > svg {
+  width: 1.05rem;
+  flex: 0 0 auto;
+}
+
+.client-profile-tabs > button > span {
+  display: grid;
+  min-width: 0;
+  gap: .12rem;
+}
+
+.client-profile-tabs strong {
+  color: inherit;
+  font-size: .72rem;
+}
+
+.client-profile-tabs small {
+  overflow: hidden;
+  font-size: .56rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-profile-tabs > button:hover {
+  color: var(--forest);
+}
+
+.client-profile-tabs > button:focus-visible {
+  outline: 3px solid rgba(244, 91, 11, .2);
+  outline-offset: 2px;
+}
+
+.client-profile-tabs > button.is-active {
+  color: var(--forest-deep);
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(6, 31, 53, .09);
+}
+
+.client-profile-tabs > button.is-active > svg {
+  color: var(--coral);
+}
+
+.client-profile-page [role='tabpanel'] {
+  min-width: 0;
+}
+
+.client-profile-card {
+  min-width: 0;
 }
 
 .client-profile-card > .location-picker {
@@ -1268,6 +1352,15 @@
   .client-dashboard-hero__actions .button,
   .client-page-heading > .button {
     width: 100%;
+  }
+
+  .client-profile-tabs small {
+    display: none;
+  }
+
+  .client-profile-tabs > button {
+    justify-content: center;
+    padding-inline: .5rem;
   }
 
   .client-stat-grid,

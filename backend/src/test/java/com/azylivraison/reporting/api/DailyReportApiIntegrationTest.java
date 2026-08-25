@@ -36,6 +36,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import tools.jackson.databind.ObjectMapper;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -66,6 +68,9 @@ class DailyReportApiIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUpAccounts() {
@@ -162,11 +167,19 @@ class DailyReportApiIntegrationTest {
             assertThat(extracted)
                     .contains("Boutique Rado clôture")
                     .contains("Destinataire Mobile Money")
+                    .contains("Mobile Money")
+                    .contains("Oui")
+                    .contains("Compte rendu Destinataire Mobile Money")
                     .contains("Annulation avant dispatch")
                     .contains("12 000 Ar")
                     .contains("9 000 Ar")
                     .doesNotContain("Maison Soa clôture")
-                    .doesNotContain("Destinataire retour");
+                    .doesNotContain("Destinataire retour")
+                    .doesNotContain("Livreur prévu")
+                    .doesNotContain("Livreur réel")
+                    .doesNotContain("Point de ralliement")
+                    .doesNotContain("Clôture de la journée")
+                    .doesNotContain("Généré le");
         }
 
         MvcResult xlsxResponse = mockMvc.perform(get(
@@ -176,17 +189,20 @@ class DailyReportApiIntegrationTest {
                 .andReturn();
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(
                 xlsxResponse.getResponse().getContentAsByteArray()))) {
-            Sheet packages = workbook.getSheet("Colis");
-            assertThat(packages.getLastRowNum()).isEqualTo(2);
-            Row delivered = rowWithValue(packages, 4, "Destinataire Mobile Money");
-            assertThat(delivered.getCell(3).getStringCellValue()).isEqualTo("Boutique Rado clôture");
-            assertThat(delivered.getCell(10).getStringCellValue()).isEqualTo("Hery");
-            assertThat(delivered.getCell(11).getStringCellValue()).isEqualTo("Fara");
-            assertThat(delivered.getCell(13).getNumericCellValue()).isEqualTo(12_000);
-            assertThat(delivered.getCell(14).getNumericCellValue()).isEqualTo(3_000);
-            assertThat(delivered.getCell(15).getNumericCellValue()).isEqualTo(9_000);
-            assertThat(delivered.getCell(16).getStringCellValue()).isEqualTo("Oui");
-            assertThat(sheetContains(packages, "Maison Soa clôture")).isFalse();
+            assertThat(workbook.getNumberOfSheets()).isEqualTo(1);
+            Sheet report = workbook.getSheet("Rapport client");
+            Row delivered = rowWithValue(report, 0, "Destinataire Mobile Money");
+            assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo("Oui");
+            assertThat(delivered.getCell(5).getStringCellValue())
+                    .isEqualTo("Compte rendu Destinataire Mobile Money");
+            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(12_000);
+            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(delivered.getCell(8).getNumericCellValue()).isEqualTo(9_000);
+            assertThat(sheetContains(report, "Boutique Rado clôture")).isTrue();
+            assertThat(sheetContains(report, "Maison Soa clôture")).isFalse();
+            assertThat(sheetContains(report, "Hery")).isFalse();
+            assertThat(sheetContains(report, "Fara")).isFalse();
+            assertThat(sheetContains(report, "Point de ralliement")).isFalse();
         }
 
         mockMvc.perform(get("/api/admin/delivery-days/{date}/reports/clients/{accountId}.pdf",
@@ -204,24 +220,70 @@ class DailyReportApiIntegrationTest {
         installScenario(true);
         insertArchivedPlanRevision();
 
-        mockMvc.perform(get("/api/client/reports").with(client(CLIENT_ONE_ID)))
+        MvcResult reportList = mockMvc.perform(get("/api/client/reports").with(client(CLIENT_ONE_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].serviceDate").value(SERVICE_DATE.toString()))
-                .andExpect(jsonPath("$[0].revision").value(1))
+                .andExpect(jsonPath("$[0].revision").doesNotExist())
+                .andExpect(jsonPath("$[0].closedAt").doesNotExist())
                 .andExpect(jsonPath("$[0].totals.packageCount").value(2))
                 .andExpect(jsonPath("$[0].totals.amountCollectedAriary").value(12_000))
                 .andExpect(jsonPath("$[0].totals.deliveryFeesAriary").value(3_000))
-                .andExpect(jsonPath("$[0].totals.amountToRemitAriary").value(9_000));
+                .andExpect(jsonPath("$[0].totals.amountToRemitAriary").value(9_000))
+                .andReturn();
 
-        mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE).with(client(CLIENT_ONE_ID)))
+        MvcResult reportDetail = mockMvc.perform(
+                        get("/api/client/reports/{date}", SERVICE_DATE).with(client(CLIENT_ONE_ID)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sourcePlanCount").value(1))
-                .andExpect(jsonPath("$.clients.length()").value(1))
-                .andExpect(jsonPath("$.clients[0].accountId").value(CLIENT_ONE_ID.toString()))
-                .andExpect(jsonPath("$.couriers.length()").value(0))
+                .andExpect(jsonPath("$.serviceDate").value(SERVICE_DATE.toString()))
+                .andExpect(jsonPath("$.clientDisplayName").value("Boutique Rado clôture"))
+                .andExpect(jsonPath("$.dispatchPlanId").doesNotExist())
+                .andExpect(jsonPath("$.hubLabel").doesNotExist())
+                .andExpect(jsonPath("$.sourcePlanCount").doesNotExist())
+                .andExpect(jsonPath("$.generatedAt").doesNotExist())
+                .andExpect(jsonPath("$.closure").doesNotExist())
+                .andExpect(jsonPath("$.clients").doesNotExist())
+                .andExpect(jsonPath("$.couriers").doesNotExist())
                 .andExpect(jsonPath("$.packages.length()").value(2))
-                .andExpect(jsonPath("$.packages[0].ownerAccountId").value(CLIENT_ONE_ID.toString()));
+                .andExpect(jsonPath(
+                        "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].actualAmountCollectedAriary")
+                        .value(org.hamcrest.Matchers.contains(12_000)))
+                .andExpect(jsonPath(
+                        "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].appliedDeliveryFeeAriary")
+                        .value(org.hamcrest.Matchers.contains(3_000)))
+                .andExpect(jsonPath(
+                        "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].amountToRemitAriary")
+                        .value(org.hamcrest.Matchers.contains(9_000)))
+                .andExpect(jsonPath(
+                        "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].mobileMoneyPaid")
+                        .value(org.hamcrest.Matchers.contains(true)))
+                .andExpect(jsonPath(
+                        "$.packages[?(@.recipientName == 'Destinataire Mobile Money')].comment")
+                        .value(org.hamcrest.Matchers.contains("Compte rendu Destinataire Mobile Money")))
+                .andExpect(jsonPath("$.packages[0].ownerAccountId").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].deliveryRequestId").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].sequenceNumber").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].plannedCourierId").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].plannedCourierName").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].actualCourierId").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].actualCourierName").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].expectedAmountToCollectAriary").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].finalizedAt").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].returnedToSenderAt").doesNotExist())
+                .andReturn();
+
+        String listedReportId = objectMapper.readTree(reportList.getResponse().getContentAsByteArray())
+                .get(0).get("reportId").asText();
+        String detailedReportId = objectMapper.readTree(reportDetail.getResponse().getContentAsByteArray())
+                .get("reportId").asText();
+        assertThat(detailedReportId).isEqualTo(listedReportId);
+
+        MvcResult finance = mockMvc.perform(get("/api/client/finance").with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.settlements.length()").value(1))
+                .andReturn();
+        assertThat(objectMapper.readTree(finance.getResponse().getContentAsByteArray())
+                .get("settlements").get(0).get("reportId").asText()).isEqualTo(listedReportId);
 
         mockMvc.perform(get("/api/client/reports/{date}.pdf", SERVICE_DATE)
                         .with(client(CLIENT_ONE_ID)))

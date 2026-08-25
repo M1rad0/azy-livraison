@@ -30,6 +30,8 @@ public class OperationalSettingsRepository {
                        pickup_service_minutes, hub_service_minutes, delivery_service_minutes,
                        early_tolerance_minutes, late_tolerance_minutes,
                        optimization_time_limit_seconds, routing_preset,
+                       default_courier_commission_numerator,
+                       default_courier_commission_denominator,
                        version, created_at, updated_at
                 FROM operational_settings
                 WHERE id = 1
@@ -54,6 +56,8 @@ public class OperationalSettingsRepository {
                     late_tolerance_minutes = ?,
                     optimization_time_limit_seconds = ?,
                     routing_preset = ?,
+                    default_courier_commission_numerator = ?,
+                    default_courier_commission_denominator = ?,
                     version = version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1 AND version = ?
@@ -71,6 +75,8 @@ public class OperationalSettingsRepository {
                 settings.lateToleranceMinutes(),
                 settings.optimizationTimeLimitSeconds(),
                 settings.routingPreset().name(),
+                settings.defaultCourierCommissionNumerator(),
+                settings.defaultCourierCommissionDenominator(),
                 expectedVersion) == 1;
     }
 
@@ -96,6 +102,8 @@ public class OperationalSettingsRepository {
                 resultSet.getInt("late_tolerance_minutes"),
                 resultSet.getInt("optimization_time_limit_seconds"),
                 RoutingPreset.valueOf(resultSet.getString("routing_preset")),
+                resultSet.getInt("default_courier_commission_numerator"),
+                resultSet.getInt("default_courier_commission_denominator"),
                 resultSet.getLong("version"),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant());

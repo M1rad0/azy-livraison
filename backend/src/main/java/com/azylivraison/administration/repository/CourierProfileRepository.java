@@ -23,6 +23,7 @@ public class CourierProfileRepository {
                    payout_operator, payout_account_holder, payout_number,
                    active, vehicle_type,
                    max_weight_kg_override, average_speed_kmh_override,
+                   commission_numerator_override, commission_denominator_override,
                    default_departure_time,
                    departure_location_label, departure_location_query,
                    departure_latitude, departure_longitude,
@@ -57,10 +58,11 @@ public class CourierProfileRepository {
                     payout_operator, payout_account_holder, payout_number,
                     active, vehicle_type,
                     max_weight_kg_override, average_speed_kmh_override,
+                    commission_numerator_override, commission_denominator_override,
                     default_departure_time,
                     departure_location_label, departure_location_query,
                     departure_latitude, departure_longitude, version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 courier.id(),
                 courier.accountId(),
@@ -74,6 +76,8 @@ public class CourierProfileRepository {
                 courier.vehicleType().name(),
                 courier.maxWeightKg(),
                 courier.averageSpeedKmh(),
+                courier.commissionNumerator(),
+                courier.commissionDenominator(),
                 Time.valueOf(courier.defaultDepartureTime()),
                 courier.departureLocation().label(),
                 courier.departureLocation().destinationQuery(),
@@ -95,6 +99,8 @@ public class CourierProfileRepository {
                     vehicle_type = ?,
                     max_weight_kg_override = ?,
                     average_speed_kmh_override = ?,
+                    commission_numerator_override = ?,
+                    commission_denominator_override = ?,
                     default_departure_time = ?,
                     departure_location_label = ?,
                     departure_location_query = ?,
@@ -115,6 +121,8 @@ public class CourierProfileRepository {
                 courier.vehicleType().name(),
                 courier.maxWeightKg(),
                 courier.averageSpeedKmh(),
+                courier.commissionNumerator(),
+                courier.commissionDenominator(),
                 Time.valueOf(courier.defaultDepartureTime()),
                 courier.departureLocation().label(),
                 courier.departureLocation().destinationQuery(),
@@ -146,6 +154,8 @@ public class CourierProfileRepository {
                 VehicleType.valueOf(resultSet.getString("vehicle_type")),
                 resultSet.getBigDecimal("max_weight_kg_override"),
                 resultSet.getBigDecimal("average_speed_kmh_override"),
+                nullableInteger(resultSet, "commission_numerator_override"),
+                nullableInteger(resultSet, "commission_denominator_override"),
                 resultSet.getTime("default_departure_time").toLocalTime(),
                 new ConfirmedLocation(
                         resultSet.getString("departure_location_label"),
@@ -166,5 +176,10 @@ public class CourierProfileRepository {
                 operator,
                 resultSet.getString("payout_account_holder"),
                 resultSet.getString("payout_number"));
+    }
+
+    private Integer nullableInteger(ResultSet resultSet, String column) throws SQLException {
+        int value = resultSet.getInt(column);
+        return resultSet.wasNull() ? null : value;
     }
 }

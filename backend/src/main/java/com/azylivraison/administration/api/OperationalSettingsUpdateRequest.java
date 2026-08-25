@@ -3,6 +3,7 @@ package com.azylivraison.administration.api;
 import java.math.BigDecimal;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -40,6 +41,23 @@ public record OperationalSettingsUpdateRequest(
         Integer optimizationTimeLimitSeconds,
         @NotNull(message = "Le profil routier est obligatoire.")
         RoutingPreset routingPreset,
+        @Positive
+        Integer defaultCourierCommissionNumerator,
+        @Positive
+        Integer defaultCourierCommissionDenominator,
         @PositiveOrZero(message = "La version ne peut pas être négative.")
         Long version) {
+
+    @AssertTrue(message = "La fraction livreur doit être inférieure ou égale à 1.")
+    public boolean isCourierCommissionFractionValid() {
+        return defaultCourierCommissionNumerator == null
+                || defaultCourierCommissionDenominator == null
+                || defaultCourierCommissionNumerator <= defaultCourierCommissionDenominator;
+    }
+
+    @AssertTrue(message = "Renseignez le numérateur et le dénominateur ensemble.")
+    public boolean isCourierCommissionFractionComplete() {
+        return (defaultCourierCommissionNumerator == null)
+                == (defaultCourierCommissionDenominator == null);
+    }
 }

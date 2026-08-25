@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DailyCapacityExceededError,
@@ -8,6 +8,7 @@ import {
   getClientProfile,
   listDeliveryRequests,
   quoteDeliveryPrice,
+  updateClientContactNumbers,
   updateClientProfile,
   type ClientProfile,
   type DeliveryRequestRecord,
@@ -23,6 +24,7 @@ vi.mock('../api/client', async (importOriginal) => {
     createDeliveryRequest: vi.fn(),
     cancelDeliveryPackage: vi.fn(),
     quoteDeliveryPrice: vi.fn(),
+    updateClientContactNumbers: vi.fn(),
     updateClientProfile: vi.fn(),
   }
 })
@@ -53,6 +55,21 @@ const profile: ClientProfile = {
     latitude: -18.9089,
     longitude: 47.5212,
   },
+  contactNumbers: [{
+    id: 'contact-1',
+    label: 'Boutique',
+    number: '034 00 000 00',
+    priority: 1,
+    active: true,
+  }],
+  payoutDestinations: [{
+    id: 'payout-1',
+    operator: 'MVola',
+    accountHolder: 'Boutique Soa',
+    number: '034 11 111 11',
+    priority: 1,
+    active: true,
+  }],
   version: 1,
 }
 
@@ -96,6 +113,7 @@ describe('ClientPortal', () => {
     vi.mocked(getClientProfile).mockResolvedValue(profile)
     vi.mocked(listDeliveryRequests).mockResolvedValue([request])
     vi.mocked(updateClientProfile).mockResolvedValue(profile)
+    vi.mocked(updateClientContactNumbers).mockResolvedValue(profile)
     vi.mocked(quoteDeliveryPrice).mockResolvedValue({
       pricingZoneId: 'zone-centre',
       pricingZoneName: 'Centre-ville',
@@ -122,6 +140,91 @@ describe('ClientPortal', () => {
     expect(screen.getAllByText(/45.*000 Ar/, { selector: 'strong' }).length).toBeGreaterThan(0)
     expect(screen.getByText(/Zone Centre-ville/)).toBeInTheDocument()
     expect(screen.getByText(/dont 3.*000 Ar de livraison/)).toBeInTheDocument()
+  })
+
+  it('sépare les informations du compte et les numéros de versement en sous-onglets', async () => {
+    render(<ClientPortal accessToken="client-token" />)
+
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mon profil' }))
+
+    expect(await screen.findByRole('heading', { name: 'Coordonnées' })).toBeInTheDocument()
+    const informationTab = screen.getByRole('tab', { name: /Informations/ })
+    const payoutsTab = screen.getByRole('tab', { name: /Versements/ })
+    expect(informationTab).toHaveAttribute('aria-selected', 'true')
+    expect(payoutsTab).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('heading', { name: 'Informations du compte' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Retrait par défaut' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Numéros de contact' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Numéros de versement' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(informationTab, { key: 'ArrowRight' })
+
+    expect(payoutsTab).toHaveAttribute('aria-selected', 'true')
+    expect(payoutsTab).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Numéros de versement' })).toBeInTheDocument()
+    expect(screen.getByDisplayValue('MVola')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('034 11 111 11')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Informations du compte' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Numéros de contact' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(payoutsTab, { key: 'ArrowRight' })
+    expect(informationTab).toHaveFocus()
+    fireEvent.keyDown(informationTab, { key: 'ArrowLeft' })
+    expect(payoutsTab).toHaveFocus()
+    fireEvent.keyDown(payoutsTab, { key: 'Home' })
+    expect(informationTab).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Informations du compte' })).toBeInTheDocument()
+  })
+
+  it('actualise le téléphone principal sans effacer un brouillon de versement', async () => {
+    const updatedProfile = {
+      ...profile,
+      phone: '033 22 222 22',
+      contactNumbers: [{ ...profile.contactNumbers![0], number: '033 22 222 22' }],
+      version: 2,
+    }
+    vi.mocked(updateClientContactNumbers).mockResolvedValue(updatedProfile)
+
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mon profil' }))
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Versements/ }))
+    fireEvent.change(screen.getByDisplayValue('MVola'), { target: { value: 'Orange Money' } })
+    fireEvent.click(screen.getByRole('tab', { name: /Informations/ }))
+    const contactsSection = screen.getByRole('heading', { name: 'Numéros de contact' }).closest('section')
+    expect(contactsSection).not.toBeNull()
+    fireEvent.change(within(contactsSection as HTMLElement).getByLabelText('Numéro'), { target: { value: '033 22 222 22' } })
+    fireEvent.click(within(contactsSection as HTMLElement).getByRole('button', { name: 'Enregistrer les contacts' }))
+
+    await waitFor(() => expect(screen.getByLabelText(/Téléphone principal/)).toHaveValue('033 22 222 22'))
+    fireEvent.click(screen.getByRole('tab', { name: /Versements/ }))
+    expect(screen.getByDisplayValue('Orange Money')).toBeInTheDocument()
+  })
+
+  it('verrouille un formulaire de numéros pendant son enregistrement', async () => {
+    let resolveUpdate!: (saved: ClientProfile) => void
+    vi.mocked(updateClientContactNumbers).mockReturnValue(new Promise((resolve) => { resolveUpdate = resolve }))
+
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mon profil' }))
+    const contactsSection = (await screen.findByRole('heading', { name: 'Numéros de contact' })).closest('section') as HTMLElement
+    const numberInput = within(contactsSection).getByLabelText('Numéro')
+    fireEvent.change(numberInput, { target: { value: '033 22 222 22' } })
+    fireEvent.click(within(contactsSection).getByRole('button', { name: 'Enregistrer les contacts' }))
+
+    expect(numberInput).toBeDisabled()
+    expect(within(contactsSection).getByRole('button', { name: 'Ajouter un numéro' })).toBeDisabled()
+    expect(within(contactsSection).getByRole('button', { name: /Supprimer/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Enregistrer les modifications' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('tab', { name: /Versements/ }))
+    expect(screen.getByDisplayValue('MVola')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled()
+
+    resolveUpdate(profile)
+    await waitFor(() => expect(screen.getByDisplayValue('MVola')).not.toBeDisabled())
   })
 
   it('conserve le montant déclaré lorsque Mobile Money est signalé', async () => {
