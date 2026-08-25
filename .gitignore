@@ -1,7 +1,7 @@
 # Configuration locale et secrets
 .env
 .env.*
-!.env.example
+!.env*.example
 
 # Données géographiques, bases et exports locaux
 data/
