@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.dispatch.domain.CreateDispatchCommand;
+import com.azylivraison.dispatch.domain.DispatchCreationResult;
 import com.azylivraison.dispatch.domain.DispatchPlanDetails;
 import com.azylivraison.dispatch.service.CreateDispatchService;
 
@@ -39,16 +40,19 @@ public class AdminDispatchController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody CreateDispatchRequest request,
             @AuthenticationPrincipal Jwt jwt) {
-        DispatchPlanDetails created = service.create(new CreateDispatchCommand(
+        DispatchCreationResult result = service.create(new CreateDispatchCommand(
                 request.serviceDate(),
                 request.courierIds(),
-                request.packageIds(),
                 request.hubOverride() == null ? null : request.hubOverride().toDomain(),
                 idempotencyKey,
                 accountId(jwt)));
+        DispatchPlanDetails details = result.details();
+        if (result.replayed()) {
+            return ResponseEntity.ok(DispatchPlanResponse.from(details));
+        }
         return ResponseEntity
-                .created(URI.create("/api/admin/dispatch-plans/" + created.plan().id()))
-                .body(DispatchPlanResponse.from(created));
+                .created(URI.create("/api/admin/dispatch-plans/" + details.plan().id()))
+                .body(DispatchPlanResponse.from(details));
     }
 
     @GetMapping

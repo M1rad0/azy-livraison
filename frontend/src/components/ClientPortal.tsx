@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
+  Ban,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -16,17 +17,20 @@ import {
   UserRound,
 } from 'lucide-react'
 import {
+  cancelDeliveryPackage,
   getClientProfile,
   listDeliveryRequests,
   updateClientProfile,
   type ClientDefaultPickup,
   type ClientProfile,
   type DeliveryPackageStatus,
+  type DeliveryPackageOutcome,
   type DeliveryRequestRecord,
   type DeliveryRequestStatus,
 } from '../api/client'
 import type { Location } from '../api/csvImports'
 import { ClientDeliveryRequestForm } from './ClientDeliveryRequestForm'
+import { ConfirmDialog } from './ConfirmDialog'
 import { LocationPicker } from './LocationPicker'
 import './ClientPortal.css'
 
@@ -36,12 +40,20 @@ const REQUEST_STATUS: Record<DeliveryRequestStatus, string> = {
   PENDING: 'En attente',
   PARTIALLY_DISPATCHED: 'Partiellement dispatchée',
   DISPATCHED: 'Dispatchée',
+  CANCELLED: 'Annulée',
 }
 
 const PACKAGE_STATUS: Record<DeliveryPackageStatus, string> = {
   PENDING: 'En attente',
   DISPATCHED: 'Dispatché',
   UNASSIGNED: 'À réorganiser',
+}
+
+const PACKAGE_OUTCOME: Record<DeliveryPackageOutcome, string> = {
+  DELIVERED: 'Livré',
+  CANCELLED: 'Annulé',
+  POSTPONED: 'Reporté',
+  RETURN_TO_SENDER: 'À retourner',
 }
 
 function formatDate(date: string): string {
@@ -67,7 +79,13 @@ function asPickerLocation(pickup: ClientDefaultPickup | null): Location {
   }
 }
 
-function RequestHistory({ requests }: { requests: DeliveryRequestRecord[] }) {
+function RequestHistory({
+  requests,
+  onCancel,
+}: {
+  requests: DeliveryRequestRecord[]
+  onCancel: (deliveryPackage: DeliveryRequestRecord['packages'][number]) => void
+}) {
   if (requests.length === 0) {
     return (
       <div className="client-history-empty">
@@ -81,17 +99,19 @@ function RequestHistory({ requests }: { requests: DeliveryRequestRecord[] }) {
   return (
     <div className="client-history-list">
       {requests.map((request) => {
-        const pendingPackages = request.packages.filter((item) => item.status === 'PENDING').length
+        const pendingPackages = request.packages.filter((item) => item.status === 'PENDING' && !item.finalOutcome).length
+        const allCancelled = request.packages.length > 0
+          && request.packages.every((item) => item.finalOutcome === 'CANCELLED')
         const cashToCollect = request.packages.reduce(
-          (sum, item) => sum + (item.mobileMoneyPaid ? 0 : item.amountToCollectAriary),
+          (sum, item) => sum + (item.finalOutcome ? 0 : item.amountToCollectAriary),
           0,
         )
         return (
           <details className="client-history-card" key={request.id}>
             <summary>
-              <span className={`client-status client-status--${request.status.toLowerCase()}`}>
-                {request.status === 'DISPATCHED' ? <CheckCircle2 aria-hidden="true" /> : <Clock3 aria-hidden="true" />}
-                {REQUEST_STATUS[request.status]}
+              <span className={`client-status client-status--${allCancelled ? 'cancelled' : request.status.toLowerCase()}`}>
+                {allCancelled ? <Ban aria-hidden="true" /> : request.status === 'DISPATCHED' ? <CheckCircle2 aria-hidden="true" /> : <Clock3 aria-hidden="true" />}
+                {allCancelled ? 'Annulée' : REQUEST_STATUS[request.status]}
               </span>
               <div className="client-history-card__identity">
                 <strong>{request.pickup.label}</strong>
@@ -108,18 +128,44 @@ function RequestHistory({ requests }: { requests: DeliveryRequestRecord[] }) {
                 <div><small>Point de retrait</small><strong>{request.pickup.label}</strong><span>{request.pickup.query}</span></div>
               </div>
               {request.capacity.warning && (
-                <p className="client-history-warning">Cette demande a été confirmée malgré le dépassement de la capacité habituelle de la journée.</p>
+                <p className="client-history-warning">Demande historique enregistrée avec l’ancienne politique de capacité.</p>
               )}
               <div className="client-history-packages" role="list">
-                {request.packages.map((item) => (
+                {request.packages.map((item) => {
+                  const finalAmount = item.finalOutcome === 'DELIVERED'
+                    ? (item.actualCollectedAriary ?? item.amountToCollectAriary)
+                    : item.finalOutcome === 'RETURN_TO_SENDER'
+                      ? (item.actualCollectedAriary ?? 0)
+                      : item.finalOutcome
+                        ? 0
+                        : item.amountToCollectAriary
+                  const finalFee = item.finalOutcome === 'DELIVERED' || item.finalOutcome === 'RETURN_TO_SENDER'
+                    ? (item.deliveryFeeAriary ?? 0)
+                    : item.finalOutcome
+                      ? 0
+                      : (item.deliveryFeeAriary ?? 0)
+                  return (
                   <article role="listitem" key={item.id}>
                     <span className="client-history-packages__number">{item.sequenceNumber}</span>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
                     <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}</small></div>
-                    <div><strong>{formatAriary(item.amountToCollectAriary)}</strong><small>{item.deliveryFeeAriary != null ? `dont ${formatAriary(item.deliveryFeeAriary)} de livraison · ${item.mobileMoneyPaid ? 'Mobile Money' : 'à encaisser'}` : item.mobileMoneyPaid ? 'Mobile Money' : 'À encaisser'}</small></div>
-                    <span className={`client-package-status client-package-status--${item.status.toLowerCase()}`}>{PACKAGE_STATUS[item.status]}</span>
+                    <div><strong>{formatAriary(finalAmount)}</strong><small>{item.finalOutcome ? `frais facturés ${formatAriary(finalFee)}` : item.deliveryFeeAriary != null ? `dont ${formatAriary(item.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
+                    <div className="client-history-packages__state">
+                      <span className={`client-package-status client-package-status--${(item.finalOutcome ?? item.status).toLowerCase()}`}>
+                        {item.finalOutcome ? PACKAGE_OUTCOME[item.finalOutcome] : PACKAGE_STATUS[item.status]}
+                      </span>
+                      {item.finalOutcome === 'RETURN_TO_SENDER' && (
+                        <small>{item.returnCompletedAt ? 'Remis à l’expéditeur' : 'Retour en attente'}</small>
+                      )}
+                      {item.status === 'PENDING' && !item.finalOutcome && (
+                        <button className="client-cancel-package" type="button" onClick={() => onCancel(item)}>
+                          <Ban aria-hidden="true" />Annuler
+                        </button>
+                      )}
+                    </div>
                   </article>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </details>
@@ -232,6 +278,9 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
   const [successMessage, setSuccessMessage] = useState<string>()
+  const [actionError, setActionError] = useState<string>()
+  const [packageToCancel, setPackageToCancel] = useState<DeliveryRequestRecord['packages'][number]>()
+  const [cancelling, setCancelling] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -260,10 +309,13 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
     const packages = requests.flatMap((request) => request.packages)
     return {
       requestCount: requests.length,
-      pendingCount: packages.filter((item) => item.status === 'PENDING').length,
-      dispatchedCount: packages.filter((item) => item.status === 'DISPATCHED').length,
+      pendingCount: packages.filter((item) => item.status === 'PENDING' && !item.finalOutcome).length,
+      finalizedCount: packages.filter((item) => Boolean(item.finalOutcome)).length,
     }
   }, [requests])
+  const cancellationDate = packageToCancel
+    ? requests.find((request) => request.packages.some((item) => item.id === packageToCancel.id))?.requestedDate
+    : undefined
 
   async function handleCreated(request: DeliveryRequestRecord, savedDefaultPickup: boolean) {
     setRequests((current) => [request, ...current])
@@ -275,6 +327,23 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
       } catch {
         // The request itself is safely persisted; the next page load will refresh the profile.
       }
+    }
+  }
+
+  async function confirmCancellation() {
+    if (!packageToCancel) return
+    setCancelling(true)
+    setActionError(undefined)
+    try {
+      await cancelDeliveryPackage(packageToCancel.id, packageToCancel.version, accessToken)
+      setRequests(await listDeliveryRequests(accessToken))
+      setPackageToCancel(undefined)
+      setSuccessMessage(`Le colis de ${packageToCancel.recipientName} a été annulé.`)
+    } catch (cancelError) {
+      setActionError(cancelError instanceof Error ? cancelError.message : 'Le colis n’a pas pu être annulé.')
+      setPackageToCancel(undefined)
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -317,11 +386,12 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
       </header>
 
       {successMessage && <p className="client-alert client-alert--success" role="status"><CheckCircle2 aria-hidden="true" />{successMessage}</p>}
+      {actionError && <p className="client-alert client-alert--error" role="alert">{actionError}</p>}
 
       <div className="client-stat-grid" aria-label="Résumé de vos livraisons">
         <article><span aria-hidden="true"><History /></span><div><small>Demandes enregistrées</small><strong>{stats.requestCount}</strong></div></article>
         <article><span aria-hidden="true"><Clock3 /></span><div><small>Colis en attente</small><strong>{stats.pendingCount}</strong></div></article>
-        <article><span aria-hidden="true"><PackageCheck /></span><div><small>Colis dispatchés</small><strong>{stats.dispatchedCount}</strong></div></article>
+        <article><span aria-hidden="true"><PackageCheck /></span><div><small>Colis finalisés</small><strong>{stats.finalizedCount}</strong></div></article>
         <article className="client-stat-grid__pickup"><span aria-hidden="true"><MapPin /></span><div><small>Retrait par défaut</small><strong>{profile.defaultPickup?.label ?? 'Non défini'}</strong></div><button type="button" aria-label="Modifier le retrait par défaut" onClick={() => setView('profile')}><PencilLine aria-hidden="true" /></button></article>
       </div>
 
@@ -330,8 +400,21 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
           <div><p className="eyebrow">Suivi</p><h2>Mes demandes de livraison</h2></div>
           <button className="button button--secondary" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Actualiser</button>
         </div>
-        <RequestHistory requests={requests} />
+        <RequestHistory requests={requests} onCancel={setPackageToCancel} />
       </section>
+
+      {packageToCancel && (
+        <ConfirmDialog
+          title="Annuler ce colis ?"
+          confirmLabel="Annuler le colis"
+          busy={cancelling}
+          danger
+          onClose={() => setPackageToCancel(undefined)}
+          onConfirm={() => void confirmCancellation()}
+        >
+          <p>Le colis destiné à <strong>{packageToCancel.recipientName}</strong> sera annulé{cancellationDate ? ` et libérera une place pour le ${formatDate(cancellationDate)}` : ''}. Cette action est réservée aux colis encore en attente.</p>
+        </ConfirmDialog>
+      )}
     </section>
   )
 }

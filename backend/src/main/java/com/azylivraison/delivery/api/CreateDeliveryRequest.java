@@ -15,12 +15,10 @@ public record CreateDeliveryRequest(
         LocalDate requestedDate,
         @NotNull @Valid ConfirmedLocationRequest pickup,
         Boolean saveAsDefaultPickup,
-        Boolean acceptCapacityOverflow,
         @NotEmpty @Size(max = 500) List<@Valid CreateDeliveryPackageRequest> packages) {
 
     public CreateDeliveryRequest {
         saveAsDefaultPickup = Boolean.TRUE.equals(saveAsDefaultPickup);
-        acceptCapacityOverflow = Boolean.TRUE.equals(acceptCapacityOverflow);
         packages = packages == null ? null : List.copyOf(packages);
     }
 }

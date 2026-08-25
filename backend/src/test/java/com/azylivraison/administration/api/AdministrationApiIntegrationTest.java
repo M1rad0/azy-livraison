@@ -110,6 +110,30 @@ class AdministrationApiIntegrationTest {
     }
 
     @Test
+    void rejectsAnOptimizationLimitThatCouldOutliveTheDispatchLease() throws Exception {
+        mockMvc.perform(put("/api/admin/settings").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "dailyPackageLimit": 100,
+                                  "defaultHub": null,
+                                  "defaultPackageWeightKg": 1,
+                                  "pickupServiceMinutes": 10,
+                                  "hubServiceMinutes": 15,
+                                  "deliveryServiceMinutes": 5,
+                                  "earlyToleranceMinutes": 0,
+                                  "lateToleranceMinutes": 30,
+                                  "optimizationTimeLimitSeconds": 1201,
+                                  "routingPreset": "MAIN_ROADS",
+                                  "version": 0
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[?(@.field == 'optimizationTimeLimitSeconds')]").exists());
+    }
+
+    @Test
     void updatesVehiclePresetsAndRejectsStaleVersions() throws Exception {
         mockMvc.perform(put("/api/admin/vehicle-presets/MOTO").with(admin())
                         .contentType(MediaType.APPLICATION_JSON)

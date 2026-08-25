@@ -10,7 +10,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import {
-  CapacityConfirmationRequiredError,
+  DailyCapacityExceededError,
   createDeliveryRequest,
   type ClientDefaultPickup,
   type ClientLocation,
@@ -21,12 +21,16 @@ import { ClientPackageDialog, emptyClientPackage, type ClientPackageDraft } from
 import { LocationPicker } from './LocationPicker'
 
 function tomorrow(): string {
-  const date = new Date()
-  date.setDate(date.getDate() + 1)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Indian/Antananarivo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const year = Number(parts.find((part) => part.type === 'year')?.value)
+  const month = Number(parts.find((part) => part.type === 'month')?.value)
+  const day = Number(parts.find((part) => part.type === 'day')?.value)
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
 }
 
 function nextLocalId(): string {
@@ -78,7 +82,7 @@ export function ClientDeliveryRequestForm({
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string>()
-  const [capacityWarning, setCapacityWarning] = useState<CapacityConfirmationRequiredError>()
+  const [capacityError, setCapacityError] = useState<DailyCapacityExceededError>()
 
   const amountTotal = useMemo(() => packages.reduce(
     (sum, item) => sum + (Number.isFinite(Number(item.amountToCollectAriary)) ? Number(item.amountToCollectAriary) : 0),
@@ -100,16 +104,16 @@ export function ClientDeliveryRequestForm({
       return current.map((item, index) => index === existingIndex ? value : item)
     })
     setEditingIndex(null)
-    setCapacityWarning(undefined)
+    setCapacityError(undefined)
     setError(undefined)
   }
 
   function removePackage(index: number) {
     setPackages((current) => current.filter((_, itemIndex) => itemIndex !== index))
-    setCapacityWarning(undefined)
+    setCapacityError(undefined)
   }
 
-  async function submit(acceptCapacityOverflow: boolean) {
+  async function submit() {
     setError(undefined)
     if (!requestedDate) {
       setError('Choisissez la date souhaitée pour la livraison.')
@@ -130,7 +134,6 @@ export function ClientDeliveryRequestForm({
         requestedDate,
         pickup: apiLocation(pickup, 'Point de retrait'),
         saveAsDefaultPickup,
-        acceptCapacityOverflow,
         packages: packages.map((item, index) => ({
           recipientName: item.recipientName,
           faritra: item.faritra,
@@ -143,8 +146,8 @@ export function ClientDeliveryRequestForm({
       }, accessToken)
       onCreated(created, saveAsDefaultPickup)
     } catch (submitError) {
-      if (submitError instanceof CapacityConfirmationRequiredError) {
-        setCapacityWarning(submitError)
+      if (submitError instanceof DailyCapacityExceededError) {
+        setCapacityError(submitError)
       } else {
         setError(submitError instanceof Error ? submitError.message : 'La demande n’a pas pu être enregistrée.')
       }
@@ -184,7 +187,7 @@ export function ClientDeliveryRequestForm({
                   min={tomorrow()}
                   onChange={(event) => {
                     setRequestedDate(event.target.value)
-                    setCapacityWarning(undefined)
+                    setCapacityError(undefined)
                   }}
                 />
               </label>
@@ -213,7 +216,7 @@ export function ClientDeliveryRequestForm({
                     ...location,
                     label: pickup.label?.trim() || location.label || location.destinationQuery || 'Point de retrait',
                   })
-                  setCapacityWarning(undefined)
+                  setCapacityError(undefined)
                 }}
               />
             </div>
@@ -253,7 +256,7 @@ export function ClientDeliveryRequestForm({
                     <div className="client-package-row__index">{index + 1}</div>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
                     <div><strong>{item.destination.label || item.destination.destinationQuery}</strong><small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Tarif à recalculer'}{item.faritra ? ' · Faritra' : ''}</small></div>
-                    <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · ${item.mobileMoneyPaid ? 'payé par Mobile Money' : 'à encaisser'}` : item.mobileMoneyPaid ? 'Payé par Mobile Money' : 'À encaisser'}</small></div>
+                    <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-package-row__tags">
                       {item.weightKg && <span>{item.weightKg} kg</span>}
                       {item.faritra && <span>Faritra</span>}
@@ -282,25 +285,20 @@ export function ClientDeliveryRequestForm({
           {locationConfirmed(pickup) && packages.length > 0 && (
             <p className="client-ready"><CheckCircle2 aria-hidden="true" />La demande est prête à être envoyée.</p>
           )}
-          {capacityWarning && (
+          {capacityError && (
             <div className="client-capacity-warning" role="alert">
               <AlertTriangle aria-hidden="true" />
               <div>
-                <strong>Capacité habituelle dépassée</strong>
-                <p>{capacityWarning.message}</p>
-                <small>{capacityWarning.current} colis déjà prévus + {capacityWarning.requested} demandés = {capacityWarning.projected}, pour une capacité de {capacityWarning.limit}.</small>
+                <strong>Capacité de la journée dépassée</strong>
+                <p>Retirez {capacityError.excess} colis de cette demande pour pouvoir l’enregistrer.</p>
+                  <small>{capacityError.current} colis déjà prévus · {capacityError.remaining} place{capacityError.remaining === 1 ? '' : 's'} restante{capacityError.remaining === 1 ? '' : 's'} · limite de {capacityError.limit}.</small>
               </div>
-              <button className="button" type="button" disabled={submitting} onClick={() => void submit(true)}>
-                <Send aria-hidden="true" />{submitting ? 'Confirmation…' : 'Confirmer quand même'}
-              </button>
             </div>
           )}
           {error && <p className="client-alert client-alert--error" role="alert">{error}</p>}
-          {!capacityWarning && (
-            <button className="button button--wide" type="button" disabled={submitting} onClick={() => void submit(false)}>
-              <Send aria-hidden="true" />{submitting ? 'Enregistrement…' : 'Envoyer la demande'}
-            </button>
-          )}
+          <button className="button button--wide" type="button" disabled={submitting || Boolean(capacityError)} onClick={() => void submit()}>
+            <Send aria-hidden="true" />{submitting ? 'Enregistrement…' : 'Envoyer la demande'}
+          </button>
           <small className="client-submit-card__note">La demande sera enregistrée en attente. L’équipe AZY confirmera ensuite son traitement.</small>
         </aside>
       </div>

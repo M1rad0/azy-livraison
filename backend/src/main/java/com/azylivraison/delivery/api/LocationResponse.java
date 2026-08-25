@@ -8,7 +8,7 @@ public record LocationResponse(
         double latitude,
         double longitude) {
 
-    static LocationResponse from(ConfirmedLocation location) {
+    public static LocationResponse from(ConfirmedLocation location) {
         return new LocationResponse(location.label(), location.query(), location.latitude(), location.longitude());
     }
 }

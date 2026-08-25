@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  CapacityConfirmationRequiredError,
+  DailyCapacityExceededError,
   ClientApiError,
+  cancelDeliveryPackage,
   createDeliveryRequest,
   getClientProfile,
   listDeliveryRequests,
@@ -20,6 +21,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getClientProfile: vi.fn(),
     listDeliveryRequests: vi.fn(),
     createDeliveryRequest: vi.fn(),
+    cancelDeliveryPackage: vi.fn(),
     quoteDeliveryPrice: vi.fn(),
     updateClientProfile: vi.fn(),
   }
@@ -122,7 +124,7 @@ describe('ClientPortal', () => {
     expect(screen.getByText(/dont 3.*000 Ar de livraison/)).toBeInTheDocument()
   })
 
-  it('excludes Mobile Money payments from the cash to collect', async () => {
+  it('conserve le montant déclaré lorsque Mobile Money est signalé', async () => {
     vi.mocked(listDeliveryRequests).mockResolvedValue([{
       ...request,
       packages: [{ ...request.packages[0], mobileMoneyPaid: true }],
@@ -131,14 +133,13 @@ describe('ClientPortal', () => {
     render(<ClientPortal accessToken="client-token" />)
 
     expect(await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })).toBeInTheDocument()
-    expect(screen.getByText('0 Ar', { selector: '.client-history-card__metric--amount strong' })).toBeInTheDocument()
+    expect(screen.getByText(/45.*000 Ar/, { selector: '.client-history-card__metric--amount strong' })).toBeInTheDocument()
   })
 
-  it('asks for explicit confirmation when the daily capacity is exceeded', async () => {
+  it('bloque strictement une demande qui dépasse la capacité et indique combien retirer', async () => {
     vi.mocked(listDeliveryRequests).mockResolvedValue([])
     vi.mocked(createDeliveryRequest)
-      .mockRejectedValueOnce(new CapacityConfirmationRequiredError('Cette livraison pourrait ne pas être réalisée demain.', 1, 1, 1, 2))
-      .mockResolvedValueOnce(request)
+      .mockRejectedValueOnce(new DailyCapacityExceededError('Capacité dépassée.', '2026-08-24', 1, 1, 1, 2, 0, 1))
 
     render(<ClientPortal accessToken="client-token" />)
     await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
@@ -153,14 +154,30 @@ describe('ClientPortal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le colis' }))
     fireEvent.click(screen.getByRole('button', { name: 'Envoyer la demande' }))
 
-    expect(await screen.findByText('Capacité habituelle dépassée')).toBeInTheDocument()
-    expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].acceptCapacityOverflow).toBe(false)
+    expect(await screen.findByText('Capacité de la journée dépassée')).toBeInTheDocument()
+    expect(screen.getByText(/Retirez 1 colis/)).toBeInTheDocument()
     expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].packages[0]).not.toHaveProperty('pricingQuote')
     expect(vi.mocked(createDeliveryRequest).mock.calls[0][0].packages[0]).not.toHaveProperty('deliveryFeeAriary')
+    expect(screen.queryByRole('button', { name: 'Confirmer quand même' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled()
+    expect(createDeliveryRequest).toHaveBeenCalledTimes(1)
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmer quand même' }))
-    await waitFor(() => expect(createDeliveryRequest).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(createDeliveryRequest).mock.calls[1][0].acceptCapacityOverflow).toBe(true)
+  it('permet au client d’annuler un colis encore en attente', async () => {
+    vi.mocked(cancelDeliveryPackage).mockResolvedValue(undefined)
+    vi.mocked(listDeliveryRequests)
+      .mockResolvedValueOnce([request])
+      .mockResolvedValueOnce([{ ...request, packages: [{ ...request.packages[0], finalOutcome: 'CANCELLED' }] }])
+
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByText('Boutique Analakely', { selector: '.client-history-card__identity strong' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler le colis' }))
+
+    await waitFor(() => expect(cancelDeliveryPackage).toHaveBeenCalledWith('package-1', 0, 'client-token'))
+    expect(await screen.findByText('Annulé')).toBeInTheDocument()
+    expect(screen.getByText('Annulée')).toBeInTheDocument()
   })
 
   it('blocks a package whose destination is outside the configured coverage', async () => {

@@ -59,7 +59,11 @@ function requestFixture({
   }
 }
 
-function portalFetchMock(globalRequests = [requestFixture()], dayRequests: ReturnType<typeof requestFixture>[] = []) {
+function portalFetchMock(
+  globalRequests = [requestFixture()],
+  dayRequests: ReturnType<typeof requestFixture>[] = [],
+  dispatchHistory: unknown[] = [],
+) {
   return vi.fn().mockImplementation((input: string) => {
     if (input.startsWith('/api/admin/delivery-requests')) return Promise.resolve(jsonResponse(globalRequests))
     if (input.startsWith('/api/admin/queue?')) {
@@ -78,7 +82,7 @@ function portalFetchMock(globalRequests = [requestFixture()], dayRequests: Retur
         requests: dayRequests,
       }))
     }
-    if (input.startsWith('/api/admin/dispatch-plans')) return Promise.resolve(jsonResponse([]))
+    if (input.startsWith('/api/admin/dispatch-plans')) return Promise.resolve(jsonResponse(dispatchHistory))
     if (input === '/api/admin/settings/pricing') return Promise.resolve(jsonResponse(pricingPolicy))
     if (input === '/api/admin/couriers') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/vehicle-presets') return Promise.resolve(jsonResponse([]))
@@ -244,34 +248,54 @@ describe('AdminPortal', () => {
       .toHaveLength(1)
   })
 
-  it('ne remplace jamais une sélection future par toute la file du jour', async () => {
-    const futureRequest = requestFixture({
-      requestId: 'request-future',
-      packageId: 'package-future',
-      requestedDate: '2099-12-31',
-      recipientName: 'Colis futur',
-    })
+  it('prépare automatiquement toute la file admissible sans sélection manuelle', async () => {
     const todayRequest = requestFixture({
       requestId: 'request-today',
       packageId: 'package-today',
       recipientName: 'Colis du jour',
     })
-    const fetchMock = portalFetchMock([futureRequest], [todayRequest])
+    const fetchMock = portalFetchMock([todayRequest], [todayRequest])
     vi.stubGlobal('fetch', fetchMock)
 
     render(<AdminPortal accessToken="admin-token" />)
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Sélectionner le colis de Colis futur' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Préparer le dispatch' }))
+    await screen.findByText('Colis du jour')
+    expect(screen.queryByRole('checkbox', { name: /Sélectionner le colis/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Préparer la journée' }))
 
-    expect(await screen.findByText('1 colis disponible')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Sélection 0\/1/ })).toHaveClass('is-active')
-    expect(screen.getByRole('button', { name: /Toute la file 1/ })).not.toHaveClass('is-active')
-    expect(screen.getByText(/1 colis sélectionné n’est pas encore éligible/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Dispatcher 0 colis' })).toBeDisabled()
-    expect(fetchMock.mock.calls.some(([input, init]) => (
-      input === '/api/admin/dispatch-plans' && (init as RequestInit | undefined)?.method === 'POST'
-    ))).toBe(false)
+    expect(await screen.findByText(/1 colis inclus selon leur ordre d’arrivée/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Sélection/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dispatcher automatiquement 1 colis' })).toBeEnabled()
+  })
+
+  it('permet de relancer la journée après un dispatch échoué', async () => {
+    const todayRequest = requestFixture({
+      requestId: 'request-retry',
+      packageId: 'package-retry',
+      recipientName: 'Colis à relancer',
+    })
+    const fetchMock = portalFetchMock([todayRequest], [todayRequest], [{
+      id: 'plan-failed',
+      serviceDate: TEST_TODAY,
+      status: 'FAILED',
+      strategy: 'VIA_HUB',
+      hub: { label: 'Siège', latitude: -18.9, longitude: 47.52 },
+      selectedPackageCount: 1,
+      assignedPackageCount: 0,
+      unassignedPackageCount: 0,
+      selectedCourierCount: 1,
+      usedCourierCount: 0,
+      failureMessage: 'Calcul interrompu',
+      createdAt: '2026-08-23T05:00:00Z',
+    }])
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AdminPortal accessToken="admin-token" />)
+
+    await screen.findByText('Colis à relancer')
+    fireEvent.click(screen.getByRole('button', { name: 'Préparer la journée' }))
+
+    expect(await screen.findByRole('button', { name: 'Dispatcher automatiquement 1 colis' })).toBeEnabled()
   })
 
   it('permet de modifier les rayons et prix dans un onglet dédié', async () => {
@@ -368,7 +392,7 @@ describe('AdminPortal', () => {
       ],
     } as unknown as import('../../api/admin').AdminQueue
 
-    expect(collectionMatrixUsage(queue, new Set(['package-1', 'package-2']), 98)).toEqual({
+    expect(collectionMatrixUsage(queue, 98)).toEqual({
       pickupCount: 2,
       pointCount: 101,
     })

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  cancelDeliveryPackage,
   createDeliveryRequest,
   getClientProfile,
   quoteDeliveryPrice,
@@ -42,17 +43,20 @@ describe('client API', () => {
     }))
   })
 
-  it('exposes the daily-capacity confirmation data from a 409 response', async () => {
+  it('expose le dépassement strict de capacité depuis une réponse 409', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 409,
       json: async () => ({
-        code: 'DAILY_CAPACITY_CONFIRMATION_REQUIRED',
-        message: 'La capacité habituelle sera dépassée.',
+        code: 'DAILY_CAPACITY_EXCEEDED',
+        message: 'La capacité maximale sera dépassée.',
+        requestedDate: '2026-08-23',
         limit: 10,
         current: 9,
         requested: 3,
         projected: 12,
+        remaining: 1,
+        excess: 2,
       }),
     }))
 
@@ -60,7 +64,6 @@ describe('client API', () => {
       requestedDate: '2026-08-23',
       pickup: { label: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
       saveAsDefaultPickup: false,
-      acceptCapacityOverflow: false,
       packages: [{
         recipientName: 'Rakoto',
         faritra: false,
@@ -72,13 +75,29 @@ describe('client API', () => {
     }, 'token-client')
 
     await expect(promise).rejects.toMatchObject({
-      code: 'DAILY_CAPACITY_CONFIRMATION_REQUIRED',
+      code: 'DAILY_CAPACITY_EXCEEDED',
       status: 409,
+      requestedDate: '2026-08-23',
       limit: 10,
       current: 9,
       requested: 3,
       projected: 12,
+      remaining: 1,
+      excess: 2,
     })
+  })
+
+  it('annule un colis en attente avec sa version', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204, json: async () => undefined })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await cancelDeliveryPackage('package-1', 4, 'token-client')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/client/delivery-packages/package-1/cancel', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ version: 4 }),
+      headers: expect.objectContaining({ Authorization: 'Bearer token-client' }),
+    }))
   })
 
   it('asks the backend for the delivery price of a confirmed destination', async () => {

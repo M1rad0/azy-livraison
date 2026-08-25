@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : transition vers la version multi-utilisateur persistante.** Les demandes des clients, les colis, les livreurs, les réglages et les dispatchs sont désormais historisés dans PostgreSQL. Le parcours opérationnel du front-office utilise exclusivement le scénario `VIA_HUB` : collecte, rendez-vous au siège, redistribution, puis livraison. Les anciens outils par fichiers et la comparaison direct/siège sont conservés pour l'historique et l'administration, mais ne constituent plus le parcours client.
+> **État du projet : workflow journalier multi-utilisateur persistant.** Les demandes, colis, livreurs, réglages, dispatchs, comptes rendus et clôtures sont historisés dans PostgreSQL. Le parcours opérationnel utilise exclusivement le scénario `VIA_HUB` : collecte, rendez-vous au siège, redistribution, puis livraison. Les anciens outils par fichiers et la comparaison direct/siège restent disponibles dans l'historique Git, mais ne constituent plus le parcours principal.
 
 ## Objectif
 
@@ -52,11 +52,11 @@ La configuration initiale utilise le centre Antsahavola–Antaninarenina et les 
 
 Le tarif est calculé côté backend au moment de l'enregistrement et copié dans un snapshot du colis. Un changement ultérieur des zones ne réécrit donc pas l'historique. Les frais sont affichés comme la part livraison du total déclaré, sans modifier automatiquement `amountToCollectAriary`. L'indicateur `faritra` et le type de véhicule restent indépendants de la tarification dans cette première version.
 
-### Capacité journalière et confirmation
+### Capacité journalière stricte
 
 La limite journalière correspond actuellement à un **nombre de colis**, pas à un nombre de demandes ni à un poids total. Lors de la création, le backend compare les colis déjà en attente pour la date, la limite configurée et les nouveaux colis.
 
-Si la projection dépasse la limite, le premier envoi répond en HTTP `409` avec le code `DAILY_CAPACITY_CONFIRMATION_REQUIRED` et les valeurs `limit`, `current`, `requested` et `projected`. Le client peut alors confirmer explicitement en renvoyant la demande avec `acceptCapacityOverflow: true`. La demande est enregistrée avec l'avertissement et son acceptation afin de conserver la décision dans l'historique ; elle n'est pas rejetée silencieusement.
+Si la projection dépasse la limite, la demande complète est refusée en HTTP `409` avec le code `DAILY_CAPACITY_EXCEEDED`. La réponse contient `limit`, `current`, `requested`, `projected`, `remaining` et surtout `excess`, afin d'indiquer exactement combien de colis retirer. Il n'existe aucun contournement utilisateur de cette limite. Un colis annulé libère sa place ; un colis reporté et transmis au lendemain consomme une place dans le quota du lendemain.
 
 ### Parcours administrateur
 
@@ -68,30 +68,47 @@ L'administrateur peut :
 - modifier les préréglages `MOTO` et `BICYCLE` ;
 - modifier le point central, les rayons et les prix des zones de livraison ;
 - régler la limite journalière, le poids par défaut, le siège par défaut, les durées de service, les tolérances horaires, le délai OR-Tools et le profil routier ;
-- sélectionner les colis et les livreurs d'une journée, éventuellement remplacer le siège, puis générer un dispatch persistant.
+- sélectionner les livreurs actifs d'une journée, éventuellement remplacer le siège, puis générer automatiquement un dispatch avec tous les colis admis pour cette date.
 
 Un dispatch public/opérationnel ne lance que la stratégie `VIA_HUB`. Tous les colis retenus passent par le point de ralliement : les livreurs partent de leurs lieux et heures respectifs, collectent les retraits qui leur sont affectés, attendent le dernier participant au siège, redistribuent les colis, puis livrent. Une seule action administrateur produit un résultat final historisé ; les recalculs internes bornés de l'optimiseur restent un détail d'implémentation.
 
-Le dispatch conserve des snapshots des entrées et des règles, les livreurs sélectionnés, leurs rôles collecte/distribution, les arrêts, les transferts de colis, les heures estimées, les distances, les résultats non affectés et les métriques globales. `Idempotency-Key` empêche la création accidentelle de deux plans identiques lors d'une répétition réseau.
+Un seul plan opérationnel peut être généré par date. Dès le début du calcul, cette date n'accepte plus de nouvelle demande ni d'annulation. Le dispatch conserve des snapshots des entrées et des règles, les livreurs sélectionnés, leurs rôles collecte/distribution, les arrêts, les transferts de colis, les heures estimées, les distances, les résultats non affectés et les métriques globales. `Idempotency-Key` protège contre les répétitions réseau ; un rejeu renvoie le plan existant en HTTP `200`, tandis qu'une création réelle renvoie `201`. Le temps OR-Tools est configurable de 1 à 1 200 secondes afin de conserver une marge avant la libération automatique d'un calcul interrompu depuis plus de trente minutes.
+
+### Compte rendu, clôture et rapports
+
+Après le dispatch, l'administrateur attribue à chaque colis une issue finale :
+
+- `DELIVERED` : livré ; le montant réellement récupéré vaut par défaut le montant prévu mais reste modifiable ;
+- `CANCELLED` : annulé avant dispatch, sans frais de livraison ;
+- `POSTPONED` : reporté, sans frais sur la journée d'origine ; il doit être transmis au lendemain avec un nouveau retrait avant la clôture ;
+- `RETURN_TO_SENDER` : livraison non aboutie à retourner à l'expéditeur, avec frais de livraison et suivi séparé du retour physique.
+
+Le livreur prévu par l'optimiseur et le livreur réellement intervenu sont deux données distinctes. Lors du compte rendu, l'affectation prévue est proposée par défaut mais l'administrateur peut choisir n'importe quel profil livreur, même inactif ou absent du dispatch. Ce choix est obligatoire pour `DELIVERED` et `RETURN_TO_SENDER`, les deux issues facturées, puis son identité est conservée sous forme de snapshot pour les futurs calculs de rémunération. Les anciens comptes rendus ne sont pas attribués automatiquement : sans preuve d'exécution, ils restent explicitement non renseignés.
+
+L'indicateur Mobile Money est purement informatif : il ne met jamais un montant à zéro et n'intervient dans aucun total financier. Le montant à reverser est toujours `montant réellement récupéré - frais de livraison` et peut donc être négatif pour un retour.
+
+La clôture manuelle n'est possible que lorsque tous les colis ont une issue finale, que chaque issue facturée possède son livreur réel et que tous les reports ont été programmés au lendemain. Une journée clôturée peut être rouverte avec une raison auditée. Une fois clôturée, elle fournit un rapport général et un rapport par compte client, chacun en PDF et en véritable fichier Excel `.xlsx`. Les exports distinguent le livreur prévu du livreur réel et regroupent les synthèses par livreur réel. Le retour physique d'un colis peut encore être confirmé après la clôture : cette action est auditée, ne change aucun montant financier et apparaît dans les exports régénérés ensuite.
 
 ### Statuts persistés
 
 | Objet | Statuts |
 |---|---|
-| Demande | `PENDING`, `PARTIALLY_DISPATCHED`, `DISPATCHED` |
+| Demande | `PENDING`, `PARTIALLY_DISPATCHED`, `DISPATCHED`, `CANCELLED` |
 | Colis | `PENDING`, `DISPATCHED`, `UNASSIGNED` |
 | Dispatch | `GENERATING`, `READY`, `READY_WITH_WARNINGS`, `FAILED` |
+| Issue métier du colis | `DELIVERED`, `CANCELLED`, `POSTPONED`, `RETURN_TO_SENDER` |
+| Journée | `OPEN`, `DISPATCHING`, `DISPATCHED`, `CLOSED` |
 
-Seuls les colis réellement affectés à une livraison passent à `DISPATCHED`. Dans le dispatch courant, un colis que le solveur ne peut pas affecter conserve son issue `UNASSIGNED` dans le résultat mais reste `PENDING` dans la file afin de pouvoir être repris ; sa raison est conservée. Le statut de la demande est recalculé à partir de l'ensemble de ses colis.
+Les statuts de colis et de demande sont des statuts techniques historiques ; l'issue métier finale fait foi dans l'interface et les rapports. `CANCELLED` est exposé comme statut dérivé lorsqu'une demande ne contient plus que des colis annulés. Un colis non affecté par l'optimiseur reste inclus dans le plan du jour avec sa raison et doit recevoir une issue finale, généralement un report explicite. Le statut de la demande est recalculé à partir de l'ensemble de ses colis.
 
 ### Limite de routage actuelle
 
-OSRM accepte par défaut au maximum `100` points par matrice (`OSRM_MAX_TABLE_SIZE`). Le dispatch contrôle séparément :
+L'instance OSRM locale est configurée par défaut pour `250` points par matrice (`OSRM_MAX_TABLE_SIZE`). Le dispatch contrôle séparément :
 
 - collecte : départs des livreurs sélectionnés + retraits distincts + siège ;
 - distribution : siège + destinations des colis.
 
-Avec le réglage par défaut, une distribution est donc limitée à `99` colis et la collecte peut imposer une limite inférieure si elle contient beaucoup de livreurs et de retraits distincts. Le backend refuse clairement un dispatch trop grand au lieu de tronquer la sélection.
+Ce seuil couvre la limite métier actuelle de `100` colis, y compris un grand nombre de retraits et de livreurs. Si la configuration est réduite, le backend refuse clairement le calcul et demande d'augmenter la capacité du service de routage au lieu de tronquer silencieusement le plan.
 
 ## Outils historiques de préparation et de comparaison
 
@@ -583,11 +600,13 @@ L'application propose une inscription publique réservée aux clients et une aut
 |---|---|---|
 | `GET` | `/api/client/delivery-requests` | Lister les demandes du client connecté |
 | `GET` | `/api/client/delivery-requests/{id}` | Lire une de ses demandes |
-| `POST` | `/api/client/delivery-requests` | Créer une demande persistante ; peut exiger la confirmation du dépassement |
+| `POST` | `/api/client/delivery-requests` | Créer une demande persistante ; refus atomique si le quota est dépassé |
+| `POST` | `/api/client/delivery-packages/{id}/cancel` | Annuler l'un de ses colis encore en attente |
 | `GET` | `/api/admin/delivery-requests?date=&status=` | Filtrer toutes les demandes |
-| `GET` | `/api/admin/queue?date=YYYY-MM-DD` | Lire le backlog encore en attente jusqu'à la date, avec les compteurs opérationnels |
+| `GET` | `/api/admin/queue?date=YYYY-MM-DD` | Lire la file encore en attente de cette date, avec les compteurs opérationnels |
+| `POST` | `/api/admin/delivery-packages/{id}/cancel` | Annuler un colis encore en attente |
 
-La file inclut aussi les colis demandés pour les jours précédents qui n'ont pas encore été dispatchés. La date initialement demandée reste visible dans l'interface afin de distinguer clairement ces retards des demandes du jour.
+La file opérationnelle est strictement limitée à la date choisie. Les demandes d'autres dates restent visibles dans la liste globale et ne sont jamais aspirées silencieusement : le passage au lendemain se fait uniquement avec l'action explicite de report.
 
 ### Administration et dispatch
 
@@ -602,7 +621,20 @@ La file inclut aussi les colis demandés pour les jours précédents qui n'ont p
 | `GET` | `/api/admin/dispatch-plans?date=` | Lister les dispatchs, éventuellement pour une date |
 | `GET` | `/api/admin/dispatch-plans/{id}` | Relire le résultat détaillé d'un dispatch |
 
-L'absence de `packageIds` lors de la création d'un dispatch sélectionne les colis encore en attente pour la date. Un `hubOverride` peut remplacer le siège par défaut pour cette exécution. Les appels OSRM et OR-Tools sont effectués hors de la transaction longue ; des réservations empêchent qu'un autre dispatch utilise simultanément les mêmes colis ou la même journée.
+La création d'un dispatch ne reçoit aucun `packageIds` : elle sélectionne obligatoirement tous les colis encore en attente pour la date. Un `hubOverride` peut remplacer le siège par défaut pour cette exécution. Les appels OSRM et OR-Tools sont effectués hors de la transaction longue ; des réservations empêchent qu'un autre dispatch utilise simultanément les mêmes colis ou la même journée.
+
+### Compte rendu journalier et rapports
+
+| Méthode | Route | Usage |
+|---|---|---|
+| `GET` | `/api/admin/delivery-days/{date}` | Lire l'état opérationnel, les colis et les totaux de la journée |
+| `PUT` | `/api/admin/delivery-days/{date}/packages/{id}/outcome` | Enregistrer ou corriger l'issue finale, le montant et le `actualCourierId` d'un colis |
+| `POST` | `/api/admin/delivery-days/{date}/packages/{id}/carry-forward` | Créer le colis lié du lendemain avec son nouveau retrait |
+| `POST` | `/api/admin/delivery-days/{date}/packages/{id}/return-completed` | Confirmer le retour physique à l'expéditeur |
+| `POST` | `/api/admin/delivery-days/{date}/close` | Clôturer après validation de tous les colis et reports |
+| `POST` | `/api/admin/delivery-days/{date}/reopen` | Rouvrir avec une raison auditée |
+| `GET` | `/api/admin/delivery-days/{date}/reports/general.{pdf,xlsx}` | Télécharger le rapport général clôturé |
+| `GET` | `/api/admin/delivery-days/{date}/reports/clients/{accountId}.{pdf,xlsx}` | Télécharger le rapport clôturé d'un compte client |
 
 ### Géographie et outils historiques/admin
 
@@ -649,6 +681,9 @@ Flyway applique automatiquement les migrations au démarrage, dans l'ordre :
 | `V5__create_operational_settings_and_couriers.sql` | réglages globaux, préréglages de véhicules et profils livreurs avec départ habituel |
 | `V6__create_delivery_requests.sql` | demandes, colis, snapshots de dépassement, statuts et journal d'événements |
 | `V7__create_persisted_dispatch_plans.sql` | dispatchs `VIA_HUB`, réservations, snapshots, livreurs retenus, résultats colis et arrêts |
+| `V8__create_delivery_pricing_zones.sql` | point central, zones tarifaires et snapshots de prix des colis |
+| `V9__create_daily_delivery_workflow.sql` | issues finales, reports liés, journées, clôtures, audit et snapshots clients |
+| `V10__record_actual_delivery_courier.sql` | livreur réellement intervenu et snapshot d'identité distinct de l'affectation planifiée |
 
 Ne renommez et ne modifiez pas une migration déjà appliquée sur une base partagée : tout changement ultérieur doit utiliser une nouvelle version Flyway. Le passage de `V3` à `V4` attribue le rôle `ADMIN` aux comptes déjà présents afin de préserver l'accès au back-office.
 
@@ -841,14 +876,18 @@ La version multi-utilisateur est considérée conforme lorsque les scénarios su
 2. deux clients ne peuvent jamais consulter leurs demandes respectives ;
 3. le retrait par défaut est persisté, modifiable et réutilisable dans une nouvelle demande ;
 4. une demande conserve tous les champs obligatoires du colis et applique le poids administrateur lorsque le poids est omis ;
-5. un dépassement journalier renvoie d'abord `DAILY_CAPACITY_CONFIRMATION_REQUIRED`, puis est enregistré uniquement après confirmation explicite ;
+5. un dépassement journalier refuse toute la demande avec `DAILY_CAPACITY_EXCEEDED` et le nombre exact de colis en excès ;
 6. les modifications de réglages et de profils livreurs utilisent leur version afin d'éviter les écrasements concurrents ;
 7. un dispatch concurrent ne peut pas réserver deux fois la même journée ou le même colis ;
 8. le dispatch opérationnel utilise toujours `VIA_HUB` et tient compte des départs réels, des retraits, du siège et des capacités ;
-9. seuls les colis réellement affectés passent à `DISPATCHED`, tandis que les non-affectés restent traçables ;
+9. tous les colis admis de la date entrent dans l'unique plan, tandis que les non-affectés restent traçables et finalisables ;
 10. un dispatch terminé peut être relu avec ses snapshots, ses arrêts, ses affectations et ses métriques ;
 11. l'expiration, le renouvellement et la révocation des jetons fonctionnent ;
-12. la limite de matrice refuse proprement une sélection trop grande.
+12. une date dispatchée refuse de nouvelles demandes et toute seconde génération de plan ;
+13. un report crée un colis lié au lendemain, consomme son quota et conditionne la clôture ;
+14. les frais et montants à reverser ignorent l'indicateur Mobile Money et autorisent un solde négatif ;
+15. les rapports PDF/XLSX ne sont disponibles qu'après clôture et isolent correctement chaque compte client ;
+16. la limite de matrice refuse proprement un plan trop grand.
 
 Les anciens scénarios JSON/CSV, l'optimisation directe et la comparaison direct/siège restent couverts par leurs tests de non-régression.
 
@@ -906,18 +945,20 @@ Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-cl
 
 - [x] rôles `CLIENT`, `COURIER` et `ADMIN` dans les comptes et JWT ;
 - [x] inscription client, profil et retrait par défaut ;
-- [x] demandes, colis, dépassements confirmés, statuts et événements persistants ;
+- [x] demandes, colis, quota journalier strict, statuts et événements persistants ;
 - [x] réglages opérationnels, préréglages et profils livreurs administrables ;
 - [x] dispatch `VIA_HUB` persistant avec snapshots et protections contre les doubles traitements ;
-- espace client et espace administrateur dédiés dans le frontend ;
-- validation de bout en bout du parcours métier.
+- [x] espace client et espace administrateur dédiés dans le frontend ;
+- [x] compte rendu, reports au lendemain, retours expéditeur et clôture auditée ;
+- [x] rapports financiers généraux et par client en PDF/XLSX ;
+- validation de bout en bout sur données de production représentatives.
 
 ### Phase 5 — Résultats, partage et mise en ligne
 
 - [x] export JSON du résultat ;
 - [x] exports CSV et PDF du résultat ;
 - durcissement de la sécurité ;
-- exports opérationnels depuis les dispatchs persistés ;
+- [x] exports opérationnels depuis les journées clôturées ;
 - fournisseur de tuiles adapté au trafic réel ;
 - déploiement en ligne et sauvegardes PostgreSQL.
 

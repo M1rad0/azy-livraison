@@ -4,7 +4,6 @@ import {
   Bike,
   Boxes,
   CalendarDays,
-  CheckCircle2,
   Clock3,
   History,
   LoaderCircle,
@@ -48,19 +47,18 @@ interface AdminDispatchPanelProps {
   settings?: OperationalSettings
   history: DispatchPlanSummary[]
   busy: boolean
-  selectedPackageIds: Set<string>
   onDateChange: (date: string) => void
-  onPackageSelectionChange: (packageId: string, selected: boolean) => void
   onCreated: (plan: DispatchPlan) => void
 }
 
+const ROUTING_MATRIX_MAX_POINTS = 250
+
 export function collectionMatrixUsage(
   queue: AdminQueue | undefined,
-  packageIds: ReadonlySet<string>,
   courierCount: number,
 ) {
   const pickupCount = queue?.requests.filter((request) => request.packages.some(
-    (deliveryPackage) => deliveryPackage.status === 'PENDING' && packageIds.has(deliveryPackage.id),
+    (deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome,
   )).length ?? 0
   return { pickupCount, pointCount: courierCount + pickupCount + 1 }
 }
@@ -192,7 +190,7 @@ export function DispatchResult({ plan, couriers }: { plan: DispatchPlan; courier
                       <li key={deliveryPackage.packageId}>
                         <span>{deliveryPackage.deliveryOrder ?? '—'}</span>
                         <div><strong>{deliveryPackage.recipientName}</strong><small><MapPin aria-hidden="true" />{locationLabel(deliveryPackage.destination)}{deliveryPackage.pricingZoneName ? ` · ${deliveryPackage.pricingZoneName}` : ''}</small></div>
-                        <div><strong>{formatTime(deliveryPackage.estimatedDeliveryAt)}</strong><small>{formatAriary(deliveryPackage.mobileMoneyPaid ? 0 : deliveryPackage.amountToCollectAriary)} à encaisser{deliveryPackage.deliveryFeeAriary != null ? ` · dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : ''}</small></div>
+                        <div><strong>{formatTime(deliveryPackage.estimatedDeliveryAt)}</strong><small>{formatAriary(deliveryPackage.amountToCollectAriary)} à récupérer{deliveryPackage.deliveryFeeAriary != null ? ` · dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : ''}{deliveryPackage.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                       </li>
                     ))}
                   </ol>
@@ -225,20 +223,14 @@ export function AdminDispatchPanel({
   settings,
   history,
   busy,
-  selectedPackageIds,
   onDateChange,
-  onPackageSelectionChange,
   onCreated,
 }: AdminDispatchPanelProps) {
   const activeCouriers = couriers.filter((courier) => courier.active)
   const currentQueue = queue?.date === date ? queue : undefined
+  const hasActiveOrCompletedPlan = history.some((plan) => plan.status !== 'FAILED')
   const pendingPackages = useMemo(() => currentQueue?.requests.flatMap((request) => request.packages)
-    .filter((deliveryPackage) => deliveryPackage.status === 'PENDING') ?? [], [currentQueue])
-  const validSelectedIds = useMemo(() => new Set(pendingPackages
-    .filter((deliveryPackage) => selectedPackageIds.has(deliveryPackage.id))
-    .map((deliveryPackage) => deliveryPackage.id)), [pendingPackages, selectedPackageIds])
-  const ineligibleSelectedCount = selectedPackageIds.size - validSelectedIds.size
-  const [scope, setScope] = useState<'ALL' | 'SELECTED'>(selectedPackageIds.size > 0 ? 'SELECTED' : 'ALL')
+    .filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome) ?? [], [currentQueue])
   const [courierIds, setCourierIds] = useState<Set<string>>(new Set())
   const [overrideHub, setOverrideHub] = useState(false)
   const [hub, setHub] = useState<Location>({})
@@ -266,33 +258,22 @@ export function AdminDispatchPanel({
       setMessage('Sélectionnez au moins un livreur pour cette journée.')
       return
     }
-    if (scope === 'SELECTED' && validSelectedIds.size === 0) {
-      setMessage('Sélectionnez les colis à inclure dans ce dispatch.')
+    if (hasActiveOrCompletedPlan) {
+      setMessage('Un plan existe déjà pour cette journée. Ouvrez-le depuis l’historique.')
       return
     }
-    if (scope === 'SELECTED' && ineligibleSelectedCount > 0) {
-      setMessage(`${ineligibleSelectedCount} colis sélectionné${ineligibleSelectedCount > 1 ? 's sont prévus' : ' est prévu'} après cette date. Choisissez une date d’activité ultérieure.`)
+    if (pendingPackages.length >= ROUTING_MATRIX_MAX_POINTS) {
+      setMessage('La capacité de cette date dépasse la limite technique d’un plan unique. Corrigez la limite journalière avant de continuer.')
       return
     }
-    if (scope === 'SELECTED' && validSelectedIds.size > 99) {
-      setMessage('Un dispatch peut contenir au maximum 99 colis. Réduisez la sélection.')
+    if (courierIds.size > ROUTING_MATRIX_MAX_POINTS - 2) {
+      setMessage(`Un dispatch peut contenir au maximum ${ROUTING_MATRIX_MAX_POINTS - 2} livreurs.`)
       return
     }
-    if (scope === 'ALL' && pendingPackages.length > 99) {
-      setMessage('La file dépasse 99 colis. Sélectionnez un premier lot de 99 colis maximum.')
-      return
-    }
-    if (courierIds.size > 98) {
-      setMessage('Un dispatch peut contenir au maximum 98 livreurs.')
-      return
-    }
-    const packageIdsForRun = scope === 'SELECTED'
-      ? validSelectedIds
-      : new Set(pendingPackages.map((deliveryPackage) => deliveryPackage.id))
-    const { pickupCount, pointCount } = collectionMatrixUsage(currentQueue, packageIdsForRun, courierIds.size)
-    if (pointCount > 100) {
-      const maximumCouriers = Math.max(0, 99 - pickupCount)
-      setMessage(`Ce lot contient ${pickupCount} retraits. Sélectionnez au maximum ${maximumCouriers} livreur${maximumCouriers > 1 ? 's' : ''}, ou réduisez le nombre de retraits.`)
+    const { pickupCount, pointCount } = collectionMatrixUsage(currentQueue, courierIds.size)
+    if (pointCount > ROUTING_MATRIX_MAX_POINTS) {
+      const maximumCouriers = Math.max(0, ROUTING_MATRIX_MAX_POINTS - 1 - pickupCount)
+      setMessage(`Cette journée contient ${pickupCount} retraits. Sélectionnez au maximum ${maximumCouriers} livreur${maximumCouriers > 1 ? 's' : ''}, ou réduisez le nombre de retraits.`)
       return
     }
     if (overrideHub && !chosenHub) {
@@ -310,7 +291,6 @@ export function AdminDispatchPanel({
       const plan = await createDispatchPlan({
         serviceDate: date,
         courierIds: [...courierIds],
-        packageIds: scope === 'SELECTED' ? [...validSelectedIds] : [],
         ...(chosenHub ? { hubOverride: chosenHub } : {}),
       }, idempotencyKey(), accessToken)
       setVisiblePlan(plan)
@@ -340,7 +320,7 @@ export function AdminDispatchPanel({
         <div>
           <p className="admin-eyebrow">Une seule stratégie · via siège</p>
           <h2 id="dispatch-title">Préparer le dispatch</h2>
-          <p>Choisissez les colis et les livreurs. Le calcul organise les retraits, le rendez-vous puis les tournées.</p>
+          <p>Choisissez les livreurs et le point de ralliement. Tous les colis admissibles seront inclus automatiquement.</p>
         </div>
         <div className="admin-toolbar">
           <label className="admin-date-field">
@@ -358,20 +338,11 @@ export function AdminDispatchPanel({
       <div className="admin-dispatch-layout">
         <div className="admin-dispatch-builder">
           <section className="admin-builder-step">
-            <header><span>1</span><div><strong>Colis disponibles jusqu’au {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00+03:00`))}</strong><small>{busy ? 'Chargement de la file…' : `${pendingPackages.length} colis disponible${pendingPackages.length > 1 ? 's' : ''}`}</small></div></header>
-            <div className="admin-segmented" role="group" aria-label="Périmètre du dispatch">
-              <button className={scope === 'ALL' ? 'is-active' : undefined} type="button" disabled={busy || pendingPackages.length > 99} onClick={() => setScope('ALL')}><Boxes aria-hidden="true" />Toute la file <b>{pendingPackages.length}</b></button>
-              <button className={scope === 'SELECTED' ? 'is-active' : undefined} type="button" disabled={selectedPackageIds.size === 0} onClick={() => setScope('SELECTED')}><CheckCircle2 aria-hidden="true" />Sélection <b>{validSelectedIds.size}/{selectedPackageIds.size}</b></button>
-            </div>
-            {pendingPackages.length > 99 && <p className="admin-settings-hint"><TriangleAlert aria-hidden="true" />La matrice routière accepte 99 colis par dispatch : préparez plusieurs lots.</p>}
-            {scope === 'SELECTED' && ineligibleSelectedCount > 0 && <p className="admin-settings-hint admin-settings-hint--warning"><TriangleAlert aria-hidden="true" />{ineligibleSelectedCount} colis sélectionné{ineligibleSelectedCount > 1 ? 's ne sont' : ' n’est'} pas encore éligible{ineligibleSelectedCount > 1 ? 's' : ''}. Choisissez une date d’activité plus tardive.</p>}
-            {scope === 'SELECTED' && (
-              <div className="admin-compact-list">
-                {pendingPackages.filter((deliveryPackage) => validSelectedIds.has(deliveryPackage.id)).map((deliveryPackage) => (
-                  <label key={deliveryPackage.id}><input type="checkbox" checked onChange={(event) => onPackageSelectionChange(deliveryPackage.id, event.target.checked)} /><span><strong>{deliveryPackage.recipientName}</strong><small>{locationLabel(deliveryPackage.destination)}</small></span></label>
-                ))}
-              </div>
-            )}
+            <header><span>1</span><div><strong>File automatique du {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00+03:00`))}</strong><small>{busy ? 'Chargement de la file…' : `${pendingPackages.length} colis inclus selon leur ordre d’arrivée`}</small></div></header>
+            <div className="admin-location-summary"><Boxes aria-hidden="true" /><div><small>Périmètre du plan</small><strong>Toute la file admissible · {pendingPackages.length} colis</strong></div></div>
+            {pendingPackages.length >= ROUTING_MATRIX_MAX_POINTS && <p className="admin-settings-hint admin-settings-hint--warning"><TriangleAlert aria-hidden="true" />Le volume de la journée dépasse la capacité d’un plan unique.</p>}
+            {hasActiveOrCompletedPlan && <p className="admin-settings-hint"><PackageCheck aria-hidden="true" />Le plan unique de cette date est déjà enregistré.</p>}
+            {!hasActiveOrCompletedPlan && history.some((plan) => plan.status === 'FAILED') && <p className="admin-settings-hint admin-settings-hint--warning"><TriangleAlert aria-hidden="true" />Le dernier calcul a échoué. Vous pouvez relancer le dispatch.</p>}
           </section>
 
           <section className="admin-builder-step">
@@ -418,9 +389,9 @@ export function AdminDispatchPanel({
             )}
           </section>
 
-          <button className="admin-button admin-button--generate" type="button" onClick={() => void create()} disabled={creating || busy || !currentQueue || pendingPackages.length === 0 || (scope === 'SELECTED' && ineligibleSelectedCount > 0)}>
+          <button className="admin-button admin-button--generate" type="button" onClick={() => void create()} disabled={creating || busy || !currentQueue || pendingPackages.length === 0 || pendingPackages.length >= ROUTING_MATRIX_MAX_POINTS || hasActiveOrCompletedPlan}>
             {creating ? <LoaderCircle className="admin-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-            {creating ? 'Calcul et enregistrement…' : `Dispatcher ${scope === 'ALL' ? pendingPackages.length : validSelectedIds.size} colis`}
+            {creating ? 'Calcul et enregistrement…' : `Dispatcher automatiquement ${pendingPackages.length} colis`}
           </button>
         </div>
 

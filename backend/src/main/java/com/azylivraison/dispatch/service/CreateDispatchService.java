@@ -29,6 +29,7 @@ import com.azylivraison.administration.repository.CourierProfileRepository;
 import com.azylivraison.administration.repository.OperationalSettingsRepository;
 import com.azylivraison.administration.repository.VehiclePresetConfigurationRepository;
 import com.azylivraison.dispatch.domain.CreateDispatchCommand;
+import com.azylivraison.dispatch.domain.DispatchCreationResult;
 import com.azylivraison.dispatch.domain.DispatchCourierResult;
 import com.azylivraison.dispatch.domain.DispatchPackageOutcome;
 import com.azylivraison.dispatch.domain.DispatchPlanDetails;
@@ -76,6 +77,8 @@ public class CreateDispatchService {
 
     private static final ZoneId ANTANANARIVO = ZoneId.of("Indian/Antananarivo");
     private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 100;
+    private static final int MAX_OPTIMIZATION_TIME_LIMIT_SECONDS = 1_200;
+    private static final Duration STALE_DISPATCH_TIMEOUT = Duration.ofMinutes(30);
 
     private final DispatchPlanRepository dispatchPlanRepository;
     private final DispatchSourceRepository dispatchSourceRepository;
@@ -108,38 +111,36 @@ public class CreateDispatchService {
         this.objectMapper = objectMapper;
     }
 
-    public DispatchPlanDetails create(CreateDispatchCommand command) {
+    public DispatchCreationResult create(CreateDispatchCommand command) {
         validateCommand(command);
         String requestHash = requestHash(command);
-        DispatchPlanRecord previous = dispatchPlanRepository
-                .findByActorAndIdempotencyKey(command.actorAccountId(), command.idempotencyKey())
-                .orElse(null);
-        if (previous != null) {
-            verifySameRequest(previous, requestHash);
-            return details(previous);
-        }
-
-        Claim claim;
+        ClaimResult claimResult;
         try {
-            claim = Objects.requireNonNull(transactionTemplate.execute(status -> claim(command, requestHash)));
+            claimResult = Objects.requireNonNull(
+                    transactionTemplate.execute(status -> claimOrReplay(command, requestHash)));
         } catch (DuplicateKeyException exception) {
             DispatchPlanRecord raced = dispatchPlanRepository
                     .findByActorAndIdempotencyKey(command.actorAccountId(), command.idempotencyKey())
                     .orElse(null);
             if (raced != null) {
                 verifySameRequest(raced, requestHash);
-                return details(raced);
+                return DispatchCreationResult.replayed(details(raced));
             }
             throw new DispatchConflictException(
                     "Un autre dispatch est déjà en préparation pour cette date.");
         }
+        if (claimResult.replay() != null) {
+            return DispatchCreationResult.replayed(details(claimResult.replay()));
+        }
+        Claim claim = Objects.requireNonNull(claimResult.claim());
 
         try {
             ViaHubOptimizationResult optimization = optimizationFacade.optimize(claim.plan(), claim.runPolicy());
             transactionTemplate.executeWithoutResult(status -> complete(claim, optimization));
-            return get(claim.dispatchPlanId());
+            return DispatchCreationResult.created(get(claim.dispatchPlanId()));
         } catch (RuntimeException exception) {
-            transactionTemplate.executeWithoutResult(status -> fail(claim.dispatchPlanId(), exception));
+            transactionTemplate.executeWithoutResult(
+                    status -> fail(claim.dispatchPlanId(), claim.actorAccountId(), exception));
             throw new DispatchExecutionException(
                     claim.dispatchPlanId(),
                     "Le dispatch n'a pas pu être calculé. Les colis restent en attente.",
@@ -155,23 +156,35 @@ public class CreateDispatchService {
         return dispatchPlanRepository.findAll(serviceDate).stream().map(this::details).toList();
     }
 
-    private Claim claim(CreateDispatchCommand command, String requestHash) {
+    private ClaimResult claimOrReplay(CreateDispatchCommand command, String requestHash) {
+        dispatchSourceRepository.lockAdmissionGate();
+        DispatchPlanRecord previous = dispatchPlanRepository
+                .findByActorAndIdempotencyKey(command.actorAccountId(), command.idempotencyKey())
+                .orElse(null);
+        if (previous != null) {
+            verifySameRequest(previous, requestHash);
+            Instant staleBefore = Instant.now().minus(STALE_DISPATCH_TIMEOUT);
+            if (previous.status() == DispatchStatus.GENERATING
+                    && previous.createdAt().isBefore(staleBefore)
+                    && dispatchPlanRepository.recoverStaleIdempotentPlan(
+                            previous.serviceDate(),
+                            previous.id(),
+                            command.actorAccountId(),
+                            staleBefore)) {
+                previous = dispatchPlanRepository.findById(previous.id()).orElseThrow();
+            }
+            return ClaimResult.replay(previous);
+        }
+        dispatchPlanRepository.beginOperationDay(
+                command.serviceDate(), command.actorAccountId(), Instant.now().minus(STALE_DISPATCH_TIMEOUT));
         OperationalSettings settings = settingsRepository.find()
                 .orElseThrow(() -> new IllegalStateException("Les paramètres opérationnels sont absents."));
+        validateOptimizationTimeLimit(settings.optimizationTimeLimitSeconds());
         Location hub = resolvedHub(command.hubOverride(), settings.defaultHub());
         List<SelectedCourierSnapshot> couriers = selectedCouriers(command.serviceDate(), command.courierIds());
-        List<DispatchSourcePackage> packages = dispatchSourceRepository.findPending(
-                command.serviceDate(),
-                command.packageIds());
+        List<DispatchSourcePackage> packages = dispatchSourceRepository.findPending(command.serviceDate());
         if (packages.isEmpty()) {
-            throw new DispatchInputException("Aucun colis en attente ne correspond à cette sélection.");
-        }
-        if (!command.packageIds().isEmpty()) {
-            int requested = new LinkedHashSet<>(command.packageIds()).size();
-            if (packages.size() != requested) {
-                throw new DispatchConflictException(
-                        "Au moins un colis sélectionné n'est plus en attente ou appartient à une date ultérieure.");
-            }
+            throw new DispatchInputException("Aucun colis en attente n'est disponible pour cette date.");
         }
         validateMatrixSize(couriers, packages);
 
@@ -183,7 +196,7 @@ public class CreateDispatchService {
                 plan,
                 packages,
                 settings.version(),
-                command.packageIds().isEmpty()));
+                true));
         String policyJson = writeJson(policySnapshot);
 
         dispatchPlanRepository.createGenerating(
@@ -197,15 +210,19 @@ public class CreateDispatchService {
                 policyJson,
                 packages.size(),
                 couriers.size());
+        dispatchPlanRepository.attachOperationPlan(
+                command.serviceDate(), dispatchPlanId, command.actorAccountId());
         dispatchPlanRepository.reserveDay(dispatchPlanId, command.serviceDate());
         dispatchPlanRepository.reservePackages(
                 dispatchPlanId,
                 packages.stream().map(DispatchSourcePackage::packageId).toList());
         dispatchPlanRepository.saveSelectedCouriers(dispatchPlanId, couriers);
-        return new Claim(dispatchPlanId, plan, runPolicy, couriers, packages);
+        return ClaimResult.claim(
+                new Claim(dispatchPlanId, command.actorAccountId(), plan, runPolicy, couriers, packages));
     }
 
     private void complete(Claim claim, ViaHubOptimizationResult optimization) {
+        dispatchPlanRepository.lockOperationPlanForCompletion(claim.dispatchPlanId());
         Projection projection = project(claim, optimization);
         dispatchPlanRepository.updateCourierResults(claim.dispatchPlanId(), projection.couriers());
         dispatchPlanRepository.savePackageOutcomes(claim.dispatchPlanId(), projection.packages());
@@ -238,12 +255,15 @@ public class CreateDispatchService {
                 writeJson(optimization.result()),
                 writeJson(optimization.hubExecution()),
                 writeJson(optimization.metrics()));
+        dispatchPlanRepository.markOperationDayDispatched(
+                claim.dispatchPlanId(), claim.actorAccountId());
         dispatchPlanRepository.releaseReservations(claim.dispatchPlanId());
     }
 
-    private void fail(UUID dispatchPlanId, RuntimeException exception) {
-        dispatchPlanRepository.markFailed(
+    private void fail(UUID dispatchPlanId, UUID actorAccountId, RuntimeException exception) {
+        dispatchPlanRepository.failOperationPlan(
                 dispatchPlanId,
+                actorAccountId,
                 exception.getClass().getSimpleName(),
                 exception.getMessage() == null ? "Échec technique pendant le calcul." : exception.getMessage());
         dispatchPlanRepository.releaseReservations(dispatchPlanId);
@@ -508,6 +528,14 @@ public class CreateDispatchService {
                 Duration.ofSeconds(settings.optimizationTimeLimitSeconds()));
     }
 
+    private void validateOptimizationTimeLimit(int timeLimitSeconds) {
+        if (timeLimitSeconds <= 0 || timeLimitSeconds > MAX_OPTIMIZATION_TIME_LIMIT_SECONDS) {
+            throw new DispatchInputException(
+                    "Le temps maximal de calcul doit être compris entre 1 et "
+                            + MAX_OPTIMIZATION_TIME_LIMIT_SECONDS + " secondes.");
+        }
+    }
+
     private OperationalPolicySnapshot snapshot(OperationalPolicy policy) {
         return new OperationalPolicySnapshot(
                 policy.pickupServiceDuration().toSeconds(),
@@ -562,8 +590,9 @@ public class CreateDispatchService {
         if (collectionPoints > limit || distributionPoints > limit) {
             int maximumPackages = Math.max(1, limit - 1);
             throw new DispatchInputException(
-                    "Ce dispatch dépasse la limite routière actuelle. Sélectionnez au maximum "
-                            + maximumPackages + " colis et réduisez si nécessaire le nombre de retraits.");
+                    "Ce plan dépasse la capacité actuelle du service de routage ("
+                            + limit + " points par calcul, soit au plus " + maximumPackages
+                            + " destinations). Augmentez cette capacité avant de relancer le dispatch.");
         }
     }
 
@@ -590,11 +619,8 @@ public class CreateDispatchService {
 
     private String requestHash(CreateDispatchCommand command) {
         String couriers = command.courierIds().stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
-        String packages = command.packageIds().isEmpty()
-                ? "ALL_PENDING"
-                : command.packageIds().stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
         Location hub = command.hubOverride();
-        String canonical = command.serviceDate() + "\n" + couriers + "\n" + packages + "\n"
+        String canonical = command.serviceDate() + "\n" + couriers + "\nALL_ELIGIBLE\n"
                 + (hub == null ? "DEFAULT_HUB" : hub.latitude() + "," + hub.longitude() + ","
                         + Objects.toString(hub.label(), "") + "," + Objects.toString(hub.destinationQuery(), ""));
         try {
@@ -651,10 +677,22 @@ public class CreateDispatchService {
 
     private record Claim(
             UUID dispatchPlanId,
+            UUID actorAccountId,
             DeliveryPlan plan,
             ViaHubRunPolicy runPolicy,
             List<SelectedCourierSnapshot> couriers,
             List<DispatchSourcePackage> packages) {
+    }
+
+    private record ClaimResult(Claim claim, DispatchPlanRecord replay) {
+
+        static ClaimResult claim(Claim claim) {
+            return new ClaimResult(claim, null);
+        }
+
+        static ClaimResult replay(DispatchPlanRecord replay) {
+            return new ClaimResult(null, replay);
+        }
     }
 
     private record Projection(

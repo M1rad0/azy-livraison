@@ -56,9 +56,10 @@ function makeDraft(settings: OperationalSettings): SettingsDraft {
   }
 }
 
-function readPositive(value: string, label: string) {
+function readPositive(value: string, label: string, maximum?: number) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${label} doit être supérieur à zéro.`)
+  if (maximum != null && parsed > maximum) throw new Error(`${label} ne peut pas dépasser ${maximum} secondes.`)
   return parsed
 }
 
@@ -127,7 +128,7 @@ export function AdminSettingsPanel({
         deliveryServiceMinutes: readPositive(currentDraft.deliveryServiceMinutes, 'La durée d’une livraison'),
         earlyToleranceMinutes: readNonNegative(currentDraft.earlyToleranceMinutes, 'La tolérance d’avance'),
         lateToleranceMinutes: readNonNegative(currentDraft.lateToleranceMinutes, 'La tolérance de retard'),
-        optimizationTimeLimitSeconds: readPositive(currentDraft.optimizationTimeLimitSeconds, 'Le temps de calcul'),
+        optimizationTimeLimitSeconds: readPositive(currentDraft.optimizationTimeLimitSeconds, 'Le temps de calcul', 1200),
         defaultHub,
       }
       for (const preset of presetDrafts) {
@@ -192,7 +193,7 @@ export function AdminSettingsPanel({
           <div className="admin-form-grid admin-form-grid--three">
             <label><span>Tolérance d’avance</span><div className="admin-input-unit"><input required type="number" min="0" step="1" value={draft.earlyToleranceMinutes} onChange={(event) => { setDraft({ ...draft, earlyToleranceMinutes: event.target.value }); setSaved(false) }} /><b>min</b></div></label>
             <label><span>Tolérance de retard</span><div className="admin-input-unit"><input required type="number" min="0" step="1" value={draft.lateToleranceMinutes} onChange={(event) => { setDraft({ ...draft, lateToleranceMinutes: event.target.value }); setSaved(false) }} /><b>min</b></div></label>
-            <label><span>Temps maximal de calcul</span><div className="admin-input-unit"><input required type="number" min="1" step="1" value={draft.optimizationTimeLimitSeconds} onChange={(event) => { setDraft({ ...draft, optimizationTimeLimitSeconds: event.target.value }); setSaved(false) }} /><b>sec</b></div></label>
+            <label><span>Temps maximal de calcul</span><div className="admin-input-unit"><input required type="number" min="1" max="1200" step="1" value={draft.optimizationTimeLimitSeconds} onChange={(event) => { setDraft({ ...draft, optimizationTimeLimitSeconds: event.target.value }); setSaved(false) }} /><b>sec</b></div></label>
           </div>
           <div className="admin-locked-setting"><MapPinned aria-hidden="true" /><div><small>Profil routier actif</small><strong>Routes principales · Madagascar</strong></div><span>Fixe</span></div>
         </section>
