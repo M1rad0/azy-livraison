@@ -1,0 +1,17 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${APP_DOMAIN};
+    server_tokens off;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+
+    # Tant que le premier certificat n'existe pas, l'application n'est pas
+    # servie en HTTP clair. Certbot peut cependant valider le domaine.
+    location / {
+        return 503;
+    }
+}
