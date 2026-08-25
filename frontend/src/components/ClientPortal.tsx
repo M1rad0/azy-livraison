@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   ArrowRight,
   Ban,
@@ -15,6 +15,7 @@ import {
   Save,
   Settings2,
   UserRound,
+  WalletCards,
 } from 'lucide-react'
 import {
   cancelDeliveryPackage,
@@ -38,6 +39,7 @@ import { usePortalNavigation } from './PortalShell'
 import './ClientPortal.css'
 
 type ClientView = 'history' | 'new-request' | 'reports' | 'profile'
+type ClientProfileSection = 'information' | 'payouts'
 
 const REQUEST_STATUS: Record<DeliveryRequestStatus, string> = {
   PENDING: 'En cours de traitement',
@@ -193,17 +195,38 @@ function ClientProfilePanel({
   onCancel: () => void
 }) {
   const [displayName, setDisplayName] = useState(profile.displayName)
-  const [phone, setPhone] = useState(profile.phone)
   const [defaultPickup, setDefaultPickup] = useState<Location>(() => asPickerLocation(profile.defaultPickup))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
+  const [section, setSection] = useState<ClientProfileSection>('information')
+  const [preferencesSaving, setPreferencesSaving] = useState(false)
+  const informationTabRef = useRef<HTMLButtonElement>(null)
+  const payoutsTabRef = useRef<HTMLButtonElement>(null)
+
+  function handleSectionKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    let nextSection: ClientProfileSection | undefined
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextSection = section === 'information' ? 'payouts' : 'information'
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextSection = section === 'information' ? 'payouts' : 'information'
+    if (event.key === 'End') nextSection = 'payouts'
+    if (event.key === 'Home') nextSection = 'information'
+    if (!nextSection) return
+    event.preventDefault()
+    setSection(nextSection)
+    const nextTabRef = nextSection === 'information' ? informationTabRef : payoutsTabRef
+    nextTabRef.current?.focus()
+  }
 
   async function save() {
+    if (preferencesSaving) return
     setError(undefined)
     setMessage(undefined)
-    if (!displayName.trim() || !phone.trim()) {
-      setError('Le nom affiché et le téléphone sont obligatoires.')
+    if (!displayName.trim()) {
+      setError('Le nom affiché est obligatoire.')
+      return
+    }
+    if (!profile.phone.trim()) {
+      setError('Ajoutez d’abord un numéro de contact principal.')
       return
     }
     const hasDefaultPickup = Number.isFinite(defaultPickup.latitude) && Number.isFinite(defaultPickup.longitude)
@@ -211,7 +234,7 @@ function ClientProfilePanel({
     try {
       const saved = await updateClientProfile({
         displayName: displayName.trim(),
-        phone: phone.trim(),
+        phone: profile.phone.trim(),
         defaultPickup: hasDefaultPickup ? {
           label: defaultPickup.label?.trim() || defaultPickup.destinationQuery?.trim() || 'Point de retrait',
           destinationQuery: defaultPickup.destinationQuery?.trim() || undefined,
@@ -231,45 +254,62 @@ function ClientProfilePanel({
   return (
     <section className="client-profile-page" aria-labelledby="client-profile-title">
       <header className="client-page-heading">
-        <div><p className="eyebrow">Mon compte</p><h1 id="client-profile-title">Profil et retrait habituel</h1><p>Gardez vos coordonnées à jour et gagnez du temps avec un point de retrait par défaut.</p></div>
+        <div><p className="eyebrow">Mon compte</p><h1 id="client-profile-title">Coordonnées</h1><p>Gérez séparément vos informations habituelles et les numéros utilisés pour vos versements.</p></div>
         <button className="button button--secondary" type="button" onClick={onCancel}>Retour à l’historique</button>
       </header>
-      <div className="client-profile-layout">
-        <section className="client-surface client-profile-card">
-          <div className="client-section-heading">
-            <span aria-hidden="true"><UserRound /></span>
-            <div><p className="eyebrow">Coordonnées</p><h2>Informations du compte</h2></div>
-          </div>
-          <div className="client-form-grid">
-            <label className="client-field"><span>Nom affiché</span><input value={displayName} maxLength={150} onChange={(event) => setDisplayName(event.target.value)} /></label>
-            <label className="client-field"><span>Téléphone</span><input value={phone} maxLength={50} inputMode="tel" onChange={(event) => setPhone(event.target.value)} /></label>
-          </div>
-          <label className="client-field client-field--readonly"><span>Identifiant</span><input value={profile.username} readOnly /></label>
-        </section>
-        <section className="client-surface client-profile-card">
-          <div className="client-section-heading">
-            <span aria-hidden="true"><MapPin /></span>
-            <div><p className="eyebrow">Adresse favorite</p><h2>Retrait par défaut</h2></div>
-          </div>
-          <label className="client-field"><span>Libellé</span><input value={defaultPickup.label ?? ''} maxLength={200} placeholder="Ex. Ma boutique" onChange={(event) => setDefaultPickup({ ...defaultPickup, label: event.target.value })} /></label>
-          <LocationPicker
-            accessToken={accessToken}
-            value={defaultPickup}
-            title="Retrait par défaut"
-            description="Choisissez le point que nous utiliserons automatiquement dans vos nouvelles demandes."
-            onChange={(location) => setDefaultPickup({ ...location, label: defaultPickup.label?.trim() || location.label || location.destinationQuery || 'Point de retrait' })}
-          />
-          {Number.isFinite(defaultPickup.latitude) && (
-            <button className="client-text-action" type="button" onClick={() => setDefaultPickup({})}>Retirer le point par défaut</button>
-          )}
-        </section>
+      <div className="client-profile-tabs" role="tablist" aria-label="Sections des coordonnées">
+        <button ref={informationTabRef} id="client-profile-information-tab" type="button" role="tab" tabIndex={section === 'information' ? 0 : -1} aria-selected={section === 'information'} aria-controls="client-profile-information-panel" className={section === 'information' ? 'is-active' : undefined} onClick={() => setSection('information')} onKeyDown={handleSectionKeyDown}>
+          <UserRound aria-hidden="true" />
+          <span><strong>Informations</strong><small>Profil, retrait et contacts</small></span>
+        </button>
+        <button ref={payoutsTabRef} id="client-profile-payouts-tab" type="button" role="tab" tabIndex={section === 'payouts' ? 0 : -1} aria-selected={section === 'payouts'} aria-controls="client-profile-payouts-panel" className={section === 'payouts' ? 'is-active' : undefined} onClick={() => setSection('payouts')} onKeyDown={handleSectionKeyDown}>
+          <WalletCards aria-hidden="true" />
+          <span><strong>Versements</strong><small>Numéros par ordre de priorité</small></span>
+        </button>
       </div>
-      {message && <p className="client-alert client-alert--success" role="status">{message}</p>}
-      {error && <p className="client-alert client-alert--error" role="alert">{error}</p>}
-      <div className="client-profile-actions">
-        <button className="button" type="button" disabled={saving} onClick={() => void save()}><Save aria-hidden="true" />{saving ? 'Enregistrement…' : 'Enregistrer les modifications'}</button>
+
+      <div id="client-profile-information-panel" role="tabpanel" aria-labelledby="client-profile-information-tab" hidden={section !== 'information'}>
+        <div className="client-profile-layout">
+          <section className="client-surface client-profile-card">
+            <div className="client-section-heading">
+              <span aria-hidden="true"><UserRound /></span>
+              <div><p className="eyebrow">Coordonnées</p><h2>Informations du compte</h2></div>
+            </div>
+            <div className="client-form-grid">
+              <label className="client-field"><span>Nom affiché</span><input value={displayName} maxLength={150} onChange={(event) => setDisplayName(event.target.value)} /></label>
+              <label className="client-field client-field--readonly"><span>Téléphone principal</span><input aria-label="Téléphone principal" value={profile.phone} readOnly /><small>Modifiez ce numéro dans la liste de contacts ci-dessous.</small></label>
+            </div>
+            <label className="client-field client-field--readonly"><span>Identifiant</span><input value={profile.username} readOnly /></label>
+          </section>
+          <section className="client-surface client-profile-card">
+            <div className="client-section-heading">
+              <span aria-hidden="true"><MapPin /></span>
+              <div><p className="eyebrow">Adresse favorite</p><h2>Retrait par défaut</h2></div>
+            </div>
+            <label className="client-field"><span>Libellé</span><input value={defaultPickup.label ?? ''} maxLength={200} placeholder="Ex. Ma boutique" onChange={(event) => setDefaultPickup({ ...defaultPickup, label: event.target.value })} /></label>
+            <LocationPicker
+              accessToken={accessToken}
+              value={defaultPickup}
+              title="Retrait par défaut"
+              description="Choisissez le point que nous utiliserons automatiquement dans vos nouvelles demandes."
+              onChange={(location) => setDefaultPickup({ ...location, label: defaultPickup.label?.trim() || location.label || location.destinationQuery || 'Point de retrait' })}
+            />
+            {Number.isFinite(defaultPickup.latitude) && (
+              <button className="client-text-action" type="button" onClick={() => setDefaultPickup({})}>Retirer le point par défaut</button>
+            )}
+          </section>
+        </div>
+        {message && <p className="client-alert client-alert--success" role="status">{message}</p>}
+        {error && <p className="client-alert client-alert--error" role="alert">{error}</p>}
+        <div className="client-profile-actions">
+          <button className="button" type="button" disabled={saving || preferencesSaving} onClick={() => void save()}><Save aria-hidden="true" />{saving ? 'Enregistrement…' : 'Enregistrer les modifications'}</button>
+        </div>
+        <ClientContactPreferences accessToken={accessToken} profile={profile} onSaved={onSaved} section="contacts" disabled={saving || preferencesSaving} onBusyChange={setPreferencesSaving} />
       </div>
-      <ClientContactPreferences accessToken={accessToken} profile={profile} onSaved={onSaved} />
+
+      <div id="client-profile-payouts-panel" role="tabpanel" aria-labelledby="client-profile-payouts-tab" hidden={section !== 'payouts'}>
+        <ClientContactPreferences accessToken={accessToken} profile={profile} onSaved={onSaved} section="payouts" disabled={saving || preferencesSaving} onBusyChange={setPreferencesSaving} />
+      </div>
     </section>
   )
 }

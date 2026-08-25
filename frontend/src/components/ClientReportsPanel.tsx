@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeft,
   CalendarCheck2,
   BanknoteArrowDown,
   BanknoteArrowUp,
   Download,
+  Eye,
   FileSpreadsheet,
   FileText,
+  ListFilter,
   LoaderCircle,
   MapPin,
   PackageCheck,
   RefreshCw,
+  RotateCcw,
   WalletCards,
 } from 'lucide-react'
 import {
@@ -73,32 +77,66 @@ function paymentDirectionLabel(direction: ClientPaymentDirection): string {
   return direction === 'AZY_TO_CLIENT' ? 'AZY → client' : 'Client → AZY'
 }
 
+type SettlementFilter = 'ALL' | ClientSettlement['status']
+
+function settlementForReport(finance: ClientFinance | undefined, reportId: string) {
+  return finance?.settlements.find((item) => item.reportId === reportId)
+}
+
 export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
   const [reports, setReports] = useState<ClientReportSummary[]>([])
   const [selectedDate, setSelectedDate] = useState<string>()
   const [report, setReport] = useState<ClientDailyReport>()
   const [finance, setFinance] = useState<ClientFinance>()
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [settlementFilter, setSettlementFilter] = useState<SettlementFilter>('ALL')
   const [loading, setLoading] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [downloading, setDownloading] = useState<'pdf' | 'xlsx'>()
   const [downloadingProofId, setDownloadingProofId] = useState<string>()
   const [error, setError] = useState<string>()
+  const [financeWarning, setFinanceWarning] = useState<string>()
+  const [financeLoading, setFinanceLoading] = useState(false)
+  const [listLoadFailed, setListLoadFailed] = useState(false)
+  const listTitleRef = useRef<HTMLHeadingElement>(null)
+  const backButtonRef = useRef<HTMLButtonElement>(null)
+  const previousSelectedDateRef = useRef<string | undefined>(undefined)
+  const loadRequestIdRef = useRef(0)
 
   async function loadList() {
+    const requestId = ++loadRequestIdRef.current
     setLoading(true)
     setError(undefined)
+    setFinanceWarning(undefined)
+    setFinanceLoading(true)
+    setListLoadFailed(false)
+    void getClientFinance(accessToken)
+      .then((loadedFinance) => {
+        if (requestId !== loadRequestIdRef.current) return
+        setFinance(loadedFinance)
+        setFinanceWarning(undefined)
+      })
+      .catch(() => {
+        if (requestId !== loadRequestIdRef.current) return
+        setFinance(undefined)
+        setSettlementFilter('ALL')
+        setFinanceWarning('Les rapports restent accessibles, mais le suivi des règlements est momentanément indisponible.')
+      })
+      .finally(() => {
+        if (requestId === loadRequestIdRef.current) setFinanceLoading(false)
+      })
     try {
-      const [loaded, loadedFinance] = await Promise.all([
-        listClientReports(accessToken),
-        getClientFinance(accessToken),
-      ])
-      setReports(loaded)
-      setFinance(loadedFinance)
-      if (!selectedDate && loaded.length > 0) setSelectedDate(loaded[0].serviceDate)
+      const loadedReports = await listClientReports(accessToken)
+      if (requestId !== loadRequestIdRef.current) return
+      setReports(loadedReports)
     } catch (loadError) {
+      if (requestId !== loadRequestIdRef.current) return
+      setReports([])
+      setListLoadFailed(true)
       setError(loadError instanceof Error ? loadError.message : 'Les rapports n’ont pas pu être chargés.')
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestIdRef.current) setLoading(false)
     }
   }
 
@@ -111,6 +149,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
   useEffect(() => {
     if (!selectedDate) {
       setReport(undefined)
+      setLoadingDetail(false)
       return
     }
     let cancelled = false
@@ -125,6 +164,13 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
     return () => { cancelled = true }
   }, [accessToken, selectedDate])
 
+  useEffect(() => {
+    const previousSelectedDate = previousSelectedDateRef.current
+    if (selectedDate) backButtonRef.current?.focus()
+    else if (previousSelectedDate) listTitleRef.current?.focus()
+    previousSelectedDateRef.current = selectedDate
+  }, [selectedDate])
+
   const selectedSummary = useMemo(
     () => reports.find((item) => item.serviceDate === selectedDate),
     [reports, selectedDate],
@@ -136,6 +182,13 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
   const selectedPayments = useMemo(() => finance?.payments.filter((item) => (
     item.settlementId === selectedSettlement?.id
   )) ?? [], [finance, selectedSettlement])
+  const filteredReports = useMemo(() => reports.filter((item) => {
+    if (fromDate && item.serviceDate < fromDate) return false
+    if (toDate && item.serviceDate > toDate) return false
+    if (settlementFilter === 'ALL') return true
+    return settlementForReport(finance, item.reportId)?.status === settlementFilter
+  }), [finance, fromDate, reports, settlementFilter, toDate])
+  const hasActiveFilters = Boolean(fromDate || toDate || settlementFilter !== 'ALL')
   const pickupLabels = useMemo(() => {
     const uniqueLabels = new Map<string, string>()
     report?.packages.forEach((item) => {
@@ -172,6 +225,23 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
     }
   }
 
+  function openReport(serviceDate: string) {
+    setReport(undefined)
+    setSelectedDate(serviceDate)
+  }
+
+  function closeReport() {
+    setSelectedDate(undefined)
+    setReport(undefined)
+    setError(undefined)
+  }
+
+  function resetFilters() {
+    setFromDate('')
+    setToDate('')
+    setSettlementFilter('ALL')
+  }
+
   return (
     <section className="client-reports-page" aria-labelledby="client-reports-title">
       <header className="client-page-heading client-page-heading--compact">
@@ -180,30 +250,24 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
       </header>
 
       {error && <p className="client-alert client-alert--error" role="alert">{error}</p>}
+      {financeWarning && <p className="client-report-finance-warning" role="status"><WalletCards aria-hidden="true" />{financeWarning}</p>}
 
       {loading ? (
         <div className="client-report-state"><LoaderCircle className="spin" aria-hidden="true" /><strong>Chargement des rapports…</strong></div>
+      ) : listLoadFailed ? (
+        <div className="client-report-state"><FileText aria-hidden="true" /><strong>Impossible de charger vos rapports</strong><span>Réessayez dans quelques instants.</span><button className="button button--secondary" type="button" onClick={() => void loadList()}>Réessayer</button></div>
       ) : reports.length === 0 ? (
         <div className="client-report-state"><CalendarCheck2 aria-hidden="true" /><strong>Aucun rapport disponible</strong><span>Un rapport apparaîtra ici dès qu’une journée comprenant vos colis aura été clôturée.</span></div>
-      ) : (
-        <div className="client-reports-layout">
-          <aside className="client-report-list" aria-label="Liste des rapports">
-            {reports.map((item) => {
-              const settlement = finance?.settlements.find((candidate) => candidate.reportId === item.reportId)
-              return (
-                <button className={item.serviceDate === selectedDate ? 'is-active' : undefined} type="button" key={item.reportId} onClick={() => setSelectedDate(item.serviceDate)}>
-                  <span><CalendarCheck2 aria-hidden="true" /></span>
-                  <div><strong>{formatDate(item.serviceDate)}</strong><small>{item.totals.packageCount} colis</small></div>
-                  <b>{item.totals.amountToRemitAriary < 0 ? 'À payer à AZY · ' : ''}{formatAriary(Math.abs(item.totals.amountToRemitAriary))}</b>
-                  {settlement && <em className={`is-${settlement.status.toLowerCase()}`}>{settlementLabel(settlement)}</em>}
-                </button>
-              )
-            })}
-          </aside>
-
-          <section className="client-report-detail" aria-live="polite">
-            {loadingDetail || !report ? (
+      ) : selectedDate ? (
+        <div className="client-report-view">
+          <nav className="client-report-view__navigation" aria-label="Navigation du rapport">
+            <button ref={backButtonRef} className="button button--secondary" type="button" onClick={closeReport}><ArrowLeft aria-hidden="true" />Retour aux rapports</button>
+          </nav>
+          <section className="client-report-detail" aria-live="polite" aria-busy={loadingDetail}>
+            {loadingDetail ? (
               <div className="client-report-state"><LoaderCircle className="spin" aria-hidden="true" /><strong>Ouverture du rapport…</strong></div>
+            ) : !report ? (
+              <div className="client-report-state"><FileText aria-hidden="true" /><strong>Ce rapport ne peut pas être affiché</strong><span>Revenez à la liste puis réessayez.</span></div>
             ) : (
               <>
                 <header className="client-report-detail__header">
@@ -297,6 +361,44 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
             )}
           </section>
         </div>
+      ) : (
+        <section className="client-report-index" aria-labelledby="client-report-list-title">
+          <div className="client-report-index__heading">
+            <div><p className="eyebrow">Historique</p><h2 ref={listTitleRef} id="client-report-list-title" tabIndex={-1}>Rapports disponibles</h2><p>{filteredReports.length} rapport{filteredReports.length === 1 ? '' : 's'} affiché{filteredReports.length === 1 ? '' : 's'} sur {reports.length}</p></div>
+          </div>
+
+          <fieldset className="client-report-filters">
+            <legend className="sr-only">Filtres des rapports</legend>
+            <span className="client-report-filters__icon"><ListFilter aria-hidden="true" /></span>
+            <label><span>Du</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label>
+            <label><span>Au</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label>
+            <label><span>Règlement</span><select value={settlementFilter} disabled={financeLoading || !finance} onChange={(event) => setSettlementFilter(event.target.value as SettlementFilter)}><option value="ALL">{financeLoading ? 'Chargement du suivi…' : finance ? 'Tous les états' : 'Suivi indisponible'}</option><option value="UNPAID">Non réglé</option><option value="PARTIALLY_PAID">Partiellement réglé</option><option value="PAID">Soldé ou crédit</option></select></label>
+            <button className="button button--secondary" type="button" disabled={!hasActiveFilters} onClick={resetFilters}><RotateCcw aria-hidden="true" />Réinitialiser</button>
+          </fieldset>
+
+          {filteredReports.length === 0 ? (
+            <div className="client-report-state client-report-state--filtered"><ListFilter aria-hidden="true" /><strong>Aucun rapport ne correspond à ces filtres</strong><button className="button button--secondary" type="button" onClick={resetFilters}>Afficher tous les rapports</button></div>
+          ) : (
+            <div className="client-report-list-table">
+              <table>
+                <caption className="sr-only">Liste de vos rapports journaliers clôturés</caption>
+                <thead><tr><th scope="col">Date</th><th scope="col">Colis</th><th scope="col" className="is-money">Récupéré</th><th scope="col" className="is-money">Frais</th><th scope="col" className="is-money">Solde du rapport</th><th scope="col">Règlement</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+                <tbody>{filteredReports.map((item) => {
+                  const settlement = settlementForReport(finance, item.reportId)
+                  return <tr key={item.reportId} onClick={() => openReport(item.serviceDate)}>
+                    <td data-label="Date"><button className="client-report-list-table__date" type="button" onClick={(event) => { event.stopPropagation(); openReport(item.serviceDate) }}><CalendarCheck2 aria-hidden="true" /><strong>{formatDate(item.serviceDate)}</strong></button></td>
+                    <td data-label="Colis"><strong>{item.totals.packageCount}</strong><small>{item.totals.deliveredCount} livré{item.totals.deliveredCount > 1 ? 's' : ''}</small></td>
+                    <td data-label="Récupéré" className="is-money"><strong>{formatAriary(item.totals.amountCollectedAriary)}</strong></td>
+                    <td data-label="Frais" className="is-money"><strong>{formatAriary(item.totals.deliveryFeesAriary)}</strong></td>
+                    <td data-label="Solde du rapport" className="is-money"><strong>{item.totals.amountToRemitAriary < 0 ? 'À payer à AZY · ' : ''}{formatAriary(Math.abs(item.totals.amountToRemitAriary))}</strong></td>
+                    <td data-label="Règlement">{settlement ? <span className={`client-report-list-table__status is-${settlement.status.toLowerCase()}`}>{settlementLabel(settlement)}</span> : <span className="client-report-list-table__status">{financeLoading ? 'Chargement…' : 'Indisponible'}</span>}</td>
+                    <td className="client-report-list-table__action"><button className="button button--secondary" type="button" aria-label={`Ouvrir le rapport du ${formatDate(item.serviceDate)}`} onClick={(event) => { event.stopPropagation(); openReport(item.serviceDate) }}><Eye aria-hidden="true" />Voir</button></td>
+                  </tr>
+                })}</tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
       {selectedSummary && <span className="sr-only">Rapport sélectionné du {selectedSummary.serviceDate}</span>}
     </section>

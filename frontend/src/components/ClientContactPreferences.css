@@ -1,7 +1,8 @@
 .client-preferences-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
+  margin-top: .9rem;
 }
 
 .client-priority-card {
@@ -58,7 +59,7 @@
 .client-priority-list > article {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(8rem, .75fr) minmax(10rem, 1fr) auto auto;
+  grid-template-columns: minmax(0, .75fr) minmax(0, 1fr) auto auto;
   gap: .65rem;
   align-items: end;
   padding: 2.15rem .75rem .75rem;
@@ -67,8 +68,8 @@
   border-radius: 1rem;
 }
 
-.client-priority-card:nth-child(2) .client-priority-list > article {
-  grid-template-columns: minmax(7rem, .7fr) minmax(8rem, 1fr) minmax(8rem, .9fr) auto auto;
+.client-priority-card--payouts .client-priority-list > article {
+  grid-template-columns: minmax(0, .7fr) minmax(0, 1fr) minmax(0, .9fr) auto auto;
 }
 
 .client-priority-rank {
@@ -164,20 +165,28 @@
   margin: 0;
 }
 
-@media (max-width: 1180px) {
-  .client-preferences-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 980px) {
+  .client-priority-list > article,
+  .client-priority-card--payouts .client-priority-list > article {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .client-priority-actions {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 }
 
 @media (max-width: 760px) {
   .client-priority-list > article,
-  .client-priority-card:nth-child(2) .client-priority-list > article {
+  .client-priority-card--payouts .client-priority-list > article {
     grid-template-columns: 1fr;
   }
 
   .client-priority-actions {
+    grid-column: auto;
     justify-content: flex-end;
+    justify-self: stretch;
   }
 
   .client-priority-card > footer .button {
