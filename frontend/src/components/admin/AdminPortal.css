@@ -705,15 +705,44 @@
   justify-content: center;
 }
 
+.admin-package-row > span:nth-child(3) > span,
+.admin-package-row > span:nth-child(6) > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.18rem;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.admin-package-row > span:nth-child(5) {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.admin-package-row > span:nth-child(5) > strong {
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .admin-package-row strong {
   color: var(--admin-navy);
 }
 
 .admin-package-row small {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
   color: var(--admin-orange);
   font-size: 0.6rem;
   font-weight: 800;
+  line-height: 1.35;
   text-transform: uppercase;
+  white-space: normal;
 }
 
 .admin-package-row svg {
