@@ -2,6 +2,7 @@ package com.azylivraison.delivery.api;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
@@ -18,6 +19,7 @@ public record DeliveryPackageResponse(
         String contact,
         long amountToCollectAriary,
         boolean mobileMoneyPaid,
+        LocalTime desiredDeliveryTime,
         UUID pricingZoneId,
         String pricingZoneName,
         Long deliveryFeeAriary,
@@ -29,6 +31,10 @@ public record DeliveryPackageResponse(
         Long distanceFromCenterMeters,
         Long pricingZoneMaxDistanceMeters,
         Long pricingPolicyVersion,
+        Short pricingPolicyId,
+        Long baseDeliveryFeeAriary,
+        Long weightSurchargeAriary,
+        Long timeSurchargeAriary,
         BigDecimal effectiveWeightKg,
         PackageWeightSource weightSource,
         DeliveryPackageStatus status,
@@ -54,6 +60,7 @@ public record DeliveryPackageResponse(
                 deliveryPackage.contact(),
                 deliveryPackage.amountToCollectAriary(),
                 deliveryPackage.mobileMoneyPaid(),
+                deliveryPackage.desiredDeliveryTime(),
                 deliveryPackage.pricingSnapshot().pricingZoneId(),
                 deliveryPackage.pricingSnapshot().pricingZoneName(),
                 deliveryPackage.finalDeliveryFeeAriary(),
@@ -65,6 +72,10 @@ public record DeliveryPackageResponse(
                 deliveryPackage.pricingSnapshot().distanceFromCenterMeters(),
                 deliveryPackage.pricingSnapshot().pricingZoneMaxDistanceMeters(),
                 deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
+                deliveryPackage.pricingSnapshot().pricingPolicyId(),
+                deliveryPackage.pricingSnapshot().baseDeliveryFeeAriary(),
+                deliveryPackage.pricingSnapshot().weightSurchargeAriary(),
+                deliveryPackage.pricingSnapshot().timeSurchargeAriary(),
                 deliveryPackage.effectiveWeightKg(),
                 deliveryPackage.weightSource(),
                 deliveryPackage.status(),

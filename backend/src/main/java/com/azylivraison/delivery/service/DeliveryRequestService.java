@@ -3,6 +3,7 @@ package com.azylivraison.delivery.service;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -16,15 +17,17 @@ import com.azylivraison.delivery.api.DeliveryRequestResponse;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryRequestStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.delivery.domain.ExpressDeliveryStatus;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
 import com.azylivraison.delivery.domain.StoredDeliveryRequest;
 import com.azylivraison.delivery.repository.DeliveryRequestRepository;
 import com.azylivraison.delivery.repository.DeliveryRequestRepository.OperationalSettingsSnapshot;
 import com.azylivraison.delivery.repository.DeliveryRequestRepository.QueueCounts;
-import com.azylivraison.pricing.domain.DeliveryPricingQuote;
-import com.azylivraison.pricing.domain.PricingPolicy;
-import com.azylivraison.pricing.service.DeliveryPricingService;
+import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
+import com.azylivraison.pricing.domain.AdvancedPricingQuote;
+import com.azylivraison.pricing.service.AdvancedPricingService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,41 +36,59 @@ import org.springframework.transaction.annotation.Transactional;
 public class DeliveryRequestService {
 
     private final DeliveryRequestRepository repository;
-    private final DeliveryPricingService pricingService;
+    private final AdvancedPricingService pricingService;
 
     public DeliveryRequestService(
             DeliveryRequestRepository repository,
-            DeliveryPricingService pricingService) {
+            AdvancedPricingService pricingService) {
         this.repository = repository;
         this.pricingService = pricingService;
     }
 
     @Transactional
     public DeliveryRequestResponse create(UUID ownerAccountId, CreateDeliveryRequest input) {
-        OperationalSettingsSnapshot settings = repository.lockOperationalSettings();
-        if (repository.isDateClosedForAdmissions(input.requestedDate())) {
-            throw new DeliveryDateClosedException(input.requestedDate());
+        if (input.requestKind() == DeliveryRequestKind.EXPRESS
+                && !repository.canCreateExpress(ownerAccountId)) {
+            throw new ExpressDeliveryForbiddenException();
         }
-        int current = repository.countAllocatedPackages(input.requestedDate());
+        return create(ownerAccountId, ownerAccountId, input);
+    }
+
+    @Transactional
+    public DeliveryRequestResponse createForAdministration(
+            UUID ownerAccountId, UUID administratorAccountId, CreateDeliveryRequest input) {
+        return create(ownerAccountId, administratorAccountId, input);
+    }
+
+    private DeliveryRequestResponse create(
+            UUID ownerAccountId, UUID actorAccountId, CreateDeliveryRequest input) {
+        OperationalSettingsSnapshot settings = repository.lockOperationalSettings();
+        boolean express = input.requestKind() == DeliveryRequestKind.EXPRESS;
+        LocalDate requestedDate = express
+                ? LocalDate.now(ZoneId.of("Indian/Antananarivo"))
+                : input.requestedDate();
+        if (!express && repository.isDateClosedForAdmissions(requestedDate)) {
+            throw new DeliveryDateClosedException(requestedDate);
+        }
+        int current = express ? 0 : repository.countAllocatedPackages(requestedDate);
         int requested = input.packages().size();
         int projected = Math.addExact(current, requested);
-        boolean overflow = projected > settings.dailyPackageLimit();
+        boolean overflow = !express && projected > settings.dailyPackageLimit();
         if (overflow) {
             throw new DailyCapacityExceededException(
-                    input.requestedDate(), settings.dailyPackageLimit(), current, requested, projected);
+                    requestedDate, settings.dailyPackageLimit(), current, requested, projected);
         }
 
         Instant now = Instant.now();
         UUID requestId = UUID.randomUUID();
         ConfirmedLocation pickup = location(input.pickup());
-        PricingPolicy pricingPolicy = pricingService.getPolicy();
+        AdvancedPricingPolicy pricingPolicy = pricingService.effectivePolicy(ownerAccountId, input.requestKind());
         List<StoredDeliveryPackage> packages = new ArrayList<>(requested);
         for (int index = 0; index < requested; index++) {
             packages.add(toPackage(
                     requestId,
                     index + 1,
                     input.packages().get(index),
-                    settings.defaultPackageWeightKg(),
                     pricingPolicy,
                     now));
         }
@@ -77,7 +98,10 @@ public class DeliveryRequestService {
                 ownerAccountId,
                 null,
                 null,
-                input.requestedDate(),
+                input.requestKind(),
+                express ? ExpressDeliveryStatus.PENDING : null,
+                actorAccountId,
+                requestedDate,
                 pickup,
                 settings.dailyPackageLimit(),
                 current,
@@ -90,7 +114,7 @@ public class DeliveryRequestService {
                 now,
                 now,
                 packages);
-        repository.insert(deliveryRequest, ownerAccountId);
+        repository.insert(deliveryRequest, actorAccountId);
         if (input.saveAsDefaultPickup()) {
             repository.saveDefaultPickup(ownerAccountId, pickup, now);
         }
@@ -171,13 +195,13 @@ public class DeliveryRequestService {
             UUID requestId,
             int sequence,
             CreateDeliveryPackageRequest input,
-            BigDecimal defaultWeight,
-            PricingPolicy pricingPolicy,
+            AdvancedPricingPolicy pricingPolicy,
             Instant now) {
         boolean providedWeight = input.weightKg() != null;
         ConfirmedLocation destination = location(input.destination());
-        DeliveryPricingQuote pricing = pricingService.quote(
-                pricingPolicy, destination.latitude(), destination.longitude());
+        AdvancedPricingQuote pricing = pricingService.quote(
+                pricingPolicy, destination.latitude(), destination.longitude(), input.weightKg(),
+                input.desiredDeliveryTime());
         return new StoredDeliveryPackage(
                 UUID.randomUUID(),
                 requestId,
@@ -188,13 +212,14 @@ public class DeliveryRequestService {
                 normalize(input.contact()),
                 input.amountToCollectAriary(),
                 input.mobileMoneyPaid(),
-                pricing.toSnapshot(),
+                input.desiredDeliveryTime(),
+                pricing.toLegacySnapshot(),
                 pricing.deliveryFeeAriary(),
                 null,
                 null,
                 null,
                 0,
-                providedWeight ? input.weightKg() : defaultWeight,
+                pricing.effectiveWeightKg(),
                 providedWeight ? PackageWeightSource.PROVIDED : PackageWeightSource.DEFAULT_SETTING,
                 DeliveryPackageStatus.PENDING,
                 null,

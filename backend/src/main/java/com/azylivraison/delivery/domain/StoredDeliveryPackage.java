@@ -2,6 +2,7 @@ package com.azylivraison.delivery.domain;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.UUID;
 
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
@@ -16,6 +17,7 @@ public record StoredDeliveryPackage(
         String contact,
         long amountToCollectAriary,
         boolean mobileMoneyPaid,
+        LocalTime desiredDeliveryTime,
         DeliveryPricingSnapshot pricingSnapshot,
         Long finalDeliveryFeeAriary,
         String deliveryFeeOverrideReason,

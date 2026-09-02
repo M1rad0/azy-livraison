@@ -2,6 +2,7 @@ package com.azylivraison.delivery.api;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestStatus;
 import com.azylivraison.delivery.service.DeliveryRequestService;
@@ -11,6 +12,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -37,5 +45,14 @@ public class AdminDeliveryRequestController {
     public AdminQueueResponse queue(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return service.queue(date);
+    }
+
+    @PostMapping("/clients/{clientAccountId}/delivery-requests")
+    public DeliveryRequestResponse createForClient(
+            @PathVariable UUID clientAccountId,
+            @Valid @RequestBody CreateDeliveryRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return service.createForAdministration(clientAccountId,
+                UUID.fromString(jwt.getClaimAsString("accountId")), request);
     }
 }

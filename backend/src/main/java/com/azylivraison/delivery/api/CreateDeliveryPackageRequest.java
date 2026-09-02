@@ -1,6 +1,7 @@
 package com.azylivraison.delivery.api;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -17,5 +18,6 @@ public record CreateDeliveryPackageRequest(
         @NotBlank @Size(max = 100) String contact,
         @NotNull @PositiveOrZero Long amountToCollectAriary,
         @NotNull Boolean mobileMoneyPaid,
+        LocalTime desiredDeliveryTime,
         @DecimalMin(value = "0", inclusive = false) @DecimalMax("9999999.999") BigDecimal weightKg) {
 }

@@ -13,6 +13,7 @@ public record ClientProfileResponse(
         String displayName,
         String phone,
         DefaultPickupResponse defaultPickup,
+        boolean expressDeliveryEnabled,
         List<ContactNumberResponse> contactNumbers,
         List<PayoutDestinationResponse> payoutDestinations,
         long version) {
@@ -24,6 +25,7 @@ public record ClientProfileResponse(
                 account.displayName(),
                 account.phone(),
                 DefaultPickupResponse.from(profile.defaultPickup()),
+                profile.expressDeliveryEnabled(),
                 profile.contactNumbers().stream().map(ContactNumberResponse::from).toList(),
                 profile.payoutDestinations().stream().map(PayoutDestinationResponse::from).toList(),
                 profile.version());

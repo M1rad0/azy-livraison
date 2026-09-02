@@ -9,7 +9,18 @@ public record DeliveryPricingSnapshot(
         Long deliveryFeeAriary,
         Long distanceFromCenterMeters,
         Long pricingZoneMaxDistanceMeters,
-        Long pricingPolicyVersion) {
+        Long pricingPolicyVersion,
+        Short pricingPolicyId,
+        Long baseDeliveryFeeAriary,
+        Long weightSurchargeAriary,
+        Long timeSurchargeAriary) {
+
+    public DeliveryPricingSnapshot(UUID pricingZoneId, String pricingZoneName, Long deliveryFeeAriary,
+            Long distanceFromCenterMeters, Long pricingZoneMaxDistanceMeters, Long pricingPolicyVersion) {
+        this(pricingZoneId, pricingZoneName, deliveryFeeAriary, distanceFromCenterMeters,
+                pricingZoneMaxDistanceMeters, pricingPolicyVersion, null, deliveryFeeAriary,
+                deliveryFeeAriary == null ? null : 0L, deliveryFeeAriary == null ? null : 0L);
+    }
 
     public DeliveryPricingSnapshot {
         boolean allNull = pricingZoneId == null
@@ -30,7 +41,8 @@ public record DeliveryPricingSnapshot(
     }
 
     public static DeliveryPricingSnapshot absent() {
-        return new DeliveryPricingSnapshot(null, null, null, null, null, null);
+        return new DeliveryPricingSnapshot(null, null, null, null, null, null,
+                null, null, null, null);
     }
 
     public boolean present() {

@@ -6,6 +6,7 @@ import java.util.UUID;
 public record ClientProfile(
         UUID accountId,
         DefaultPickupLocation defaultPickup,
+        boolean expressDeliveryEnabled,
         List<ClientContactNumber> contactNumbers,
         List<ClientPayoutDestination> payoutDestinations,
         long version) {
