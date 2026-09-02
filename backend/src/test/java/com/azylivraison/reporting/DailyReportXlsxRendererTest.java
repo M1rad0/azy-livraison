@@ -74,12 +74,11 @@ class DailyReportXlsxRendererTest {
             assertThat(delivered.getCell(1).getStringCellValue()).isEqualTo("034 10 000 01");
             assertThat(delivered.getCell(2).getStringCellValue()).isEqualTo("Ivandry");
             assertThat(delivered.getCell(3).getStringCellValue()).isEqualTo("Livré");
-            assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo("Oui");
-            assertThat(delivered.getCell(5).getStringCellValue()).isEqualTo("Montant ajusté avec le client.");
-            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(40_000);
-            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(3_000);
-            assertThat(delivered.getCell(8).getNumericCellValue()).isEqualTo(37_000);
-            assertThat(rowWithValue(report, 0, "Synthèse").getRowNum()).isGreaterThan(header.getRowNum() + 2);
+            assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo("Montant ajusté avec le client.");
+            assertThat(delivered.getCell(5).getNumericCellValue()).isEqualTo(40_000);
+            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(37_000);
+            assertThat(rowWithValue(report, 0, "Synthèse").getRowNum()).isLessThan(header.getRowNum());
             Row summary = rowWithValue(report, 0, "Colis");
             assertThat(summary.getCell(1).getNumericCellValue()).isEqualTo(2);
             assertThat(summary.getCell(2).getStringCellValue()).isEqualTo("Total récupéré");
@@ -93,11 +92,11 @@ class DailyReportXlsxRendererTest {
             assertThat(sheetContains(report, "Boutique Rado")).isTrue();
             assertThat(sheetContains(report, "24 août 2026")).isTrue();
             assertThat(report.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Boutique Rado");
-            assertThat(report.getRow(1).getCell(6).getStringCellValue()).isEqualTo("24 août 2026");
+            assertThat(report.getRow(1).getCell(5).getStringCellValue()).isEqualTo("24 août 2026");
             assertThat(workbook.getFontAt(report.getRow(1).getCell(0).getCellStyle().getFontIndex())
                     .getFontHeightInPoints())
                     .isGreaterThanOrEqualTo((short) 16);
-            assertThat(report.getRow(1).getCell(6).getCellStyle().getAlignment())
+            assertThat(report.getRow(1).getCell(5).getCellStyle().getAlignment())
                     .isEqualTo(org.apache.poi.ss.usermodel.HorizontalAlignment.RIGHT);
             assertThat(sheetContains(report, "Hery")).isFalse();
             assertThat(sheetContains(report, "Fara")).isFalse();
@@ -120,9 +119,8 @@ class DailyReportXlsxRendererTest {
             assertThat(stringOccurrences(report, "Retrait unique 1 — Antananarivo")).isEqualTo(1);
             assertThat(stringOccurrences(report, "Retrait unique 60 — Antananarivo")).isEqualTo(1);
             Row header = rowWithValue(report, 0, "Destinataire");
-            assertThat(header.getCell(4).getStringCellValue()).isEqualTo("Mobile Money");
-            assertThat(header.getCell(5).getStringCellValue()).isEqualTo("Commentaire");
-            assertThat(rowWithValue(report, 0, "Synthèse").getRowNum()).isGreaterThan(header.getRowNum() + 60);
+            assertThat(header.getCell(4).getStringCellValue()).isEqualTo("Commentaire");
+            assertThat(rowWithValue(report, 0, "Synthèse").getRowNum()).isLessThan(header.getRowNum());
             assertThat(report.getPaneInformation()).isNull();
         }
     }
@@ -138,7 +136,7 @@ class DailyReportXlsxRendererTest {
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
             Sheet report = workbook.getSheet("Rapport client");
             Row delivered = rowWithValue(report, 0, "Mme Volana");
-            assertThat(delivered.getCell(5).getStringCellValue()).isEqualTo(longComment);
+            assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo(longComment);
             assertThat(delivered.getHeightInPoints()).isGreaterThan(90);
         }
     }

@@ -98,6 +98,7 @@ export interface ClientDailyReport {
   reportId: string
   serviceDate: string
   clientDisplayName: string
+  clientPhone?: string | null
   totals: ClientReportTotals
   packages: ClientReportPackage[]
 }

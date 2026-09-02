@@ -19,6 +19,7 @@ public record ClientDailyReport(
         UUID reportId,
         LocalDate serviceDate,
         String clientDisplayName,
+        String clientPhone,
         Totals totals,
         List<PackageLine> packages) {
 

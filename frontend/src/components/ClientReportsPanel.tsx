@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   MapPin,
   PackageCheck,
+  Phone,
   RefreshCw,
   RotateCcw,
   WalletCards,
@@ -281,15 +282,25 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                   </div>
                 </header>
 
-                {pickupLabels.length > 0 && (
-                  <section className="client-report-pickups" aria-labelledby="client-report-pickups-title">
-                    <span><MapPin aria-hidden="true" /></span>
-                    <div>
-                      <h3 id="client-report-pickups-title">Point{pickupLabels.length > 1 ? 's' : ''} de récupération</h3>
-                      <p>{pickupLabels.join(' · ')}</p>
-                    </div>
-                  </section>
-                )}
+                <section className="client-report-summary" aria-labelledby="client-report-summary-title">
+                  <h3 className="client-report-section-title" id="client-report-summary-title">Synthèse</h3>
+                  <div className="client-report-totals">
+                    <article><span><WalletCards aria-hidden="true" /></span><div><small>Total récupéré</small><strong>{formatAriary(report.totals.amountCollectedAriary)}</strong></div></article>
+                    <article><span><Download aria-hidden="true" /></span><div><small>Frais de livraison</small><strong>{formatAriary(report.totals.deliveryFeesAriary)}</strong></div></article>
+                    <article className="is-primary"><span><PackageCheck aria-hidden="true" /></span><div><small>{report.totals.amountToRemitAriary < 0 ? 'À payer à AZY' : 'À vous reverser'}</small><strong>{formatAriary(Math.abs(report.totals.amountToRemitAriary))}</strong></div></article>
+                  </div>
+                </section>
+
+                <section className="client-report-deliveries" aria-labelledby="client-report-deliveries-title">
+                  <h3 className="client-report-section-title" id="client-report-deliveries-title">Livraisons</h3>
+                  <div className="client-report-context">
+                    {report.clientPhone?.trim() && (
+                      <article><Phone aria-hidden="true" /><span><strong>Contact</strong>{report.clientPhone}</span></article>
+                    )}
+                    {pickupLabels.length > 0 && (
+                      <article><MapPin aria-hidden="true" /><span><strong>Point{pickupLabels.length > 1 ? 's' : ''} de récupération</strong>{pickupLabels.join(' · ')}</span></article>
+                    )}
+                  </div>
 
                 <div className="client-report-packages">
                   <table>
@@ -299,7 +310,6 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                         <th scope="col">Destinataire</th>
                         <th scope="col">Destination / contact</th>
                         <th scope="col">État</th>
-                        <th scope="col">Mobile Money</th>
                         <th scope="col">Commentaire</th>
                         <th scope="col" className="is-money">Récupéré</th>
                         <th scope="col" className="is-money">Frais</th>
@@ -312,7 +322,6 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                           <td data-label="Destinataire"><strong>{item.recipientName}</strong></td>
                           <td data-label="Destination / contact"><strong>{item.destinationLabel}</strong><small>{item.recipientContact}</small></td>
                           <td data-label="État"><span className={`client-report-package-status is-${item.outcome.toLowerCase()}`}>{outcomeLabel(item)}</span></td>
-                          <td data-label="Mobile Money"><span className={`client-report-payment is-${item.mobileMoneyPaid ? 'yes' : 'no'}`}>{item.mobileMoneyPaid ? 'Oui' : 'Non'}</span></td>
                           <td data-label="Commentaire" className="client-report-comment">{item.comment?.trim() || '—'}</td>
                           <td data-label="Récupéré" className="is-money"><strong>{formatAriary(item.actualAmountCollectedAriary)}</strong></td>
                           <td data-label="Frais" className="is-money"><strong>{formatAriary(item.appliedDeliveryFeeAriary)}</strong></td>
@@ -323,6 +332,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                   </table>
                   {report.packages.length === 0 && <p className="client-report-packages__empty">Aucun colis dans ce rapport.</p>}
                 </div>
+                </section>
 
                 {selectedSettlement ? (
                   <section className="client-report-settlement" aria-labelledby="client-settlement-title">
@@ -349,14 +359,6 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                   </section>
                 ) : null}
 
-                <section className="client-report-summary" aria-labelledby="client-report-summary-title">
-                  <header><p className="eyebrow">Synthèse</p><h3 id="client-report-summary-title">Synthèse financière</h3></header>
-                  <div className="client-report-totals">
-                    <article><span><WalletCards aria-hidden="true" /></span><div><small>Total récupéré</small><strong>{formatAriary(report.totals.amountCollectedAriary)}</strong></div></article>
-                    <article><span><Download aria-hidden="true" /></span><div><small>Frais de livraison</small><strong>{formatAriary(report.totals.deliveryFeesAriary)}</strong></div></article>
-                    <article className="is-primary"><span><PackageCheck aria-hidden="true" /></span><div><small>{report.totals.amountToRemitAriary < 0 ? 'À payer à AZY' : 'À vous reverser'}</small><strong>{formatAriary(Math.abs(report.totals.amountToRemitAriary))}</strong></div></article>
-                  </div>
-                </section>
               </>
             )}
           </section>

@@ -334,6 +334,7 @@ public class DailyReportService {
                 deriveClientReportId(report.reportId(), accountId),
                 report.serviceDate(),
                 client.displayName(),
+                client.phone(),
                 report.totals(),
                 report.packages().stream()
                         .map(item -> new ClientDailyReport.PackageLine(

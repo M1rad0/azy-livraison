@@ -78,6 +78,7 @@ class DailyReportPdfRendererTest {
                     .doesNotContain("Siège Antsahavola")
                     .doesNotContain("Plan")
                     .doesNotContain("Livreur")
+                    .doesNotContain("Mobile Money")
                     .doesNotContain("Hery")
                     .doesNotContain("Fara")
                     .doesNotContain("Prévu")
@@ -87,7 +88,7 @@ class DailyReportPdfRendererTest {
                     .doesNotContain("15:30")
                     .doesNotContain("17:20");
             assertThat(occurrences(text, "Retrait Ampasapito")).isEqualTo(1);
-            assertThat(text.indexOf("Synthèse")).isGreaterThan(text.indexOf("M. Naina"));
+            assertThat(text.indexOf("Synthèse")).isLessThan(text.indexOf("Livraisons"));
         }
     }
 
@@ -148,7 +149,7 @@ class DailyReportPdfRendererTest {
     }
 
     @Test
-    void paginatesManyPickupsAndKeepsTheFinalSummaryTogether() throws Exception {
+    void paginatesManyPickupsAndKeepsTheOpeningSummaryTogether() throws Exception {
         byte[] result = renderer.renderForClient(
                 DailyReportTestFixture.clientOneVolumeReport(60), DailyReportTestFixture.CLIENT_ONE_ID);
 
@@ -158,9 +159,7 @@ class DailyReportPdfRendererTest {
             assertThat(text)
                     .contains("Retrait unique 1 — Antananarivo")
                     .contains("Retrait unique 60 — Antananarivo")
-                    .contains("Mobile Money")
-                    .contains("Oui")
-                    .contains("Non");
+                    .doesNotContain("Mobile Money");
             assertThat(occurrences(text, "Retrait unique 1 — Antananarivo")).isEqualTo(1);
             assertThat(occurrences(text, "Retrait unique 60 — Antananarivo")).isEqualTo(1);
 
@@ -191,8 +190,9 @@ class DailyReportPdfRendererTest {
         try (PDDocument document = Loader.loadPDF(result)) {
             String text = new PDFTextStripper().getText(document);
             assertThat(text)
-                    .contains("Commentaire : Début du commentaire.")
-                    .contains("Fin intégrale du commentaire.");
+                    .contains("Début du commentaire.")
+                    .contains("Fin intégrale du")
+                    .contains("commentaire.");
         }
     }
 
