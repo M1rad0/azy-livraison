@@ -251,6 +251,7 @@ describe('ClientPortal', () => {
 
     fireEvent.change(screen.getByLabelText('Nom du client destinataire'), { target: { value: 'Rakoto' } })
     fireEvent.change(screen.getByLabelText('Contact client'), { target: { value: '034 00 000 00' } })
+    fireEvent.change(screen.getByLabelText(/Libellé \/ repère de livraison/), { target: { value: 'Bureau Ampasampito' } })
     fireEvent.change(screen.getByLabelText('Total à récupérer (Ar)'), { target: { value: '45000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Choisir Lieu de livraison' }))
     expect(await screen.findByText(/3.*000 Ar de livraison/)).toBeInTheDocument()

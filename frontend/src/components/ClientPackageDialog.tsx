@@ -116,6 +116,10 @@ export function ClientPackageDialog({
       setError('Indiquez un contact pour la livraison.')
       return
     }
+    if (!value.destination.label?.trim()) {
+      setError('Indiquez un libellé ou un repère pour la livraison.')
+      return
+    }
     if (!confirmed(value.destination)) {
       setError('Confirmez le lieu de livraison sur la carte.')
       return
@@ -143,9 +147,7 @@ export function ClientPackageDialog({
       contact: value.contact.trim(),
       destination: {
         ...value.destination,
-        label: value.destination.label?.trim()
-          || value.destination.destinationQuery?.trim()
-          || `Livraison ${value.recipientName.trim()}`,
+        label: value.destination.label.trim(),
       },
     })
   }
@@ -193,8 +195,21 @@ export function ClientPackageDialog({
           <div className="client-location-block">
             <div className="client-location-block__heading">
               <MapPin aria-hidden="true" />
-              <div><strong>Lieu de livraison</strong><small>Recherchez l’adresse ou placez précisément le point sur la carte.</small></div>
+              <div><strong>Lieu de livraison</strong><small>Donnez un repère court pour les rapports, puis confirmez sa position sur la carte.</small></div>
             </div>
+            <label className="client-field client-location-label-field">
+              <span>Libellé / repère de livraison</span>
+              <input
+                value={value.destination.label ?? ''}
+                maxLength={200}
+                placeholder="Ex. Bureau Ankorondrano"
+                onChange={(event) => setValue({
+                  ...value,
+                  destination: { ...value.destination, label: event.target.value },
+                })}
+              />
+              <small>Ce libellé court sera affiché dans les listes et les rapports à la place de l’adresse complète.</small>
+            </label>
             <LocationPicker
               accessToken={accessToken}
               value={value.destination}
@@ -205,9 +220,7 @@ export function ClientPackageDialog({
                 pricingQuote: undefined,
                 destination: {
                   ...destination,
-                  label: destination.label?.trim()
-                    || destination.destinationQuery?.trim()
-                    || `Livraison ${value.recipientName.trim() || packageNumber}`,
+                  label: value.destination.label ?? '',
                 },
               })}
             />

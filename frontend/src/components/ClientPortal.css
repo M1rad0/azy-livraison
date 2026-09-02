@@ -673,6 +673,16 @@
   line-height: 1.4;
 }
 
+.client-location-label-field {
+  margin-top: 0.8rem;
+}
+
+.client-location-label-field > small {
+  color: #75848e;
+  font-size: 0.6rem;
+  line-height: 1.4;
+}
+
 .client-pricing-preview {
   display: flex;
   align-items: center;
