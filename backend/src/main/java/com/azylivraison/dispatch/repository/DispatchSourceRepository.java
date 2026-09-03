@@ -42,6 +42,9 @@ public class DispatchSourceRepository {
             WHERE p.status = 'PENDING'
               AND p.final_outcome IS NULL
               AND dr.requested_date = :serviceDate
+              AND dr.request_kind = 'NORMAL'
+              AND dr.cancelled_before_processing_at IS NULL
+              AND p.cancelled_before_processing_at IS NULL
               AND reservation.delivery_package_id IS NULL
             """;
 

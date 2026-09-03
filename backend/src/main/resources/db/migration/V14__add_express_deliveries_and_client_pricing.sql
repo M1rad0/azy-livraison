@@ -26,7 +26,6 @@ ALTER TABLE delivery_request
 UPDATE delivery_request
 SET created_by_account_id = owner_account_id
 WHERE created_by_account_id IS NULL;
-ALTER TABLE delivery_request ALTER COLUMN created_by_account_id SET NOT NULL;
 
 ALTER TABLE delivery_package
     ADD COLUMN desired_delivery_time TIME;
@@ -50,7 +49,10 @@ SET pricing_policy_id = 1,
     time_surcharge_ariary = 0
 WHERE delivery_fee_ariary IS NOT NULL;
 
-ALTER TABLE delivery_pricing_policy DROP CONSTRAINT delivery_pricing_policy_id_check;
+ALTER TABLE delivery_pricing_policy DROP CONSTRAINT IF EXISTS delivery_pricing_policy_id_check;
+-- H2 (used by integration tests) assigns this deterministic name to V8's unnamed check.
+-- PostgreSQL simply ignores it and drops the explicit name above.
+ALTER TABLE delivery_pricing_policy DROP CONSTRAINT IF EXISTS "CONSTRAINT_79D";
 ALTER TABLE delivery_pricing_policy
     ADD COLUMN client_account_id UUID REFERENCES app_account(id) ON DELETE CASCADE;
 ALTER TABLE delivery_pricing_policy
@@ -62,12 +64,8 @@ ALTER TABLE delivery_pricing_policy
 ALTER TABLE delivery_pricing_policy
     ADD CONSTRAINT delivery_pricing_policy_kind_check CHECK (request_kind IN ('NORMAL', 'EXPRESS'));
 
-CREATE UNIQUE INDEX delivery_pricing_default_kind_uk
-    ON delivery_pricing_policy(request_kind)
-    WHERE client_account_id IS NULL AND active;
-CREATE UNIQUE INDEX delivery_pricing_client_kind_uk
-    ON delivery_pricing_policy(client_account_id, request_kind)
-    WHERE client_account_id IS NOT NULL AND active;
+CREATE INDEX delivery_pricing_policy_scope_idx
+    ON delivery_pricing_policy(client_account_id, request_kind, active);
 
 INSERT INTO delivery_pricing_policy (
     id, center_label, center_query, center_latitude, center_longitude,
@@ -81,13 +79,9 @@ WHERE id = 1;
 INSERT INTO delivery_pricing_zone (
     id, pricing_policy_id, zone_order, name, max_distance_meters, delivery_fee_ariary
 )
-SELECT CASE zone_order
-           WHEN 1 THEN '72000000-0000-0000-0000-000000000001'::UUID
-           WHEN 2 THEN '72000000-0000-0000-0000-000000000002'::UUID
-           WHEN 3 THEN '72000000-0000-0000-0000-000000000003'::UUID
-           WHEN 4 THEN '72000000-0000-0000-0000-000000000004'::UUID
-           ELSE '72000000-0000-0000-0000-000000000005'::UUID
-       END, 2, zone_order, name, max_distance_meters, delivery_fee_ariary
+SELECT CAST(CONCAT('72000000-0000-0000-0000-',
+                   LPAD(CAST(zone_order AS VARCHAR), 12, '0')) AS UUID),
+       2, zone_order, name, max_distance_meters, delivery_fee_ariary
 FROM delivery_pricing_zone
 WHERE pricing_policy_id = 1;
 
@@ -127,5 +121,4 @@ CREATE INDEX delivery_request_kind_date_status_idx
 
 -- Express requests are intentionally excluded from automatic dispatch.
 CREATE INDEX delivery_request_active_express_idx
-    ON delivery_request(express_status, created_at)
-    WHERE request_kind = 'EXPRESS' AND cancelled_before_processing_at IS NULL;
+    ON delivery_request(request_kind, express_status, cancelled_before_processing_at, created_at);

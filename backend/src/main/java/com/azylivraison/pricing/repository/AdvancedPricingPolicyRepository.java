@@ -76,8 +76,12 @@ public class AdvancedPricingPolicyRepository {
     public short create(AdvancedPricingPolicy policy) {
         jdbcTemplate.queryForObject("SELECT id FROM delivery_pricing_policy WHERE id = 1 FOR UPDATE",
                 Short.class);
-        Short id = jdbcTemplate.queryForObject(
-                "SELECT (COALESCE(MAX(id), 0) + 1)::SMALLINT FROM delivery_pricing_policy", Short.class);
+        Integer nextId = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM delivery_pricing_policy", Integer.class);
+        if (nextId == null || nextId > Short.MAX_VALUE) {
+            throw new IllegalStateException("Le nombre maximal de grilles tarifaires est atteint.");
+        }
+        short id = nextId.shortValue();
         jdbcTemplate.update("""
                 INSERT INTO delivery_pricing_policy (
                     id, center_label, center_query, center_latitude, center_longitude,

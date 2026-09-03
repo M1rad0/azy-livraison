@@ -22,7 +22,10 @@ public class PublicApiRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !(path.startsWith("/api/public/") || path.startsWith("/api/geocoding/"));
+        if (path.startsWith("/api/public/")) return false;
+        if (!path.startsWith("/api/geocoding/")) return true;
+        String authorization = request.getHeader("Authorization");
+        return authorization != null && !authorization.isBlank();
     }
 
     @Override

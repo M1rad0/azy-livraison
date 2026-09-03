@@ -1,13 +1,16 @@
 package com.azylivraison.delivery.api;
 
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestStatus;
 import com.azylivraison.delivery.service.DeliveryRequestService;
+import com.azylivraison.pricing.service.AdvancedPricingService;
 
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,9 +28,12 @@ import jakarta.validation.Valid;
 public class AdminDeliveryRequestController {
 
     private final DeliveryRequestService service;
+    private final AdvancedPricingService pricingService;
 
-    public AdminDeliveryRequestController(DeliveryRequestService service) {
+    public AdminDeliveryRequestController(DeliveryRequestService service,
+            AdvancedPricingService pricingService) {
         this.service = service;
+        this.pricingService = pricingService;
     }
 
     @GetMapping("/delivery-requests")
@@ -48,11 +54,22 @@ public class AdminDeliveryRequestController {
     }
 
     @PostMapping("/clients/{clientAccountId}/delivery-requests")
-    public DeliveryRequestResponse createForClient(
+    public ResponseEntity<DeliveryRequestResponse> createForClient(
             @PathVariable UUID clientAccountId,
             @Valid @RequestBody CreateDeliveryRequest request,
             @AuthenticationPrincipal Jwt jwt) {
-        return service.createForAdministration(clientAccountId,
+        DeliveryRequestResponse created = service.createForAdministration(clientAccountId,
                 UUID.fromString(jwt.getClaimAsString("accountId")), request);
+        return ResponseEntity.created(URI.create("/api/admin/delivery-requests/" + created.id())).body(created);
+    }
+
+    @PostMapping("/clients/{clientAccountId}/delivery-pricing/quote")
+    public AdvancedPricingQuoteResponse quoteForClient(
+            @PathVariable UUID clientAccountId,
+            @Valid @RequestBody DeliveryPricingQuoteRequest request) {
+        ConfirmedLocationRequest destination = request.destination();
+        return AdvancedPricingQuoteResponse.from(pricingService.quote(
+                clientAccountId, request.requestKind(), destination.latitude(), destination.longitude(),
+                request.weightKg(), request.desiredDeliveryTime()));
     }
 }

@@ -12,6 +12,7 @@ import java.util.UUID;
 import com.azylivraison.dailyworkflow.domain.DailyPackageRecord;
 import com.azylivraison.dailyworkflow.domain.OperationDay;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
 
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -65,6 +66,28 @@ public class DailyReportRepository {
                 context,
                 clientIdentities(accountIds),
                 successors(sourcePackageIds));
+    }
+
+    public boolean clientExpressEnabled(UUID accountId) {
+        List<Boolean> values = jdbcTemplate.getJdbcTemplate().query(
+                "SELECT express_delivery_enabled FROM client_profile WHERE account_id = ?",
+                (resultSet, rowNumber) -> resultSet.getBoolean("express_delivery_enabled"), accountId);
+        return values.stream().findFirst().orElse(false);
+    }
+
+    public Map<UUID, DeliveryRequestKind> requestKinds(Set<UUID> packageIds) {
+        if (packageIds.isEmpty()) return Map.of();
+        Map<UUID, DeliveryRequestKind> kinds = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                SELECT package.id, request.request_kind
+                FROM delivery_package package
+                JOIN delivery_request request ON request.id = package.delivery_request_id
+                WHERE package.id IN (:packageIds)
+                """, new MapSqlParameterSource("packageIds", packageIds),
+                (org.springframework.jdbc.core.RowCallbackHandler) resultSet ->
+                        kinds.put(resultSet.getObject("id", UUID.class),
+                                DeliveryRequestKind.valueOf(resultSet.getString("request_kind"))));
+        return Map.copyOf(kinds);
     }
 
     private ReportContext context(OperationDay day) {

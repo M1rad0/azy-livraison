@@ -64,8 +64,16 @@ public class AdvancedPricingService {
                 .orElseThrow(() -> new DestinationOutsidePricingZonesException(distance,
                         policy.zones().getLast().maxDistanceMeters()));
         BigDecimal effectiveWeight = weightKg == null ? policy.defaultWeightKg() : weightKg;
+        if (effectiveWeight.signum() <= 0) {
+            throw new PricingConfigurationException("Le poids du colis doit etre positif.");
+        }
         PricingWeightTier weightTier = policy.weightTiers().stream()
                 .filter(item -> effectiveWeight.compareTo(item.maxWeightKg()) <= 0).findFirst().orElse(null);
+        if (!policy.weightTiers().isEmpty() && weightTier == null) {
+            throw new PricingConfigurationException(
+                    "Aucun palier tarifaire ne couvre un colis de " + effectiveWeight.stripTrailingZeros().toPlainString()
+                            + " kg.");
+        }
         long weightSurcharge = weightTier == null ? 0 : weightTier.surchargeAriary();
         PricingTimeSlot slot = desiredTime == null ? null : policy.timeSlots().stream()
                 .filter(item -> !desiredTime.isBefore(item.startTime()) && desiredTime.isBefore(item.endTime()))

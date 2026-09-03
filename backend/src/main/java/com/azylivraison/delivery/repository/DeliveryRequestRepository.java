@@ -79,6 +79,7 @@ public class DeliveryRequestRepository {
                 JOIN delivery_request dr ON dr.id = dp.delivery_request_id
                 WHERE dr.requested_date = ?
                   AND dr.request_kind = 'NORMAL'
+                  AND dp.cancelled_before_processing_at IS NULL
                   AND (dp.final_outcome IS NULL OR dp.final_outcome <> 'CANCELLED')
                 """, Integer.class, Date.valueOf(date));
         return count == null ? 0 : count;
@@ -150,7 +151,14 @@ public class DeliveryRequestRepository {
 
     public List<StoredDeliveryRequest> findByOwner(UUID ownerAccountId) {
         List<StoredDeliveryRequest> requests = jdbcTemplate.query(
-                REQUEST_SELECT + " WHERE dr.owner_account_id = ? AND dr.cancelled_before_processing_at IS NULL ORDER BY dr.created_at DESC",
+                REQUEST_SELECT + """
+                         WHERE dr.owner_account_id = ?
+                           AND dr.cancelled_before_processing_at IS NULL
+                           AND EXISTS (SELECT 1 FROM delivery_package visible_package
+                                       WHERE visible_package.delivery_request_id = dr.id
+                                         AND visible_package.cancelled_before_processing_at IS NULL)
+                         ORDER BY dr.created_at DESC
+                        """,
                 this::mapRequestWithoutPackages,
                 ownerAccountId);
         return withPackages(requests);
@@ -180,7 +188,14 @@ public class DeliveryRequestRepository {
             String clientQuery,
             boolean pendingOnly) {
         StringBuilder sql = new StringBuilder(REQUEST_SELECT)
-                .append(" WHERE dr.cancelled_before_processing_at IS NULL");
+                .append("""
+                         WHERE dr.cancelled_before_processing_at IS NULL
+                           AND EXISTS (
+                               SELECT 1 FROM delivery_package visible_package
+                               WHERE visible_package.delivery_request_id = dr.id
+                                 AND visible_package.cancelled_before_processing_at IS NULL
+                           )
+                        """);
         List<Object> arguments = new ArrayList<>();
         if (date != null) {
             sql.append(" AND dr.requested_date = ?");
@@ -215,8 +230,9 @@ public class DeliveryRequestRepository {
                     sql.append("""
                              AND EXISTS (
                                  SELECT 1 FROM delivery_package active_pending_package
-                                 WHERE active_pending_package.delivery_request_id = dr.id
-                                   AND active_pending_package.final_outcome IS NULL
+                             WHERE active_pending_package.delivery_request_id = dr.id
+                               AND active_pending_package.cancelled_before_processing_at IS NULL
+                               AND active_pending_package.final_outcome IS NULL
                              )
                             """);
                 }
@@ -228,6 +244,7 @@ public class DeliveryRequestRepository {
                          SELECT 1
                          FROM delivery_package pending_package
                          WHERE pending_package.delivery_request_id = dr.id
+                           AND pending_package.cancelled_before_processing_at IS NULL
                            AND pending_package.status = 'PENDING'
                            AND pending_package.final_outcome IS NULL
                      )
@@ -272,6 +289,7 @@ public class DeliveryRequestRepository {
                                SELECT 1
                                FROM delivery_package queued_package
                                WHERE queued_package.delivery_request_id = dr.id
+                                 AND queued_package.cancelled_before_processing_at IS NULL
                                  AND queued_package.status = 'PENDING'
                                  AND queued_package.final_outcome IS NULL
                            )
@@ -299,7 +317,9 @@ public class DeliveryRequestRepository {
                     COUNT(CASE WHEN dp.status = 'PENDING' AND dp.final_outcome IS NULL THEN 1 END)
                         AS pending_packages
                 FROM delivery_request dr
-                LEFT JOIN delivery_package dp ON dp.delivery_request_id = dr.id
+                LEFT JOIN delivery_package dp
+                       ON dp.delivery_request_id = dr.id
+                      AND dp.cancelled_before_processing_at IS NULL
                 WHERE dr.requested_date = ?
                   AND dr.request_kind = 'NORMAL'
                   AND dr.cancelled_before_processing_at IS NULL
@@ -419,15 +439,17 @@ public class DeliveryRequestRepository {
     }
 
     private StoredDeliveryRequest mapRequestWithoutPackages(ResultSet resultSet, int rowNumber) throws SQLException {
+        UUID ownerAccountId = resultSet.getObject("owner_account_id", UUID.class);
+        UUID createdByAccountId = resultSet.getObject("created_by_account_id", UUID.class);
         return new StoredDeliveryRequest(
                 resultSet.getObject("id", UUID.class),
-                resultSet.getObject("owner_account_id", UUID.class),
+                ownerAccountId,
                 resultSet.getString("owner_display_name"),
                 resultSet.getString("owner_phone"),
                 DeliveryRequestKind.valueOf(resultSet.getString("request_kind")),
                 resultSet.getString("express_status") == null ? null
                         : ExpressDeliveryStatus.valueOf(resultSet.getString("express_status")),
-                resultSet.getObject("created_by_account_id", UUID.class),
+                createdByAccountId == null ? ownerAccountId : createdByAccountId,
                 resultSet.getDate("requested_date").toLocalDate(),
                 new ConfirmedLocation(
                         resultSet.getString("pickup_label"),

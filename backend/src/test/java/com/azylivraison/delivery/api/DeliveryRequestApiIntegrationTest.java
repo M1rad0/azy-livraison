@@ -128,10 +128,10 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/admin/queue")
-                        .param("date", "2026-08-24")
+                        .param("date", "2099-08-24")
                         .with(admin()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.date").value("2026-08-24"))
+                .andExpect(jsonPath("$.date").value("2099-08-24"))
                 .andExpect(jsonPath("$.stats.pendingRequestCount").value(1))
                 .andExpect(jsonPath("$.stats.pendingPackageCount").value(2))
                 .andExpect(jsonPath("$.requests[0].ownerDisplayName").value("Client un"))
@@ -139,7 +139,7 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(jsonPath("$.requests[0].packages.length()").value(2));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
-                        .param("date", "2026-08-24")
+                        .param("date", "2099-08-24")
                         .param("status", "PENDING")
                         .with(admin()))
                 .andExpect(status().isOk())
@@ -154,7 +154,7 @@ class DeliveryRequestApiIntegrationTest {
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson(false, false)
-                                .replace("2026-08-24", requestDate.toString())))
+                                .replace("2099-08-24", requestDate.toString())))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/admin/queue")
@@ -196,14 +196,14 @@ class DeliveryRequestApiIntegrationTest {
                         .with(client(CLIENT_TWO_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson(false, false)
-                                .replace("2026-08-24", "2026-08-26")))
+                                .replace("2099-08-24", "2099-08-26")))
                 .andExpect(status().isCreated());
 
         MvcResult completedCreation = mockMvc.perform(post("/api/client/delivery-requests")
                         .with(client(CLIENT_ONE_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson(false, false)
-                                .replace("2026-08-24", "2026-08-25")))
+                                .replace("2099-08-24", "2099-08-25")))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID completedRequestId = UUID.fromString(objectMapper
@@ -217,12 +217,12 @@ class DeliveryRequestApiIntegrationTest {
                         .with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].requestedDate").value("2026-08-24"))
-                .andExpect(jsonPath("$[1].requestedDate").value("2026-08-26"));
+                .andExpect(jsonPath("$[0].requestedDate").value("2099-08-24"))
+                .andExpect(jsonPath("$[1].requestedDate").value("2099-08-26"));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
-                        .param("from", "2026-08-24")
-                        .param("to", "2026-08-24")
+                        .param("from", "2099-08-24")
+                        .param("to", "2099-08-24")
                         .param("pendingOnly", "true")
                         .with(admin()))
                 .andExpect(status().isOk())
@@ -233,15 +233,15 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(jsonPath("$[0].packages[0].recipientName").value("Soa"));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
-                        .param("from", "2026-08-25")
-                        .param("to", "2026-08-27")
+                        .param("from", "2099-08-25")
+                        .param("to", "2099-08-27")
                         .param("client", "  CLIENT-TWO  ")
                         .param("pendingOnly", "true")
                         .with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].ownerDisplayName").value("Client deux"))
-                .andExpect(jsonPath("$[0].requestedDate").value("2026-08-26"));
+                .andExpect(jsonPath("$[0].requestedDate").value("2099-08-26"));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
                         .param("client", "nom absent")
@@ -270,16 +270,16 @@ class DeliveryRequestApiIntegrationTest {
     @Test
     void rejectsAmbiguousOrReversedAdministrationDateFilters() throws Exception {
         mockMvc.perform(get("/api/admin/delivery-requests")
-                        .param("date", "2026-08-24")
-                        .param("from", "2026-08-23")
+                        .param("date", "2099-08-24")
+                        .param("from", "2099-08-23")
                         .with(admin()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("DELIVERY_REQUEST_FILTER_INVALID"))
                 .andExpect(jsonPath("$.message").value("Le filtre date ne peut pas être combiné avec une période."));
 
         mockMvc.perform(get("/api/admin/delivery-requests")
-                        .param("from", "2026-08-27")
-                        .param("to", "2026-08-25")
+                        .param("from", "2099-08-27")
+                        .param("to", "2099-08-25")
                         .with(admin()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("DELIVERY_REQUEST_FILTER_INVALID"))
@@ -303,7 +303,7 @@ class DeliveryRequestApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "requestedDate": "2026-08-24",
+                                  "requestedDate": "2099-08-24",
                                   "pickup": {
                                     "label": "Boutique", "latitude": -18.91, "longitude": 47.52
                                   },
@@ -359,7 +359,7 @@ class DeliveryRequestApiIntegrationTest {
                 """ : "";
         return """
                 {
-                  "requestedDate": "2026-08-24",
+                  "requestedDate": "2099-08-24",
                   "pickup": {
                     "label": "Boutique Analakely",
                     "query": "Analakely, Antananarivo",

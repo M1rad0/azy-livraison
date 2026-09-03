@@ -15,6 +15,7 @@ import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.delivery.api.LocationResponse;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
 
 public record DailyOperationResponse(
         LocalDate serviceDate,
@@ -123,6 +124,7 @@ public record DailyOperationResponse(
             UUID ownerAccountId,
             String ownerDisplayName,
             String ownerPhone,
+            DeliveryRequestKind requestKind,
             LocalDate requestedDate,
             LocationResponse pickup,
             int sequenceNumber,
@@ -167,7 +169,7 @@ public record DailyOperationResponse(
             return new DailyPackageResponse(
                     deliveryPackage.packageId(), deliveryPackage.deliveryRequestId(),
                     deliveryPackage.ownerAccountId(), deliveryPackage.ownerDisplayName(),
-                    deliveryPackage.ownerPhone(), deliveryPackage.requestedDate(),
+                    deliveryPackage.ownerPhone(), deliveryPackage.requestKind(), deliveryPackage.requestedDate(),
                     LocationResponse.from(deliveryPackage.pickup()), deliveryPackage.sequenceNumber(),
                     deliveryPackage.recipientName(), deliveryPackage.faritra(),
                     LocationResponse.from(deliveryPackage.destination()), deliveryPackage.contact(),

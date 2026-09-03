@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.azylivraison.reporting.domain.DailyReport.PackageOutcome;
 import com.azylivraison.reporting.domain.DailyReport.Totals;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
 
 /**
  * Client-facing projection of a closed daily report.
@@ -38,6 +39,7 @@ public record ClientDailyReport(
             String recipientContact,
             String pickupLabel,
             String destinationLabel,
+            DeliveryRequestKind requestKind,
             PackageOutcome outcome,
             String comment,
             long actualAmountCollectedAriary,

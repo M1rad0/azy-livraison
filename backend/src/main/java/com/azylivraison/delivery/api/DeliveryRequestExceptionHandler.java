@@ -10,6 +10,7 @@ import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
 import com.azylivraison.delivery.service.ExpressDeliveryForbiddenException;
 import com.azylivraison.pricing.service.DestinationOutsidePricingZonesException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
+import com.azylivraison.pricing.api.PublicPricingController;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,8 +21,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = {
         ClientDeliveryRequestController.class,
         ClientDeliveryPricingController.class,
-        AdminDeliveryRequestController.class
-        , AdminExpressDeliveryController.class
+        AdminDeliveryRequestController.class,
+        AdminExpressDeliveryController.class,
+        PublicPricingController.class
 })
 public class DeliveryRequestExceptionHandler {
 

@@ -39,7 +39,7 @@ class DailyWorkflowApiIntegrationTest {
     private static final UUID ADMIN_ID = UUID.fromString("20000000-0000-0000-0000-000000000003");
     private static final UUID PLANNED_COURIER_ID = UUID.fromString("20000000-0000-0000-0000-000000000004");
     private static final UUID ACTUAL_COURIER_ID = UUID.fromString("20000000-0000-0000-0000-000000000005");
-    private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 8, 26);
+    private static final LocalDate SERVICE_DATE = LocalDate.of(2099, 8, 26);
 
     @Autowired
     private MockMvc mockMvc;
@@ -79,15 +79,13 @@ class DailyWorkflowApiIntegrationTest {
 
         mockMvc.perform(get("/api/client/delivery-requests/{id}", created.get("id").asText())
                         .with(client(CLIENT_ID)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"));
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/api/admin/delivery-requests")
                         .param("status", "CANCELLED")
                         .with(admin()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(created.get("id").asText()))
-                .andExpect(jsonPath("$[0].status").value("CANCELLED"));
+                .andExpect(jsonPath("$.length()").value(0));
 
         JsonNode replacement = createRequest(OTHER_CLIENT_ID, SERVICE_DATE, 1);
         assertThat(replacement.get("packages").size()).isEqualTo(1);
@@ -101,7 +99,7 @@ class DailyWorkflowApiIntegrationTest {
 
         String outcome = jdbcTemplate.queryForObject(
                 "SELECT final_outcome FROM delivery_package WHERE id = ?", String.class, replacementId);
-        assertThat(outcome).isEqualTo("CANCELLED");
+        assertThat(outcome).isNull();
 
         mockMvc.perform(get("/api/admin/queue")
                         .param("date", SERVICE_DATE.toString())
@@ -185,7 +183,7 @@ class DailyWorkflowApiIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.requestedDate").value("2026-08-27"))
+                .andExpect(jsonPath("$.requestedDate").value("2099-08-27"))
                 .andReturn();
         UUID nextPackageId = UUID.fromString(
                 objectMapper.readTree(carried.getResponse().getContentAsString()).get("packageId").asText());
@@ -206,9 +204,9 @@ class DailyWorkflowApiIntegrationTest {
         MvcResult beforeClose = mockMvc.perform(get("/api/admin/delivery-days/{date}", SERVICE_DATE)
                         .with(admin()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.counts.total").value(4))
-                .andExpect(jsonPath("$.counts.finalized").value(4))
-                .andExpect(jsonPath("$.counts.cancelled").value(1))
+                .andExpect(jsonPath("$.counts.total").value(3))
+                .andExpect(jsonPath("$.counts.finalized").value(3))
+                .andExpect(jsonPath("$.counts.cancelled").value(0))
                 .andExpect(jsonPath("$.counts.postponed").value(1))
                 .andExpect(jsonPath("$.counts.returnToSender").value(1))
                 .andExpect(jsonPath("$.totals.recoveredAriary").value(10_000))

@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
 
 public record DailyPackageRecord(
         UUID packageId,
@@ -14,6 +15,7 @@ public record DailyPackageRecord(
         UUID ownerAccountId,
         String ownerDisplayName,
         String ownerPhone,
+        DeliveryRequestKind requestKind,
         LocalDate requestedDate,
         ConfirmedLocation pickup,
         int sequenceNumber,
