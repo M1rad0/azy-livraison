@@ -74,11 +74,11 @@ export function AdminPricingZonesPanel({ accessToken }: { accessToken: string })
   async function save() {
     const confirmedCenter = asConfirmedLocation(center)
     if (!confirmedCenter || !policy || !zones.length) { setMessage('Confirmez le centre et conservez au moins une zone.'); return }
-    const normalizedZones = zones.map((zone) => ({ ...(zone.id ? { id: zone.id } : {}), name: zone.name.trim(), maxDistanceMeters: Math.round(Number(zone.maxDistanceKm) * 1000), deliveryFeeAriary: Number(zone.fee) }))
+    const normalizedZones = zones.map((zone) => ({ ...(!inherited && zone.id ? { id: zone.id } : {}), name: zone.name.trim(), maxDistanceMeters: Math.round(Number(zone.maxDistanceKm) * 1000), deliveryFeeAriary: Number(zone.fee) }))
     if (normalizedZones.some((zone, index) => !zone.name || zone.maxDistanceMeters <= 0 || !Number.isInteger(zone.deliveryFeeAriary) || zone.deliveryFeeAriary < 0 || (index > 0 && zone.maxDistanceMeters <= normalizedZones[index - 1].maxDistanceMeters))) { setMessage('Vérifiez les zones : rayons croissants et montants entiers positifs.'); return }
-    const normalizedWeights = weights.map((tier) => ({ ...(tier.id ? { id: tier.id } : {}), maxWeightKg: Number(tier.maxWeightKg), surchargeAriary: Number(tier.surcharge) }))
+    const normalizedWeights = weights.map((tier) => ({ ...(!inherited && tier.id ? { id: tier.id } : {}), maxWeightKg: Number(tier.maxWeightKg), surchargeAriary: Number(tier.surcharge) }))
     if (normalizedWeights.some((tier, index) => tier.maxWeightKg <= 0 || tier.surchargeAriary < 0 || (index > 0 && tier.maxWeightKg <= normalizedWeights[index - 1].maxWeightKg))) { setMessage('Les paliers de poids doivent être strictement croissants.'); return }
-    const normalizedSlots = slots.map((slot) => ({ ...(slot.id ? { id: slot.id } : {}), label: slot.label.trim(), startTime: slot.startTime, endTime: slot.endTime, surchargeAriary: Number(slot.surcharge) }))
+    const normalizedSlots = slots.map((slot) => ({ ...(!inherited && slot.id ? { id: slot.id } : {}), label: slot.label.trim(), startTime: slot.startTime, endTime: slot.endTime, surchargeAriary: Number(slot.surcharge) }))
     if (normalizedSlots.some((slot) => !slot.label || !slot.startTime || !slot.endTime || slot.startTime >= slot.endTime || slot.surchargeAriary < 0)) { setMessage('Vérifiez les créneaux horaires et leurs montants.'); return }
     setSaving(true); setMessage(undefined)
     try {

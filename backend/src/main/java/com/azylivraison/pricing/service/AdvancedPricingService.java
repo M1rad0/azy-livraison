@@ -90,8 +90,9 @@ public class AdvancedPricingService {
     public AdvancedPricingPolicy save(UUID clientId, DeliveryRequestKind kind, PricingCenter center,
             BigDecimal defaultWeight, List<PricingZone> zones, List<PricingWeightTier> weights,
             List<PricingTimeSlot> slots, Long expectedVersion) {
-        AdvancedPricingPolicy normalized = normalize(clientId, kind, center, defaultWeight, zones, weights, slots);
         var existing = repository.findExact(clientId, kind);
+        AdvancedPricingPolicy normalized = normalize(clientId, kind, center, defaultWeight, zones, weights, slots,
+                existing.isPresent());
         if (existing.isEmpty()) {
             short id = repository.create(normalized);
             return repository.findExact(clientId, kind).orElseThrow();
@@ -115,7 +116,7 @@ public class AdvancedPricingService {
 
     private AdvancedPricingPolicy normalize(UUID clientId, DeliveryRequestKind kind, PricingCenter center,
             BigDecimal defaultWeight, List<PricingZone> zones, List<PricingWeightTier> weights,
-            List<PricingTimeSlot> slots) {
+            List<PricingTimeSlot> slots, boolean preserveChildIds) {
         if (center == null || center.label() == null || center.label().isBlank())
             throw new PricingConfigurationException("Le point central est obligatoire.");
         if (defaultWeight == null || defaultWeight.signum() <= 0)
@@ -130,7 +131,7 @@ public class AdvancedPricingService {
                 throw new PricingConfigurationException("Les rayons doivent etre croissants et les prix positifs.");
             if (!names.add(zone.name().trim().toLowerCase()))
                 throw new PricingConfigurationException("Les noms des zones doivent etre uniques.");
-            normalizedZones.add(new PricingZone(zone.id() == null ? UUID.randomUUID() : zone.id(),
+            normalizedZones.add(new PricingZone(!preserveChildIds || zone.id() == null ? UUID.randomUUID() : zone.id(),
                     zone.name().trim(), zone.maxDistanceMeters(), zone.deliveryFeeAriary()));
             previousRadius = zone.maxDistanceMeters();
         }
@@ -139,7 +140,8 @@ public class AdvancedPricingService {
         for (PricingWeightTier tier : weights == null ? List.<PricingWeightTier>of() : weights) {
             if (tier.maxWeightKg().compareTo(previousWeight) <= 0 || tier.surchargeAriary() < 0)
                 throw new PricingConfigurationException("Les paliers de poids doivent etre croissants.");
-            normalizedWeights.add(new PricingWeightTier(tier.id() == null ? UUID.randomUUID() : tier.id(),
+            normalizedWeights.add(new PricingWeightTier(!preserveChildIds || tier.id() == null
+                    ? UUID.randomUUID() : tier.id(),
                     tier.maxWeightKg(), tier.surchargeAriary()));
             previousWeight = tier.maxWeightKg();
         }
@@ -150,7 +152,8 @@ public class AdvancedPricingService {
             boolean overlaps = normalizedSlots.stream().anyMatch(other ->
                     slot.startTime().isBefore(other.endTime()) && other.startTime().isBefore(slot.endTime()));
             if (overlaps) throw new PricingConfigurationException("Les creneaux horaires ne peuvent pas se chevaucher.");
-            normalizedSlots.add(new PricingTimeSlot(slot.id() == null ? UUID.randomUUID() : slot.id(),
+            normalizedSlots.add(new PricingTimeSlot(!preserveChildIds || slot.id() == null
+                    ? UUID.randomUUID() : slot.id(),
                     slot.label().trim(), slot.startTime(), slot.endTime(), slot.surchargeAriary()));
         }
         normalizedSlots.sort(Comparator.comparing(PricingTimeSlot::startTime));
