@@ -1,7 +1,8 @@
 import { type FormEvent, useState } from 'react'
-import { ArrowRight, LogIn, UserPlus } from 'lucide-react'
+import { ArrowRight, Calculator, LogIn, UserPlus } from 'lucide-react'
 import { login, register, type AuthSession } from '../api/auth'
 import { Brand } from './Brand'
+import { PublicPricingCalculator } from './PublicPricingCalculator'
 
 type AuthMode = 'login' | 'register'
 
@@ -18,6 +19,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [phone, setPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string>()
+  const [pricingOpen, setPricingOpen] = useState(false)
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode)
@@ -62,6 +64,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           </p>
         </div>
         <span className="login-intro__caption">Pensé à Antananarivo · Pour les réalités du terrain</span>
+        <button className="login-pricing-link" type="button" onClick={() => setPricingOpen(true)}><Calculator />Calculer un tarif<ArrowRight /></button>
       </section>
 
       <section className="login-panel" aria-labelledby="form-title">
@@ -165,6 +168,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           </div>
         </form>
       </section>
+      {pricingOpen && <PublicPricingCalculator onClose={() => setPricingOpen(false)} />}
     </main>
   )
 }

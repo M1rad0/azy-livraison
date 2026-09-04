@@ -7,8 +7,10 @@ import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
 import com.azylivraison.delivery.service.DeliveryRequestNotFoundException;
 import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
+import com.azylivraison.delivery.service.ExpressDeliveryForbiddenException;
 import com.azylivraison.pricing.service.DestinationOutsidePricingZonesException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
+import com.azylivraison.pricing.api.PublicPricingController;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,7 +21,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = {
         ClientDeliveryRequestController.class,
         ClientDeliveryPricingController.class,
-        AdminDeliveryRequestController.class
+        AdminDeliveryRequestController.class,
+        AdminExpressDeliveryController.class,
+        PublicPricingController.class
 })
 public class DeliveryRequestExceptionHandler {
 
@@ -44,6 +48,12 @@ public class DeliveryRequestExceptionHandler {
                 "DELIVERY_DATE_CLOSED",
                 exception.getMessage(),
                 List.of()));
+    }
+
+    @ExceptionHandler(ExpressDeliveryForbiddenException.class)
+    ResponseEntity<DeliveryApiErrorResponse> expressForbidden(ExpressDeliveryForbiddenException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new DeliveryApiErrorResponse(
+                "EXPRESS_DELIVERY_FORBIDDEN", exception.getMessage(), List.of()));
     }
 
     @ExceptionHandler(DestinationOutsidePricingZonesException.class)

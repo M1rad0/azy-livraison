@@ -28,6 +28,10 @@ export function CourierCombobox({
   ariaLabel,
   missingLabel,
   describedBy,
+  placeholder = 'Rechercher par nom ou numéro',
+  optionsAriaLabel = 'Livreurs disponibles',
+  emptyMessage = 'Aucun livreur ne correspond à cette recherche.',
+  clearAriaLabel = 'Effacer le livreur choisi',
   onChange,
 }: {
   couriers: CourierComboboxOption[]
@@ -36,6 +40,10 @@ export function CourierCombobox({
   ariaLabel?: string
   missingLabel?: string
   describedBy?: string
+  placeholder?: string
+  optionsAriaLabel?: string
+  emptyMessage?: string
+  clearAriaLabel?: string
   onChange: (courierId: string) => void
 }) {
   const generatedInputId = useId()
@@ -125,7 +133,7 @@ export function CourierCombobox({
           aria-describedby={describedBy}
           aria-required="true"
           value={query}
-          placeholder="Rechercher par nom ou numéro"
+          placeholder={placeholder}
           onFocus={() => {
             setOpen(true)
             const selectedIndex = options.findIndex((courier) => courier.id === value)
@@ -145,7 +153,7 @@ export function CourierCombobox({
         {value ? (
           <button
             type="button"
-            aria-label="Effacer le livreur choisi"
+            aria-label={clearAriaLabel}
             onClick={() => {
               onChange('')
               setQuery('')
@@ -156,7 +164,7 @@ export function CourierCombobox({
       </div>
 
       {open && (
-        <ul id={listboxId} role="listbox" aria-label="Livreurs disponibles">
+        <ul id={listboxId} role="listbox" aria-label={optionsAriaLabel}>
           {showMissingSelection && (
             <li
               id={`${listboxId}-missing`}
@@ -193,7 +201,7 @@ export function CourierCombobox({
               {courier.id === value && <Check aria-hidden="true" />}
             </li>
           ))}
-          {options.length === 0 && !showMissingSelection && <li className="is-empty">Aucun livreur ne correspond à cette recherche.</li>}
+          {options.length === 0 && !showMissingSelection && <li className="is-empty">{emptyMessage}</li>}
         </ul>
       )}
     </div>

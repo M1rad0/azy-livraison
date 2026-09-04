@@ -28,6 +28,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.springframework.stereotype.Component;
 
 /** Stateless PDF renderer. It never reads the database and never recalculates totals. */
@@ -75,20 +76,22 @@ public final class DailyReportPdfRenderer {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             PdfWriter writer = new PdfWriter(document, report, "Rapport client", text(client.displayName()));
             writer.openPage();
+
+            writeClientTotals(writer, client.totals());
             if (client.phone() != null && !client.phone().isBlank()) {
                 writer.line("Contact", client.phone().strip());
             }
 
             List<String> pickups = pickupLabels(packages);
             writer.lines(pickups.size() > 1 ? "Points de récupération" : "Point de récupération", pickups);
-            writer.gap(8);
+            writer.gap(10);
 
             writer.section("Livraisons");
             String[] headers = {
-                "Destinataire", "Contact", "Destination", "État", "Mobile Money",
+                "Destinataire", "Contact", "Destination", "État", "Commentaire",
                 "Récupéré", "Frais", "À reverser"
             };
-            float[] widths = {118, 82, 160, 92, 88, 78, 62, 78};
+            float[] widths = {104, 82, 118, 90, 146, 78, 62, 78};
             writer.tableHeader(headers, widths);
             for (PackageLine item : packages) {
                 writer.tableRowWithComment(new String[] {
@@ -96,14 +99,12 @@ public final class DailyReportPdfRenderer {
                     text(item.recipientContact()),
                     text(item.destinationLabel()),
                     clientOutcomeLabel(item),
-                    item.mobileMoneyPaid() ? "Oui" : "Non",
+                    text(item.outcomeNote()),
                     ariary(item.actualAmountCollectedAriary()),
                     ariary(item.appliedDeliveryFeeAriary()),
                     ariary(item.amountToRemitAriary())
-                }, widths, item.outcomeNote());
+                }, widths, null);
             }
-            writer.gap(24);
-            writeClientTotals(writer, client.totals());
             writer.close();
             document.save(output);
             return output.toByteArray();
@@ -347,12 +348,13 @@ public final class DailyReportPdfRenderer {
                     : PDRectangle.A4;
             this.top = pageSize.getHeight() - MARGIN;
             this.width = pageSize.getWidth() - (2 * MARGIN);
-            try (InputStream fontStream = DailyReportPdfRenderer.class.getResourceAsStream(FONT_RESOURCE)) {
-                if (fontStream == null) {
+            try (InputStream regularStream = DailyReportPdfRenderer.class.getResourceAsStream(FONT_RESOURCE);
+                    InputStream boldStream = DailyReportPdfRenderer.class.getResourceAsStream(FONT_RESOURCE)) {
+                if (regularStream == null || boldStream == null) {
                     throw new IOException("La police Unicode du rapport est introuvable.");
                 }
-                regular = PDType0Font.load(document, fontStream, true);
-                bold = regular;
+                regular = PDType0Font.load(document, regularStream, true);
+                bold = PDType0Font.load(document, boldStream, true);
             }
         }
 
@@ -390,6 +392,18 @@ public final class DailyReportPdfRenderer {
 
         void section(String value) throws IOException {
             ensure(28);
+            if (clientView) {
+                String safeValue = safe(value);
+                float titleWidth = width(safeValue, bold, 12);
+                float titleX = MARGIN + ((width - titleWidth) / 2);
+                drawText(safeValue, titleX, y, bold, 12, NAVY_RED, NAVY_GREEN, NAVY_BLUE);
+                float ruleWidth = Math.min(width, Math.max(120, titleWidth + 60));
+                content.setNonStrokingColor(new Color(ORANGE_RED, ORANGE_GREEN, ORANGE_BLUE));
+                content.addRect(MARGIN + ((width - ruleWidth) / 2), y - 8, ruleWidth, 2.2f);
+                content.fill();
+                y -= 25;
+                return;
+            }
             content.setNonStrokingColor(new Color(ORANGE_RED, ORANGE_GREEN, ORANGE_BLUE));
             content.addRect(MARGIN, y - 3, 4, 17);
             content.fill();
@@ -399,9 +413,9 @@ public final class DailyReportPdfRenderer {
 
         void line(String label, String value) throws IOException {
             ensure(16);
-            float fontSize = clientView ? 10 : 8.5f;
-            float leading = clientView ? 13 : 11;
-            float labelWidth = clientView ? 122 : 112;
+            float fontSize = clientView ? 11 : 8.5f;
+            float leading = clientView ? 14.5f : 11;
+            float labelWidth = clientView ? 150 : 112;
             drawText(safe(label), MARGIN, y, bold, fontSize, 45, 58, 68);
             writeWrapped(safe(value), MARGIN + labelWidth, width - labelWidth,
                     regular, fontSize, leading, 45, 58, 68);
@@ -414,9 +428,9 @@ public final class DailyReportPdfRenderer {
                 return;
             }
             ensure(29);
-            float fontSize = clientView ? 10 : 8.5f;
-            float leading = clientView ? 13 : 11;
-            float labelWidth = clientView ? 122 : 112;
+            float fontSize = clientView ? 11 : 8.5f;
+            float leading = clientView ? 14.5f : 11;
+            float labelWidth = clientView ? 150 : 112;
             drawText(safe(label), MARGIN, y, bold, fontSize, 45, 58, 68);
             float valueX = MARGIN + labelWidth;
             float valueWidth = width - labelWidth;
@@ -739,8 +753,12 @@ public final class DailyReportPdfRenderer {
                 int red,
                 int green,
                 int blue) throws IOException {
+            boolean emphasized = font == bold;
+            content.setStrokingColor(new Color(red, green, blue));
+            content.setLineWidth(emphasized ? 0.2f : 0.5f);
             content.beginText();
             content.setFont(font, fontSize);
+            content.setRenderingMode(emphasized ? RenderingMode.FILL_STROKE : RenderingMode.FILL);
             content.setNonStrokingColor(new Color(red, green, blue));
             content.newLineAtOffset(x, baseline);
             content.showText(safe(value));

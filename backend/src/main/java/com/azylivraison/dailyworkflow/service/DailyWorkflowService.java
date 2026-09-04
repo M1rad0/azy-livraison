@@ -17,6 +17,8 @@ import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.Setting
 import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.delivery.repository.ExpressDeliveryRepository;
 import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
 import com.azylivraison.finance.service.FinancialSettlementService;
@@ -29,12 +31,15 @@ public class DailyWorkflowService {
 
     private final DailyWorkflowRepository repository;
     private final FinancialSettlementService financialSettlementService;
+    private final ExpressDeliveryRepository expressDeliveries;
 
     public DailyWorkflowService(
             DailyWorkflowRepository repository,
-            FinancialSettlementService financialSettlementService) {
+            FinancialSettlementService financialSettlementService,
+            ExpressDeliveryRepository expressDeliveries) {
         this.repository = repository;
         this.financialSettlementService = financialSettlementService;
+        this.expressDeliveries = expressDeliveries;
     }
 
     @Transactional(readOnly = true)
@@ -108,7 +113,7 @@ public class DailyWorkflowService {
             String note,
             long expectedVersion,
             UUID actorAccountId) {
-        if (outcome == null || outcome == DeliveryPackageOutcome.CANCELLED) {
+        if (outcome == null) {
             throw new DailyWorkflowInputException(
                     "Choisissez Livré, Reporté ou À retourner pour le compte rendu.");
         }
@@ -118,6 +123,11 @@ public class DailyWorkflowService {
         requireVersion(expectedVersion, deliveryPackage.version(), "Le colis a été modifié entre-temps.");
         if (deliveryPackage.technicalStatus() != DeliveryPackageStatus.DISPATCHED) {
             throw new DailyWorkflowConflictException("Ce colis ne fait pas partie du plan dispatché.");
+        }
+        if (deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS
+                && outcome == DeliveryPackageOutcome.POSTPONED) {
+            throw new DailyWorkflowInputException(
+                    "Une livraison express ne peut pas être reportée au lendemain.");
         }
         if (outcome != DeliveryPackageOutcome.POSTPONED
                 && repository.hasCarriedForwardSuccessor(packageId)) {
@@ -130,7 +140,7 @@ public class DailyWorkflowService {
                     : actualCollectedAriary;
             case RETURN_TO_SENDER -> actualCollectedAriary == null ? 0L : actualCollectedAriary;
             case POSTPONED -> null;
-            case CANCELLED -> throw new IllegalStateException("Issue déjà refusée.");
+            case CANCELLED -> null;
         };
         if ((outcome == DeliveryPackageOutcome.DELIVERED
                 || outcome == DeliveryPackageOutcome.RETURN_TO_SENDER)
@@ -170,6 +180,9 @@ public class DailyWorkflowService {
                 normalizeNullable(note),
                 actorAccountId,
                 Instant.now());
+        if (deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS) {
+            expressDeliveries.completeIfFinal(deliveryPackage.deliveryRequestId());
+        }
         return currentDetails(serviceDate);
     }
 
@@ -240,6 +253,13 @@ public class DailyWorkflowService {
         if (day.status() != OperationDayStatus.DISPATCHED || day.dispatchPlanId() == null) {
             throw new DailyWorkflowConflictException(
                     "La journée doit être dispatchée avant de pouvoir être clôturée.");
+        }
+        int pendingExpress = repository.pendingExpressRequestCount(serviceDate);
+        if (pendingExpress > 0) {
+            throw new DailyWorkflowConflictException(
+                    "Confirmez ou annulez les " + pendingExpress
+                            + " demande" + (pendingExpress > 1 ? "s expresses" : " express")
+                            + " encore en attente avant la clôture.");
         }
         int incomplete = repository.incompleteDayPackageCount(serviceDate);
         if (incomplete > 0) {
@@ -330,6 +350,10 @@ public class DailyWorkflowService {
     }
 
     private void requirePackageInDay(OperationDay day, PackageForUpdate deliveryPackage) {
+        if (deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS
+                && day.serviceDate().equals(deliveryPackage.requestedDate())) {
+            return;
+        }
         if (day.dispatchPlanId() == null
                 || deliveryPackage.dispatchPlanId() == null
                 || !day.serviceDate().equals(repository.serviceDate(deliveryPackage.dispatchPlanId()))) {

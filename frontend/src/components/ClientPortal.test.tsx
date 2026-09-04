@@ -14,6 +14,7 @@ import {
   type DeliveryRequestRecord,
 } from '../api/client'
 import { ClientPortal } from './ClientPortal'
+import { PortalShell } from './PortalShell'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -142,6 +143,38 @@ describe('ClientPortal', () => {
     expect(screen.getByText(/dont 3.*000 Ar de livraison/)).toBeInTheDocument()
   })
 
+  it('masque la navigation express quand le compte client n’y a pas droit', async () => {
+    render(
+      <PortalShell
+        account={{ id: profile.accountId, username: profile.username, role: 'CLIENT', displayName: profile.displayName, phone: profile.phone }}
+        onLogout={vi.fn().mockResolvedValue(undefined)}
+      >
+        <ClientPortal accessToken="client-token" />
+      </PortalShell>,
+    )
+
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    expect(screen.queryByRole('link', { name: /Livraison express/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Livraison express' })).not.toBeInTheDocument()
+  })
+
+  it('affiche la navigation express uniquement lorsque le compte est autorisé', async () => {
+    vi.mocked(getClientProfile).mockResolvedValue({ ...profile, expressDeliveryEnabled: true })
+
+    render(
+      <PortalShell
+        account={{ id: profile.accountId, username: profile.username, role: 'CLIENT', displayName: profile.displayName, phone: profile.phone }}
+        onLogout={vi.fn().mockResolvedValue(undefined)}
+      >
+        <ClientPortal accessToken="client-token" />
+      </PortalShell>,
+    )
+
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    expect(await screen.findByRole('link', { name: /Livraison express/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Livraison express' })).toBeInTheDocument()
+  })
+
   it('sépare les informations du compte et les numéros de versement en sous-onglets', async () => {
     render(<ClientPortal accessToken="client-token" />)
 
@@ -251,6 +284,7 @@ describe('ClientPortal', () => {
 
     fireEvent.change(screen.getByLabelText('Nom du client destinataire'), { target: { value: 'Rakoto' } })
     fireEvent.change(screen.getByLabelText('Contact client'), { target: { value: '034 00 000 00' } })
+    fireEvent.change(screen.getByLabelText(/Libellé \/ repère de livraison/), { target: { value: 'Bureau Ampasampito' } })
     fireEvent.change(screen.getByLabelText('Total à récupérer (Ar)'), { target: { value: '45000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Choisir Lieu de livraison' }))
     expect(await screen.findByText(/3.*000 Ar de livraison/)).toBeInTheDocument()

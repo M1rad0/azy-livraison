@@ -330,10 +330,15 @@ public class DailyReportService {
                 .filter(item -> item.accountId().equals(accountId))
                 .findFirst()
                 .orElseThrow();
+        boolean showRequestKind = repository.clientExpressEnabled(accountId);
+        Map<UUID, com.azylivraison.delivery.domain.DeliveryRequestKind> requestKinds =
+                repository.requestKinds(report.packages().stream().map(PackageLine::packageId)
+                        .collect(java.util.stream.Collectors.toSet()));
         return new ClientDailyReport(
                 deriveClientReportId(report.reportId(), accountId),
                 report.serviceDate(),
                 client.displayName(),
+                client.phone(),
                 report.totals(),
                 report.packages().stream()
                         .map(item -> new ClientDailyReport.PackageLine(
@@ -342,6 +347,7 @@ public class DailyReportService {
                                 item.recipientContact(),
                                 item.pickupLabel(),
                                 item.destinationLabel(),
+                                showRequestKind ? requestKinds.get(item.packageId()) : null,
                                 item.outcome(),
                                 item.outcomeNote(),
                                 item.actualAmountCollectedAriary(),

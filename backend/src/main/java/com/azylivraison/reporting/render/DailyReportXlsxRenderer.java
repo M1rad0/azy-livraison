@@ -73,23 +73,38 @@ public final class DailyReportXlsxRenderer {
             clientHeader(sheet, styles, client.displayName(), report.serviceDate());
 
             int rowIndex = 3;
+            rowIndex = clientSection(sheet, styles, rowIndex, "Synthèse", 8);
+            Row summary = sheet.createRow(rowIndex++);
+            summary.setHeightInPoints(30);
+            text(summary, 0, "Colis", styles.key);
+            number(summary, 1, client.totals().packageCount(), styles.integer);
+            text(summary, 2, "Total récupéré", styles.key);
+            money(summary, 3, client.totals().amountCollectedAriary(), styles.moneyEmphasis);
+            text(summary, 4, "Frais de livraison", styles.key);
+            money(summary, 5, client.totals().deliveryFeesAriary(), styles.moneyEmphasis);
+            text(summary, 6, "Total à reverser", styles.key);
+            money(summary, 7, client.totals().amountToRemitAriary(), styles.moneyEmphasis);
+
+            rowIndex += 2;
             if (client.phone() != null && !client.phone().isBlank()) {
-                rowIndex = keyValue(sheet, styles, rowIndex, "Contact", client.phone().strip());
+                rowIndex = clientKeyValue(sheet, styles, rowIndex, "Contact", client.phone().strip(), 8);
             }
             List<String> pickups = pickupLabels(packages);
             String pickupHeading = pickups.size() > 1 ? "Points de récupération" : "Point de récupération";
             if (pickups.isEmpty()) {
-                rowIndex = keyValue(sheet, styles, rowIndex, pickupHeading, "—");
+                rowIndex = clientKeyValue(sheet, styles, rowIndex, pickupHeading, "—", 8);
             } else {
                 for (int index = 0; index < pickups.size(); index++) {
-                    rowIndex = keyValue(sheet, styles, rowIndex, index == 0 ? pickupHeading : "", pickups.get(index));
+                    rowIndex = clientKeyValue(sheet, styles, rowIndex,
+                            index == 0 ? pickupHeading : "", pickups.get(index), 8);
                 }
             }
             rowIndex += 2;
+            rowIndex = clientSection(sheet, styles, rowIndex, "Livraisons", 8);
 
             String[] headers = {
-                "Destinataire", "Contact", "Destination", "État", "Mobile Money",
-                "Commentaire", "Récupéré (Ar)", "Frais (Ar)", "À reverser (Ar)"
+                "Destinataire", "Contact", "Destination", "État", "Commentaire",
+                "Récupéré (Ar)", "Frais (Ar)", "À reverser (Ar)"
             };
             int tableHeaderRow = rowIndex;
             header(sheet, styles, tableHeaderRow, headers);
@@ -104,28 +119,14 @@ public final class DailyReportXlsxRenderer {
                 text(row, 1, item.recipientContact(), styles.body);
                 text(row, 2, item.destinationLabel(), styles.body);
                 text(row, 3, clientOutcomeLabel(item), styles.body);
-                text(row, 4, yesNo(item.mobileMoneyPaid()), styles.information);
-                text(row, 5, item.outcomeNote(), styles.body);
-                money(row, 6, item.actualAmountCollectedAriary(), styles.money);
-                money(row, 7, item.appliedDeliveryFeeAriary(), styles.money);
-                money(row, 8, item.amountToRemitAriary(), styles.money);
+                text(row, 4, item.outcomeNote(), styles.body);
+                money(row, 5, item.actualAmountCollectedAriary(), styles.money);
+                money(row, 6, item.appliedDeliveryFeeAriary(), styles.money);
+                money(row, 7, item.amountToRemitAriary(), styles.money);
             }
 
             int tableLastRow = Math.max(tableHeaderRow, rowIndex - 1);
-            rowIndex += 3;
-            rowIndex = section(sheet, styles, rowIndex, "Synthèse");
-            Row summary = sheet.createRow(rowIndex);
-            summary.setHeightInPoints(30);
-            text(summary, 0, "Colis", styles.key);
-            number(summary, 1, client.totals().packageCount(), styles.integer);
-            text(summary, 2, "Total récupéré", styles.key);
-            money(summary, 3, client.totals().amountCollectedAriary(), styles.moneyEmphasis);
-            text(summary, 4, "Frais de livraison", styles.key);
-            money(summary, 5, client.totals().deliveryFeesAriary(), styles.moneyEmphasis);
-            text(summary, 6, "Total à reverser", styles.key);
-            money(summary, 7, client.totals().amountToRemitAriary(), styles.moneyEmphasis);
-
-            int[] widths = {28, 18, 34, 20, 20, 36, 20, 16, 20};
+            int[] widths = {28, 18, 30, 20, 40, 20, 16, 20};
             for (int index = 0; index < widths.length; index++) {
                 sheet.setColumnWidth(index, widths[index] * 256);
             }
@@ -347,17 +348,48 @@ public final class DailyReportXlsxRenderer {
     }
 
     private void clientHeader(Sheet sheet, Styles styles, String clientName, java.time.LocalDate serviceDate) {
-        title(sheet, styles, "AZY Livraison · Rapport client", 9);
+        title(sheet, styles, "AZY Livraison · Rapport client", 8);
         Row identity = sheet.createRow(1);
         identity.setHeightInPoints(34);
-        for (int column = 0; column < 9; column++) {
+        for (int column = 0; column < 8; column++) {
             Cell cell = identity.createCell(column);
-            cell.setCellStyle(column < 6 ? styles.clientName : styles.clientDate);
+            cell.setCellStyle(column < 5 ? styles.clientName : styles.clientDate);
         }
         identity.getCell(0).setCellValue(value(clientName));
-        identity.getCell(6).setCellValue(DATE_LONG.format(serviceDate));
-        sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 5));
-        sheet.addMergedRegion(new CellRangeAddress(1, 1, 6, 8));
+        identity.getCell(5).setCellValue(DATE_LONG.format(serviceDate));
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 4));
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 5, 7));
+    }
+
+    private int clientSection(Sheet sheet, Styles styles, int rowIndex, String title, int width) {
+        Row row = sheet.createRow(rowIndex);
+        row.setHeightInPoints(26);
+        for (int column = 0; column < width; column++) {
+            Cell cell = row.createCell(column);
+            cell.setCellStyle(styles.clientSection);
+        }
+        row.getCell(0).setCellValue(title);
+        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, width - 1));
+        return rowIndex + 1;
+    }
+
+    private int clientKeyValue(
+            Sheet sheet,
+            Styles styles,
+            int rowIndex,
+            String key,
+            String value,
+            int width) {
+        Row row = sheet.createRow(rowIndex);
+        row.setHeightInPoints(24);
+        text(row, 0, key, styles.clientInfoKey);
+        for (int column = 1; column < width; column++) {
+            Cell cell = row.createCell(column);
+            cell.setCellStyle(styles.clientInfoValue);
+        }
+        row.getCell(1).setCellValue(value(value));
+        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 1, width - 1));
+        return rowIndex + 1;
     }
 
     private int section(Sheet sheet, Styles styles, int rowIndex, String title) {
@@ -463,6 +495,9 @@ public final class DailyReportXlsxRenderer {
         private final XSSFCellStyle title;
         private final XSSFCellStyle clientName;
         private final XSSFCellStyle clientDate;
+        private final XSSFCellStyle clientSection;
+        private final XSSFCellStyle clientInfoKey;
+        private final XSSFCellStyle clientInfoValue;
         private final XSSFCellStyle section;
         private final XSSFCellStyle header;
         private final XSSFCellStyle key;
@@ -499,6 +534,22 @@ public final class DailyReportXlsxRenderer {
             clientDate = workbook.createCellStyle();
             clientDate.cloneStyleFrom(clientName);
             clientDate.setAlignment(HorizontalAlignment.RIGHT);
+
+            clientSection = workbook.createCellStyle();
+            clientSection.setFont(font(workbook, true, IndexedColors.DARK_BLUE.getIndex(), 12));
+            clientSection.setAlignment(HorizontalAlignment.CENTER);
+            clientSection.setVerticalAlignment(VerticalAlignment.CENTER);
+            clientSection.setBorderBottom(BorderStyle.MEDIUM);
+            clientSection.setBottomBorderColor(orange);
+
+            clientInfoKey = workbook.createCellStyle();
+            clientInfoKey.setFont(font(workbook, true, IndexedColors.DARK_BLUE.getIndex(), 11));
+            clientInfoKey.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            clientInfoValue = workbook.createCellStyle();
+            clientInfoValue.setFont(font(workbook, false, IndexedColors.BLACK.getIndex(), 11));
+            clientInfoValue.setVerticalAlignment(VerticalAlignment.CENTER);
+            clientInfoValue.setWrapText(true);
 
             section = workbook.createCellStyle();
             section.setFillForegroundColor(orange);

@@ -7,6 +7,8 @@ import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestStatus;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.delivery.domain.ExpressDeliveryStatus;
 import com.azylivraison.delivery.domain.StoredDeliveryRequest;
 
 public record DeliveryRequestResponse(
@@ -14,6 +16,9 @@ public record DeliveryRequestResponse(
         UUID ownerAccountId,
         String ownerDisplayName,
         String ownerPhone,
+        DeliveryRequestKind requestKind,
+        ExpressDeliveryStatus expressStatus,
+        boolean createdByAdministration,
         LocalDate requestedDate,
         LocationResponse pickup,
         CapacitySnapshotResponse capacity,
@@ -37,6 +42,9 @@ public record DeliveryRequestResponse(
                 request.ownerAccountId(),
                 request.ownerDisplayName(),
                 request.ownerPhone(),
+                request.requestKind(),
+                request.expressStatus(),
+                !request.createdByAccountId().equals(request.ownerAccountId()),
                 request.requestedDate(),
                 LocationResponse.from(request.pickup()),
                 new CapacitySnapshotResponse(

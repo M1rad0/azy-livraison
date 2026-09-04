@@ -251,12 +251,15 @@ public class FinanceRepository {
                            AS commission_denominator,
                        package.recipient_name, package.destination_label
                 FROM delivery_package package
-                JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
+                JOIN delivery_request request ON request.id = package.delivery_request_id
+                LEFT JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
                 JOIN courier_profile courier ON courier.id = package.actual_delivery_courier_id
                 CROSS JOIN operational_settings settings
-                WHERE plan.service_date = ?
-                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
-                  AND plan.lifecycle_status = 'ACTIVE'
+                WHERE ((plan.service_date = ?
+                        AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                        AND plan.lifecycle_status = 'ACTIVE')
+                       OR (request.requested_date = ? AND request.request_kind = 'EXPRESS'
+                           AND request.express_status = 'COMPLETED'))
                   AND package.final_outcome IN ('DELIVERED', 'RETURN_TO_SENDER')
                 ORDER BY package.actual_delivery_courier_name, package.priority_at, package.id
                 """, (resultSet, rowNumber) -> new CompensationSourceLine(
@@ -270,7 +273,7 @@ public class FinanceRepository {
                 resultSet.getInt("commission_numerator"),
                 resultSet.getInt("commission_denominator"),
                 resultSet.getString("recipient_name"),
-                resultSet.getString("destination_label")), Date.valueOf(serviceDate));
+                resultSet.getString("destination_label")), Date.valueOf(serviceDate), Date.valueOf(serviceDate));
     }
 
     public Optional<CompensationBatch> findCompensationBatch(LocalDate serviceDate, int closureRevision) {
@@ -342,7 +345,8 @@ public class FinanceRepository {
 
     public List<CourierDelivery> listCourierDeliveries(UUID courierId, LocalDate from, LocalDate to) {
         StringBuilder sql = new StringBuilder("""
-                SELECT package.id AS package_id, plan.service_date,
+                SELECT package.id AS package_id,
+                       COALESCE(plan.service_date, request.requested_date) AS service_date,
                        account.display_name AS client_display_name,
                        package.recipient_name, request.pickup_label, package.destination_label,
                        package.final_outcome, package.return_completed_at,
@@ -352,14 +356,15 @@ public class FinanceRepository {
                 FROM delivery_package package
                 JOIN delivery_request request ON request.id = package.delivery_request_id
                 JOIN app_account account ON account.id = request.owner_account_id
-                JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
+                LEFT JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
                 LEFT JOIN courier_earning earning ON earning.delivery_package_id = package.id
                 WHERE package.actual_delivery_courier_id = :courierId
-                  AND plan.lifecycle_status = 'ACTIVE'
+                  AND (plan.lifecycle_status = 'ACTIVE'
+                       OR (request.request_kind = 'EXPRESS' AND request.express_status = 'COMPLETED'))
                 """);
         MapSqlParameterSource parameters = new MapSqlParameterSource("courierId", courierId);
-        appendDateRange(sql, parameters, "plan.service_date", from, to);
-        sql.append(" ORDER BY plan.service_date DESC, package.outcome_recorded_at DESC, package.id");
+        appendDateRange(sql, parameters, "COALESCE(plan.service_date, request.requested_date)", from, to);
+        sql.append(" ORDER BY COALESCE(plan.service_date, request.requested_date) DESC, package.outcome_recorded_at DESC, package.id");
         return namedJdbcTemplate.query(sql.toString(), parameters, (resultSet, rowNumber) -> new CourierDelivery(
                 resultSet.getObject("package_id", UUID.class),
                 resultSet.getObject("service_date", LocalDate.class),

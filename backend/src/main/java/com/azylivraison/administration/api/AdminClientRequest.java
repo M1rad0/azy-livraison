@@ -1,0 +1,14 @@
+package com.azylivraison.administration.api;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record AdminClientRequest(
+        @NotBlank @Size(max = 100) String username,
+        @NotBlank @Size(max = 150) String displayName,
+        @NotBlank @Size(max = 50) String phone,
+        Boolean enabled,
+        Boolean expressDeliveryEnabled,
+        @Size(min = 8, max = 200) String temporaryPassword,
+        Long version) {
+}

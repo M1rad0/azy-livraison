@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { CheckCircle2, ClockArrowUp, PackageX, X } from 'lucide-react'
+import { Ban, CheckCircle2, ClockArrowUp, PackageX, X } from 'lucide-react'
 import type { Courier, DailyOperationPackage, DeliveryPackageOutcome } from '../../api/admin'
 import { formatAriary } from './adminHelpers'
 import { CourierCombobox } from './CourierCombobox'
 
-type EditableOutcome = Exclude<DeliveryPackageOutcome, 'CANCELLED'>
+type EditableOutcome = DeliveryPackageOutcome
 
 const choices: Array<{
   value: EditableOutcome
@@ -15,6 +15,7 @@ const choices: Array<{
   { value: 'DELIVERED', label: 'Livré', detail: 'Le montant réellement récupéré sera comptabilisé.', icon: CheckCircle2 },
   { value: 'POSTPONED', label: 'Reporté', detail: 'Aucun frais ni encaissement pour cette journée.', icon: ClockArrowUp },
   { value: 'RETURN_TO_SENDER', label: 'À retourner', detail: 'Les frais restent dus, même si aucun montant n’a été récupéré.', icon: PackageX },
+  { value: 'CANCELLED', label: 'Annulé', detail: 'Résultat final visible dans le rapport, sans frais ni encaissement.', icon: Ban },
 ]
 
 export interface PackageOutcomeInput {
@@ -39,9 +40,7 @@ export function AdminPackageOutcomeDialog({
   onSave: (input: PackageOutcomeInput) => void
   onClose: () => void
 }) {
-  const initialOutcome = deliveryPackage.finalOutcome && deliveryPackage.finalOutcome !== 'CANCELLED'
-    ? deliveryPackage.finalOutcome
-    : 'DELIVERED'
+  const initialOutcome = deliveryPackage.finalOutcome ?? 'DELIVERED'
   const [outcome, setOutcome] = useState<EditableOutcome>(initialOutcome)
   const [actualAmount, setActualAmount] = useState(() => String(
     deliveryPackage.actualCollectedAriary
@@ -97,8 +96,8 @@ export function AdminPackageOutcomeDialog({
   }
 
   const applicableFee = deliveryPackage.finalDeliveryFeeAriary ?? deliveryPackage.deliveryFeeAriary ?? 0
-  const projectedFee = outcome === 'POSTPONED' ? 0 : applicableFee
-  const projectedRecovered = outcome === 'POSTPONED' ? 0 : (Number(actualAmount) || 0)
+  const projectedFee = outcome === 'DELIVERED' || outcome === 'RETURN_TO_SENDER' ? applicableFee : 0
+  const projectedRecovered = outcome === 'DELIVERED' || outcome === 'RETURN_TO_SENDER' ? (Number(actualAmount) || 0) : 0
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => {
@@ -119,7 +118,7 @@ export function AdminPackageOutcomeDialog({
 
           <fieldset className="admin-outcome-choices">
             <legend>État final du colis</legend>
-            {choices.map(({ value, label, detail, icon: Icon }) => (
+            {choices.filter((choice) => deliveryPackage.requestKind !== 'EXPRESS' || choice.value !== 'POSTPONED').map(({ value, label, detail, icon: Icon }) => (
               <label className={outcome === value ? 'is-selected' : undefined} key={value}>
                 <input type="radio" name="outcome" value={value} checked={outcome === value} onChange={() => choose(value)} />
                 <span><Icon aria-hidden="true" /></span>
@@ -128,7 +127,7 @@ export function AdminPackageOutcomeDialog({
             ))}
           </fieldset>
 
-          {outcome !== 'POSTPONED' && (
+          {(outcome === 'DELIVERED' || outcome === 'RETURN_TO_SENDER') && (
             <div className="admin-outcome-field">
               <label htmlFor={`actual-courier-${deliveryPackage.packageId}`}>Livreur réellement intervenu</label>
               <CourierCombobox
@@ -151,7 +150,7 @@ export function AdminPackageOutcomeDialog({
             </div>
           )}
 
-          {outcome !== 'POSTPONED' && (
+          {(outcome === 'DELIVERED' || outcome === 'RETURN_TO_SENDER') && (
             <label className="admin-outcome-field">
               <span>Montant réellement récupéré (Ar)</span>
               <input type="number" min="0" step="1" required value={actualAmount} onChange={(event) => setActualAmount(event.target.value)} />

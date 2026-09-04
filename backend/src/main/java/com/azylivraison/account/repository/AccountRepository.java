@@ -84,6 +84,38 @@ public class AccountRepository {
                 """, phone, accountId);
     }
 
+    public List<Account> findClients() {
+        return jdbcTemplate.query("""
+                SELECT id, username, password_hash, enabled, role, display_name, phone
+                FROM app_account
+                WHERE role = 'CLIENT'
+                ORDER BY LOWER(display_name), LOWER(username)
+                """, (resultSet, rowNumber) -> new Account(
+                        resultSet.getObject("id", UUID.class),
+                        resultSet.getString("username"),
+                        resultSet.getString("password_hash"),
+                        resultSet.getBoolean("enabled"),
+                        AccountRole.valueOf(resultSet.getString("role")),
+                        resultSet.getString("display_name"),
+                        resultSet.getString("phone")));
+    }
+
+    public void updateClient(UUID accountId, String displayName, String phone, boolean enabled) {
+        jdbcTemplate.update("""
+                UPDATE app_account
+                SET display_name = ?, phone = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND role = 'CLIENT'
+                """, displayName, phone, enabled, accountId);
+    }
+
+    public void updatePassword(UUID accountId, String passwordHash) {
+        jdbcTemplate.update("""
+                UPDATE app_account
+                SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND role = 'CLIENT'
+                """, passwordHash, accountId);
+    }
+
     private String normalizeUsername(String username) {
         return username.trim().toLowerCase(Locale.ROOT);
     }

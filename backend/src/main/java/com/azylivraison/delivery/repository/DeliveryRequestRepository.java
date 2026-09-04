@@ -15,7 +15,9 @@ import java.util.UUID;
 
 import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.delivery.domain.DeliveryRequestStatus;
+import com.azylivraison.delivery.domain.ExpressDeliveryStatus;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
 import com.azylivraison.delivery.domain.StoredDeliveryRequest;
@@ -76,23 +78,36 @@ public class DeliveryRequestRepository {
                 FROM delivery_package dp
                 JOIN delivery_request dr ON dr.id = dp.delivery_request_id
                 WHERE dr.requested_date = ?
+                  AND dr.request_kind = 'NORMAL'
+                  AND dp.cancelled_before_processing_at IS NULL
                   AND (dp.final_outcome IS NULL OR dp.final_outcome <> 'CANCELLED')
                 """, Integer.class, Date.valueOf(date));
         return count == null ? 0 : count;
+    }
+
+    public boolean canCreateExpress(UUID accountId) {
+        Boolean allowed = jdbcTemplate.queryForObject(
+                "SELECT express_delivery_enabled FROM client_profile WHERE account_id = ?",
+                Boolean.class, accountId);
+        return Boolean.TRUE.equals(allowed);
     }
 
     public void insert(StoredDeliveryRequest request, UUID actorAccountId) {
         jdbcTemplate.update("""
                 INSERT INTO delivery_request (
                     id, owner_account_id, requested_date,
+                    request_kind, express_status, created_by_account_id,
                     pickup_label, pickup_query, pickup_latitude, pickup_longitude,
                     capacity_limit_snapshot, capacity_current_snapshot,
                     capacity_requested_snapshot, capacity_projected_snapshot,
                     capacity_overflow_warning, capacity_overflow_accepted,
                     status, version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 request.id(), request.ownerAccountId(), Date.valueOf(request.requestedDate()),
+                request.requestKind().name(),
+                request.expressStatus() == null ? null : request.expressStatus().name(),
+                request.createdByAccountId(),
                 request.pickup().label(), request.pickup().query(),
                 request.pickup().latitude(), request.pickup().longitude(),
                 request.capacityLimitSnapshot(), request.capacityCurrentSnapshot(),
@@ -136,7 +151,14 @@ public class DeliveryRequestRepository {
 
     public List<StoredDeliveryRequest> findByOwner(UUID ownerAccountId) {
         List<StoredDeliveryRequest> requests = jdbcTemplate.query(
-                REQUEST_SELECT + " WHERE dr.owner_account_id = ? ORDER BY dr.created_at DESC",
+                REQUEST_SELECT + """
+                         WHERE dr.owner_account_id = ?
+                           AND dr.cancelled_before_processing_at IS NULL
+                           AND EXISTS (SELECT 1 FROM delivery_package visible_package
+                                       WHERE visible_package.delivery_request_id = dr.id
+                                         AND visible_package.cancelled_before_processing_at IS NULL)
+                         ORDER BY dr.created_at DESC
+                        """,
                 this::mapRequestWithoutPackages,
                 ownerAccountId);
         return withPackages(requests);
@@ -144,7 +166,7 @@ public class DeliveryRequestRepository {
 
     public Optional<StoredDeliveryRequest> findByIdAndOwner(UUID id, UUID ownerAccountId) {
         List<StoredDeliveryRequest> requests = jdbcTemplate.query(
-                REQUEST_SELECT + " WHERE dr.id = ? AND dr.owner_account_id = ?",
+                REQUEST_SELECT + " WHERE dr.id = ? AND dr.owner_account_id = ? AND dr.cancelled_before_processing_at IS NULL",
                 this::mapRequestWithoutPackages,
                 id, ownerAccountId);
         return withPackages(requests).stream().findFirst();
@@ -165,7 +187,15 @@ public class DeliveryRequestRepository {
             DeliveryRequestStatus status,
             String clientQuery,
             boolean pendingOnly) {
-        StringBuilder sql = new StringBuilder(REQUEST_SELECT).append(" WHERE 1 = 1");
+        StringBuilder sql = new StringBuilder(REQUEST_SELECT)
+                .append("""
+                         WHERE dr.cancelled_before_processing_at IS NULL
+                           AND EXISTS (
+                               SELECT 1 FROM delivery_package visible_package
+                               WHERE visible_package.delivery_request_id = dr.id
+                                 AND visible_package.cancelled_before_processing_at IS NULL
+                           )
+                        """);
         List<Object> arguments = new ArrayList<>();
         if (date != null) {
             sql.append(" AND dr.requested_date = ?");
@@ -200,8 +230,9 @@ public class DeliveryRequestRepository {
                     sql.append("""
                              AND EXISTS (
                                  SELECT 1 FROM delivery_package active_pending_package
-                                 WHERE active_pending_package.delivery_request_id = dr.id
-                                   AND active_pending_package.final_outcome IS NULL
+                             WHERE active_pending_package.delivery_request_id = dr.id
+                               AND active_pending_package.cancelled_before_processing_at IS NULL
+                               AND active_pending_package.final_outcome IS NULL
                              )
                             """);
                 }
@@ -213,6 +244,7 @@ public class DeliveryRequestRepository {
                          SELECT 1
                          FROM delivery_package pending_package
                          WHERE pending_package.delivery_request_id = dr.id
+                           AND pending_package.cancelled_before_processing_at IS NULL
                            AND pending_package.status = 'PENDING'
                            AND pending_package.final_outcome IS NULL
                      )
@@ -251,10 +283,13 @@ public class DeliveryRequestRepository {
         List<StoredDeliveryRequest> requests = jdbcTemplate.query(
                 REQUEST_SELECT + """
                          WHERE dr.requested_date = ?
+                           AND dr.request_kind = 'NORMAL'
+                           AND dr.cancelled_before_processing_at IS NULL
                            AND EXISTS (
                                SELECT 1
                                FROM delivery_package queued_package
                                WHERE queued_package.delivery_request_id = dr.id
+                                 AND queued_package.cancelled_before_processing_at IS NULL
                                  AND queued_package.status = 'PENDING'
                                  AND queued_package.final_outcome IS NULL
                            )
@@ -282,8 +317,12 @@ public class DeliveryRequestRepository {
                     COUNT(CASE WHEN dp.status = 'PENDING' AND dp.final_outcome IS NULL THEN 1 END)
                         AS pending_packages
                 FROM delivery_request dr
-                LEFT JOIN delivery_package dp ON dp.delivery_request_id = dr.id
+                LEFT JOIN delivery_package dp
+                       ON dp.delivery_request_id = dr.id
+                      AND dp.cancelled_before_processing_at IS NULL
                 WHERE dr.requested_date = ?
+                  AND dr.request_kind = 'NORMAL'
+                  AND dr.cancelled_before_processing_at IS NULL
                 """, (resultSet, rowNumber) -> new QueueCounts(
                 resultSet.getInt("pending_requests"),
                 resultSet.getInt("partially_dispatched_requests"),
@@ -299,12 +338,14 @@ public class DeliveryRequestRepository {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
+                    desired_delivery_time,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
                     final_delivery_fee_ariary, delivery_fee_override_reason,
                     delivery_fee_overridden_at, delivery_fee_overridden_by_account_id,
                     delivery_fee_version,
                     distance_from_center_meters, pricing_zone_max_distance_meters,
-                    pricing_policy_version,
+                    pricing_policy_version, pricing_policy_id,
+                    base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                     effective_weight_kg, weight_source,
                     status, unassigned_reason,
                     final_outcome, actual_collected_ariary, outcome_note,
@@ -312,7 +353,7 @@ public class DeliveryRequestRepository {
                     return_completed_at, return_completed_by_account_id,
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 deliveryPackage.id(), deliveryPackage.deliveryRequestId(), deliveryPackage.sequenceNumber(),
                 deliveryPackage.recipientName(), deliveryPackage.faritra(),
@@ -320,6 +361,7 @@ public class DeliveryRequestRepository {
                 deliveryPackage.destination().latitude(), deliveryPackage.destination().longitude(),
                 deliveryPackage.contact(), deliveryPackage.amountToCollectAriary(),
                 deliveryPackage.mobileMoneyPaid(),
+                deliveryPackage.desiredDeliveryTime(),
                 deliveryPackage.pricingSnapshot().pricingZoneId(),
                 deliveryPackage.pricingSnapshot().pricingZoneName(),
                 deliveryPackage.pricingSnapshot().deliveryFeeAriary(),
@@ -331,6 +373,10 @@ public class DeliveryRequestRepository {
                 deliveryPackage.pricingSnapshot().distanceFromCenterMeters(),
                 deliveryPackage.pricingSnapshot().pricingZoneMaxDistanceMeters(),
                 deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
+                deliveryPackage.pricingSnapshot().pricingPolicyId(),
+                deliveryPackage.pricingSnapshot().baseDeliveryFeeAriary(),
+                deliveryPackage.pricingSnapshot().weightSurchargeAriary(),
+                deliveryPackage.pricingSnapshot().timeSurchargeAriary(),
                 deliveryPackage.effectiveWeightKg(),
                 deliveryPackage.weightSource().name(), deliveryPackage.status().name(),
                 deliveryPackage.unassignedReason(),
@@ -374,6 +420,7 @@ public class DeliveryRequestRepository {
                             : request.status();
                     return new StoredDeliveryRequest(
                             request.id(), request.ownerAccountId(), request.ownerDisplayName(), request.ownerPhone(),
+                            request.requestKind(), request.expressStatus(), request.createdByAccountId(),
                             request.requestedDate(),
                             request.pickup(), request.capacityLimitSnapshot(), request.capacityCurrentSnapshot(),
                             request.capacityRequestedSnapshot(), request.capacityProjectedSnapshot(),
@@ -386,17 +433,23 @@ public class DeliveryRequestRepository {
     private List<StoredDeliveryPackage> findPackages(UUID requestId) {
         return jdbcTemplate.query("""
                 SELECT * FROM delivery_package
-                WHERE delivery_request_id = ?
+                WHERE delivery_request_id = ? AND cancelled_before_processing_at IS NULL
                 ORDER BY sequence_number
                 """, this::mapPackage, requestId);
     }
 
     private StoredDeliveryRequest mapRequestWithoutPackages(ResultSet resultSet, int rowNumber) throws SQLException {
+        UUID ownerAccountId = resultSet.getObject("owner_account_id", UUID.class);
+        UUID createdByAccountId = resultSet.getObject("created_by_account_id", UUID.class);
         return new StoredDeliveryRequest(
                 resultSet.getObject("id", UUID.class),
-                resultSet.getObject("owner_account_id", UUID.class),
+                ownerAccountId,
                 resultSet.getString("owner_display_name"),
                 resultSet.getString("owner_phone"),
+                DeliveryRequestKind.valueOf(resultSet.getString("request_kind")),
+                resultSet.getString("express_status") == null ? null
+                        : ExpressDeliveryStatus.valueOf(resultSet.getString("express_status")),
+                createdByAccountId == null ? ownerAccountId : createdByAccountId,
                 resultSet.getDate("requested_date").toLocalDate(),
                 new ConfirmedLocation(
                         resultSet.getString("pickup_label"),
@@ -431,13 +484,18 @@ public class DeliveryRequestRepository {
                 resultSet.getString("contact"),
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
+                resultSet.getObject("desired_delivery_time", java.time.LocalTime.class),
                 new DeliveryPricingSnapshot(
                         resultSet.getObject("pricing_zone_id", UUID.class),
                         resultSet.getString("pricing_zone_name"),
                         nullableLong(resultSet, "delivery_fee_ariary"),
                         nullableLong(resultSet, "distance_from_center_meters"),
                         nullableLong(resultSet, "pricing_zone_max_distance_meters"),
-                        nullableLong(resultSet, "pricing_policy_version")),
+                        nullableLong(resultSet, "pricing_policy_version"),
+                        resultSet.getObject("pricing_policy_id", Short.class),
+                        nullableLong(resultSet, "base_delivery_fee_ariary"),
+                        nullableLong(resultSet, "weight_surcharge_ariary"),
+                        nullableLong(resultSet, "time_surcharge_ariary")),
                 coalesce(
                         nullableLong(resultSet, "final_delivery_fee_ariary"),
                         nullableLong(resultSet, "delivery_fee_ariary")),

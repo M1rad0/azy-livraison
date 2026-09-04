@@ -154,7 +154,7 @@ class DailyReportApiIntegrationTest {
     }
 
     @Test
-    void clientExportsContainOnlyThatAccountsPackagesAndKeepMobileMoneyInformational() throws Exception {
+    void clientExportsContainOnlyThatAccountsPackagesAndKeepTheReportConcise() throws Exception {
         installScenario(true);
 
         MvcResult pdfResponse = mockMvc.perform(get(
@@ -163,13 +163,12 @@ class DailyReportApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         try (PDDocument document = Loader.loadPDF(pdfResponse.getResponse().getContentAsByteArray())) {
-            String extracted = new PDFTextStripper().getText(document);
+            String extracted = new PDFTextStripper().getText(document).replaceAll("\\s+", " ");
             assertThat(extracted)
                     .contains("Boutique Rado clôture")
-                    .contains("Destinataire Mobile Money")
-                    .contains("Mobile Money")
-                    .contains("Oui")
-                    .contains("Compte rendu Destinataire Mobile Money")
+                    .contains("Destinataire Mobile")
+                    .contains("Money")
+                    .contains("Compte rendu Destinataire")
                     .contains("Annulation avant dispatch")
                     .contains("12 000 Ar")
                     .contains("9 000 Ar")
@@ -177,6 +176,7 @@ class DailyReportApiIntegrationTest {
                     .doesNotContain("Destinataire retour")
                     .doesNotContain("Livreur prévu")
                     .doesNotContain("Livreur réel")
+                    .doesNotContain("État Mobile Money")
                     .doesNotContain("Point de ralliement")
                     .doesNotContain("Clôture de la journée")
                     .doesNotContain("Généré le");
@@ -192,12 +192,11 @@ class DailyReportApiIntegrationTest {
             assertThat(workbook.getNumberOfSheets()).isEqualTo(1);
             Sheet report = workbook.getSheet("Rapport client");
             Row delivered = rowWithValue(report, 0, "Destinataire Mobile Money");
-            assertThat(delivered.getCell(4).getStringCellValue()).isEqualTo("Oui");
-            assertThat(delivered.getCell(5).getStringCellValue())
+            assertThat(delivered.getCell(4).getStringCellValue())
                     .isEqualTo("Compte rendu Destinataire Mobile Money");
-            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(12_000);
-            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(3_000);
-            assertThat(delivered.getCell(8).getNumericCellValue()).isEqualTo(9_000);
+            assertThat(delivered.getCell(5).getNumericCellValue()).isEqualTo(12_000);
+            assertThat(delivered.getCell(6).getNumericCellValue()).isEqualTo(3_000);
+            assertThat(delivered.getCell(7).getNumericCellValue()).isEqualTo(9_000);
             assertThat(sheetContains(report, "Boutique Rado clôture")).isTrue();
             assertThat(sheetContains(report, "Maison Soa clôture")).isFalse();
             assertThat(sheetContains(report, "Hery")).isFalse();

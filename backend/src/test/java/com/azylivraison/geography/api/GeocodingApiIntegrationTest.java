@@ -122,9 +122,10 @@ class GeocodingApiIntegrationTest {
     }
 
     @Test
-    void protectsTheSearchEndpoint() throws Exception {
+    void exposesTheSearchEndpointForThePublicPricingCalculator() throws Exception {
         mockMvc.perform(get("/api/geocoding/search").queryParam("q", "Analakely"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.candidates[0].displayName").exists());
     }
 
     private static HttpServer startNominatim() {

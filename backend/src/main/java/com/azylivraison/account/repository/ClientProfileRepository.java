@@ -39,7 +39,8 @@ public class ClientProfileRepository {
     public Optional<ClientProfile> findByAccountId(UUID accountId) {
         List<ClientProfile> profiles = jdbcTemplate.query("""
                 SELECT account_id, default_pickup_label, default_pickup_query,
-                       default_pickup_latitude, default_pickup_longitude, version
+                       default_pickup_latitude, default_pickup_longitude,
+                       express_delivery_enabled, version
                 FROM client_profile
                 WHERE account_id = ?
                 """, (resultSet, rowNumber) -> {
@@ -56,11 +57,21 @@ public class ClientProfileRepository {
                     return new ClientProfile(
                             resultSet.getObject("account_id", UUID.class),
                             defaultPickup,
+                            resultSet.getBoolean("express_delivery_enabled"),
                             findContactNumbers(accountId),
                             findPayoutDestinations(accountId),
                             resultSet.getLong("version"));
                 }, accountId);
         return profiles.stream().findFirst();
+    }
+
+    public boolean updateExpressDeliveryPermission(UUID accountId, boolean enabled, long expectedVersion) {
+        return jdbcTemplate.update("""
+                UPDATE client_profile
+                SET express_delivery_enabled = ?, version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE account_id = ? AND version = ?
+                """, enabled, accountId, expectedVersion) == 1;
     }
 
     public boolean bumpVersion(UUID accountId, long expectedVersion) {

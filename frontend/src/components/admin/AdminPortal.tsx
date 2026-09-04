@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, Settings2, Sparkles, TriangleAlert, WalletCards } from 'lucide-react'
+import { BadgeDollarSign, Bike, Boxes, ClipboardCheck, Settings2, Sparkles, TriangleAlert, UsersRound, WalletCards, Zap } from 'lucide-react'
 import {
   cancelAdminDeliveryPackage,
   getAdminQueue,
@@ -25,16 +25,20 @@ import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
 import { AdminPricingZonesPanel } from './AdminPricingZonesPanel'
 import { antananarivoToday, errorMessage } from './adminHelpers'
 import { AdminSettingsPanel } from './AdminSettingsPanel'
+import { AdminClientsPanel } from './AdminClientsPanel'
+import { AdminExpressPanel } from './AdminExpressPanel'
 import { usePortalNavigation } from '../PortalShell'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'dispatch' | 'day' | 'finance' | 'couriers' | 'pricing' | 'settings'
+type AdminTab = 'queue' | 'express' | 'dispatch' | 'day' | 'finance' | 'clients' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
+  { id: 'express', label: 'Express', detail: 'Traitement immédiat', icon: Zap },
   { id: 'dispatch', label: 'Dispatch', detail: 'Via point de ralliement', icon: Sparkles },
   { id: 'day', label: 'Compte rendu', detail: 'Clôture et rapports', icon: ClipboardCheck },
   { id: 'finance', label: 'Finances', detail: 'Versements et soldes', icon: WalletCards },
+  { id: 'clients', label: 'Clients', detail: 'Comptes et demandes', icon: UsersRound },
   { id: 'couriers', label: 'Livreurs', detail: 'Équipe et véhicules', icon: Bike },
   { id: 'pricing', label: 'Tarification', detail: 'Zones et prix', icon: BadgeDollarSign },
   { id: 'settings', label: 'Paramètres', detail: 'Règles opérationnelles', icon: Settings2 },
@@ -64,6 +68,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
   const [pendingBusy, setPendingBusy] = useState(true)
   const [dispatchBusy, setDispatchBusy] = useState(true)
   const [message, setMessage] = useState<string>()
+  const [expressRefreshKey, setExpressRefreshKey] = useState(0)
   const pendingLoadId = useRef(0)
   const dispatchLoadId = useRef(0)
 
@@ -215,6 +220,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           onCreated={dispatchCreated}
         />
       )}
+      {tab === 'express' && <AdminExpressPanel accessToken={accessToken} couriers={couriers} refreshKey={expressRefreshKey} onOpenClients={() => openTab('clients')} />}
       {tab === 'day' && (
         <AdminDailyOperationsPanel
           accessToken={accessToken}
@@ -229,6 +235,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
         />
       )}
       {tab === 'finance' && <AdminFinancePanel accessToken={accessToken} couriers={couriers} initialDate={dispatchDate} />}
+      {tab === 'clients' && <AdminClientsPanel accessToken={accessToken} onExpressCreated={() => { setExpressRefreshKey((value) => value + 1); openTab('express') }} />}
       {tab === 'couriers' && <AdminCouriersPanel accessToken={accessToken} couriers={couriers} presets={presets} onSaved={upsertCourier} />}
       {tab === 'pricing' && <AdminPricingZonesPanel accessToken={accessToken} />}
       {tab === 'settings' && (

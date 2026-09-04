@@ -18,6 +18,7 @@ import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
+import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -65,6 +66,7 @@ public class DailyWorkflowRepository {
                        dr.owner_account_id,
                        COALESCE(snapshot.display_name, account.display_name) AS owner_display_name,
                        COALESCE(snapshot.phone, account.phone) AS owner_phone,
+                       dr.request_kind,
                        dr.requested_date,
                        dr.pickup_label, dr.pickup_query,
                        dr.pickup_latitude, dr.pickup_longitude,
@@ -80,8 +82,11 @@ public class DailyWorkflowRepository {
                        p.actual_collected_ariary, p.outcome_note, p.outcome_recorded_at,
                        p.return_completed_at, p.carried_forward_from_package_id,
                        successor.id AS carried_forward_to_package_id,
-                       p.dispatch_plan_id, outcome.distributor_courier_id,
-                       courier.courier_name AS distributor_courier_name,
+                       p.dispatch_plan_id,
+                       COALESCE(outcome.distributor_courier_id,
+                                express_courier.courier_id) AS distributor_courier_id,
+                       COALESCE(courier.courier_name,
+                                express_courier.courier_name_snapshot) AS distributor_courier_name,
                        p.actual_delivery_courier_id, p.actual_delivery_courier_name,
                        p.actual_delivery_courier_contact, p.actual_delivery_vehicle_type,
                        outcome.estimated_delivery_at, p.priority_at, p.version
@@ -100,7 +105,16 @@ public class DailyWorkflowRepository {
                 LEFT JOIN dispatch_plan_courier courier
                        ON courier.dispatch_plan_id = outcome.dispatch_plan_id
                       AND courier.courier_id = outcome.distributor_courier_id
-                WHERE p.dispatch_plan_id IN (
+                LEFT JOIN express_delivery_courier express_courier
+                       ON express_courier.delivery_request_id = dr.id
+                      AND dr.request_kind = 'EXPRESS'
+                      AND 1 = (
+                          SELECT COUNT(*)
+                          FROM express_delivery_courier selected_courier
+                          WHERE selected_courier.delivery_request_id = dr.id
+                      )
+                WHERE p.cancelled_before_processing_at IS NULL
+                  AND (p.dispatch_plan_id IN (
                         SELECT historical_plan.id
                         FROM dispatch_plan historical_plan
                         WHERE historical_plan.service_date = ?
@@ -108,18 +122,21 @@ public class DailyWorkflowRepository {
                           AND historical_plan.lifecycle_status = 'ACTIVE'
                     )
                    OR (dr.requested_date = ? AND p.final_outcome = 'CANCELLED')
+                   OR (dr.requested_date = ? AND dr.request_kind = 'EXPRESS'
+                       AND dr.express_status IN ('CONFIRMED', 'COMPLETED')))
                 ORDER BY dr.owner_account_id, p.priority_at, dr.created_at,
                          p.sequence_number, p.id
                 """, this::mapDailyPackage,
                 Date.valueOf(day.serviceDate()),
                 day.closureRevision(),
                 Date.valueOf(day.serviceDate()),
+                Date.valueOf(day.serviceDate()),
                 Date.valueOf(day.serviceDate()));
     }
 
     public Optional<PackageForUpdate> lockPackage(UUID packageId) {
         return jdbcTemplate.query("""
-                SELECT p.*, dr.owner_account_id, dr.requested_date
+                SELECT p.*, dr.owner_account_id, dr.requested_date, dr.request_kind
                 FROM delivery_package p
                 JOIN delivery_request dr ON dr.id = p.delivery_request_id
                 WHERE p.id = ?
@@ -199,6 +216,7 @@ public class DailyWorkflowRepository {
                 FROM delivery_package p
                 JOIN delivery_request dr ON dr.id = p.delivery_request_id
                 WHERE dr.requested_date = ?
+                  AND p.cancelled_before_processing_at IS NULL
                   AND (p.final_outcome IS NULL OR p.final_outcome <> 'CANCELLED')
                 """, Integer.class, Date.valueOf(date));
         return count == null ? 0 : count;
@@ -207,20 +225,12 @@ public class DailyWorkflowRepository {
     public void cancelPackage(PackageForUpdate source, UUID actorAccountId, Instant now) {
         int cancelled = jdbcTemplate.update("""
                 UPDATE delivery_package
-                SET final_outcome = 'CANCELLED',
-                    actual_collected_ariary = NULL,
-                    outcome_note = NULL,
-                    outcome_recorded_at = ?,
-                    outcome_recorded_by_account_id = ?,
-                    actual_delivery_courier_id = NULL,
-                    actual_delivery_courier_name = NULL,
-                    actual_delivery_courier_contact = NULL,
-                    actual_delivery_vehicle_type = NULL,
-                    return_completed_at = NULL,
-                    return_completed_by_account_id = NULL,
+                SET cancelled_before_processing_at = ?,
+                    cancelled_before_processing_by_account_id = ?,
                     version = version + 1,
                     updated_at = ?
                 WHERE id = ? AND final_outcome IS NULL AND status = 'PENDING'
+                  AND cancelled_before_processing_at IS NULL
                 """, timestamp(now), actorAccountId, timestamp(now), source.packageId());
         if (cancelled != 1) {
             throw new IllegalStateException("Le colis n'a pas pu être annulé.");
@@ -233,7 +243,20 @@ public class DailyWorkflowRepository {
         if (requestUpdated != 1) {
             throw new IllegalStateException("La demande du colis annulé est introuvable.");
         }
-        insertDeliveryEvent(source, "PACKAGE_CANCELLED", null, "CANCELLED", actorAccountId, null, now);
+        jdbcTemplate.update("""
+                UPDATE delivery_request request
+                SET cancelled_before_processing_at = ?,
+                    cancelled_before_processing_by_account_id = ?,
+                    updated_at = ?
+                WHERE request.id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM delivery_package package
+                      WHERE package.delivery_request_id = request.id
+                        AND package.cancelled_before_processing_at IS NULL
+                  )
+                """, timestamp(now), actorAccountId, timestamp(now), source.deliveryRequestId());
+        insertDeliveryEvent(source, "PACKAGE_CANCELLED_BEFORE_PROCESSING", null, "CANCELLED",
+                actorAccountId, null, now);
     }
 
     public void updateOutcome(
@@ -318,11 +341,24 @@ public class DailyWorkflowRepository {
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM delivery_package package
-                JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
-                WHERE plan.service_date = ?
-                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
-                  AND plan.lifecycle_status = 'ACTIVE'
+                JOIN delivery_request request ON request.id = package.delivery_request_id
+                LEFT JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
+                WHERE package.cancelled_before_processing_at IS NULL
+                  AND ((plan.service_date = ?
+                        AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                        AND plan.lifecycle_status = 'ACTIVE')
+                       OR (request.requested_date = ? AND request.request_kind = 'EXPRESS'
+                           AND request.express_status IN ('CONFIRMED', 'COMPLETED')))
                   AND package.final_outcome IS NULL
+                """, Integer.class, Date.valueOf(serviceDate), Date.valueOf(serviceDate));
+        return count == null ? 0 : count;
+    }
+
+    public int pendingExpressRequestCount(LocalDate serviceDate) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_request
+                WHERE requested_date = ? AND request_kind = 'EXPRESS'
+                  AND express_status = 'PENDING' AND cancelled_before_processing_at IS NULL
                 """, Integer.class, Date.valueOf(serviceDate));
         return count == null ? 0 : count;
     }
@@ -349,13 +385,16 @@ public class DailyWorkflowRepository {
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM delivery_package package
-                JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
-                WHERE plan.service_date = ?
-                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
-                  AND plan.lifecycle_status = 'ACTIVE'
+                JOIN delivery_request request ON request.id = package.delivery_request_id
+                LEFT JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
+                WHERE ((plan.service_date = ?
+                        AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                        AND plan.lifecycle_status = 'ACTIVE')
+                       OR (request.requested_date = ? AND request.request_kind = 'EXPRESS'
+                           AND request.express_status IN ('CONFIRMED', 'COMPLETED')))
                   AND package.final_outcome IN ('DELIVERED', 'RETURN_TO_SENDER')
                   AND package.actual_delivery_courier_id IS NULL
-                """, Integer.class, Date.valueOf(serviceDate));
+                """, Integer.class, Date.valueOf(serviceDate), Date.valueOf(serviceDate));
         return count == null ? 0 : count;
     }
 
@@ -510,10 +549,13 @@ public class DailyWorkflowRepository {
                                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
                                  AND plan.lifecycle_status = 'ACTIVE'
                            )
-                           OR (request.requested_date = ? AND package.final_outcome = 'CANCELLED'))
+                           OR (request.requested_date = ? AND package.final_outcome = 'CANCELLED')
+                           OR (request.requested_date = ? AND request.request_kind = 'EXPRESS'
+                               AND request.express_status IN ('CONFIRMED', 'COMPLETED')))
+                      AND package.cancelled_before_processing_at IS NULL
                 )
                 """, Date.valueOf(date), revision, timestamp(now),
-                Date.valueOf(date), Date.valueOf(date));
+                Date.valueOf(date), Date.valueOf(date), Date.valueOf(date));
     }
 
     private void insertDeliveryEvent(
@@ -558,6 +600,7 @@ public class DailyWorkflowRepository {
                 resultSet.getObject("owner_account_id", UUID.class),
                 resultSet.getString("owner_display_name"),
                 resultSet.getString("owner_phone"),
+                DeliveryRequestKind.valueOf(resultSet.getString("request_kind")),
                 resultSet.getObject("requested_date", LocalDate.class),
                 location(resultSet, "pickup"),
                 resultSet.getInt("sequence_number"),
@@ -602,6 +645,7 @@ public class DailyWorkflowRepository {
                 resultSet.getObject("delivery_request_id", UUID.class),
                 resultSet.getObject("owner_account_id", UUID.class),
                 resultSet.getObject("requested_date", LocalDate.class),
+                DeliveryRequestKind.valueOf(resultSet.getString("request_kind")),
                 resultSet.getInt("sequence_number"),
                 resultSet.getString("recipient_name"),
                 resultSet.getBoolean("faritra"),
@@ -700,6 +744,7 @@ public class DailyWorkflowRepository {
             UUID deliveryRequestId,
             UUID ownerAccountId,
             LocalDate requestedDate,
+            DeliveryRequestKind requestKind,
             int sequenceNumber,
             String recipientName,
             boolean faritra,

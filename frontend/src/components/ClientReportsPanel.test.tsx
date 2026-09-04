@@ -63,6 +63,7 @@ const report = {
   reportId: summary.reportId,
   serviceDate: summary.serviceDate,
   clientDisplayName: 'Boutique Soa',
+  clientPhone: '033 00 000 00',
   totals,
   packages: [{
     packageId: 'package-1',
@@ -198,7 +199,6 @@ describe('ClientReportsPanel', () => {
       'Destinataire',
       'Destination / contact',
       'État',
-      'Mobile Money',
       'Commentaire',
       'Récupéré',
       'Frais',
@@ -209,8 +209,8 @@ describe('ClientReportsPanel', () => {
     expect(screen.getByText('Retourné à l’expéditeur')).toBeInTheDocument()
     expect(screen.getByText('Montant confirmé avec la destinataire.')).toBeInTheDocument()
     expect(screen.getByText('Commande refusée à l’arrivée.')).toBeInTheDocument()
-    expect(screen.getByText('Oui')).toBeInTheDocument()
-    expect(screen.getByText('Non')).toBeInTheDocument()
+    expect(screen.queryByText('Mobile Money')).not.toBeInTheDocument()
+    expect(screen.getByText('033 00 000 00')).toBeInTheDocument()
     expect(screen.getAllByText('Boutique Analakely')).toHaveLength(1)
     expect(screen.queryByText(/Livreur/)).not.toBeInTheDocument()
     expect(screen.queryByText(/version 2/i)).not.toBeInTheDocument()
@@ -218,9 +218,9 @@ describe('ClientReportsPanel', () => {
 
     const table = screen.getByRole('table', { name: 'Détail des colis du rapport' })
     const settlement = screen.getByRole('heading', { name: 'Versements liés à ce rapport' }).closest('section')
-    const summarySection = screen.getByRole('heading', { name: 'Synthèse financière' }).closest('section')
+    const summarySection = screen.getByRole('heading', { name: 'Synthèse' }).closest('section')
+    expect((summarySection as Node).compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(table.compareDocumentPosition(settlement as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect((settlement as Node).compareDocumentPosition(summarySection as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('commence par une liste filtrable puis revient à cette liste sans perdre les filtres', async () => {
