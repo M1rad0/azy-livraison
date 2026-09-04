@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Banknote, BadgeDollarSign, Check, LoaderCircle, MapPin, PackagePlus, Scale, TriangleAlert, X } from 'lucide-react'
-import { ClientApiError, quoteDeliveryPrice, type DeliveryPricingQuote } from '../api/client'
+import { Banknote, BadgeDollarSign, Check, Clock3, LoaderCircle, MapPin, PackagePlus, Scale, TriangleAlert, X } from 'lucide-react'
+import { ClientApiError, quoteDeliveryPrice, type DeliveryPricingQuote, type DeliveryRequestKind } from '../api/client'
 import type { Location } from '../api/csvImports'
 import { LocationPicker } from './LocationPicker'
 
@@ -14,6 +14,7 @@ export interface ClientPackageDraft {
   amountToCollectAriary: string
   mobileMoneyPaid: boolean
   weightKg: string
+  desiredDeliveryTime: string
   pricingQuote?: DeliveryPricingQuote
 }
 
@@ -27,6 +28,7 @@ export function emptyClientPackage(localId: string): ClientPackageDraft {
     amountToCollectAriary: '0',
     mobileMoneyPaid: false,
     weightKg: '',
+    desiredDeliveryTime: '',
     pricingQuote: undefined,
   }
 }
@@ -35,16 +37,33 @@ function confirmed(location: Location): boolean {
   return Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
 }
 
+function currentTimeInAntananarivo(): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Indian/Antananarivo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date())
+}
+
 export function ClientPackageDialog({
   accessToken,
   initialValue,
   packageNumber,
+  requestKind = 'NORMAL',
+  quotePrice,
   onSave,
   onClose,
 }: {
   accessToken: string
   initialValue: ClientPackageDraft
   packageNumber: number
+  requestKind?: DeliveryRequestKind
+  quotePrice?: (
+    destination: Parameters<typeof quoteDeliveryPrice>[0],
+    signal: AbortSignal,
+    options: { requestKind: DeliveryRequestKind; weightKg?: number; desiredDeliveryTime?: string },
+  ) => Promise<DeliveryPricingQuote>
   onSave: (value: ClientPackageDraft) => void
   onClose: () => void
 }) {
@@ -81,14 +100,24 @@ export function ClientPackageDialog({
     const controller = new AbortController()
     setQuoteBusy(true)
     setQuoteError(undefined)
-    void quoteDeliveryPrice({
+    const destination = {
       label: value.destination.label?.trim()
         || value.destination.destinationQuery?.trim()
         || `Livraison ${packageNumber}`,
       query: value.destination.destinationQuery?.trim() || undefined,
       latitude: value.destination.latitude as number,
       longitude: value.destination.longitude as number,
-    }, accessToken, controller.signal).then((pricingQuote) => {
+    }
+    const options = {
+      requestKind,
+      ...(value.weightKg ? { weightKg: Number(value.weightKg) } : {}),
+      ...(requestKind === 'EXPRESS' && value.desiredDeliveryTime
+        ? { desiredDeliveryTime: value.desiredDeliveryTime }
+        : {}),
+    }
+    void (quotePrice
+      ? quotePrice(destination, controller.signal, options)
+      : quoteDeliveryPrice(destination, accessToken, controller.signal, options)).then((pricingQuote) => {
       if (!controller.signal.aborted) {
         setValue((current) => ({ ...current, pricingQuote }))
       }
@@ -105,7 +134,7 @@ export function ClientPackageDialog({
     })
 
     return () => controller.abort()
-  }, [accessToken, packageNumber, value.destination.latitude, value.destination.longitude])
+  }, [accessToken, packageNumber, quotePrice, requestKind, value.destination.latitude, value.destination.longitude, value.weightKg, value.desiredDeliveryTime])
 
   function save() {
     if (!value.recipientName.trim()) {
@@ -141,8 +170,14 @@ export function ClientPackageDialog({
       setError('Le poids doit être supérieur à zéro.')
       return
     }
+    if (requestKind === 'EXPRESS' && value.desiredDeliveryTime
+      && value.desiredDeliveryTime <= currentTimeInAntananarivo()) {
+      setError('L’heure souhaitée doit être postérieure à l’heure actuelle.')
+      return
+    }
     onSave({
       ...value,
+      desiredDeliveryTime: requestKind === 'EXPRESS' ? value.desiredDeliveryTime : '',
       recipientName: value.recipientName.trim(),
       contact: value.contact.trim(),
       destination: {
@@ -233,7 +268,16 @@ export function ClientPackageDialog({
             {!quoteBusy && value.pricingQuote && (
               <div className="client-pricing-preview is-covered" role="status">
                 <BadgeDollarSign aria-hidden="true" />
-                <div><small>Zone {value.pricingQuote.pricingZoneName}</small><strong>{value.pricingQuote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar de livraison</strong></div>
+                <div>
+                  <small>Zone {value.pricingQuote.pricingZoneName}{value.pricingQuote.timeSlotLabel ? ` · ${value.pricingQuote.timeSlotLabel}` : ''}</small>
+                  <strong>{value.pricingQuote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar de livraison</strong>
+                  {(value.pricingQuote.weightSurchargeAriary || value.pricingQuote.timeSurchargeAriary) ? (
+                    <small>Base {(value.pricingQuote.baseDeliveryFeeAriary ?? 0).toLocaleString('fr-MG')} Ar
+                      {value.pricingQuote.weightSurchargeAriary ? ` · poids +${value.pricingQuote.weightSurchargeAriary.toLocaleString('fr-MG')} Ar` : ''}
+                      {value.pricingQuote.timeSurchargeAriary ? ` · créneau +${value.pricingQuote.timeSurchargeAriary.toLocaleString('fr-MG')} Ar` : ''}
+                    </small>
+                  ) : null}
+                </div>
               </div>
             )}
             {!quoteBusy && quoteError && (
@@ -256,6 +300,18 @@ export function ClientPackageDialog({
                 onChange={(event) => setValue({ ...value, amountToCollectAriary: event.target.value })}
               /></div>
             </label>
+            {requestKind === 'EXPRESS' && (
+              <label className="client-field client-field--icon">
+                <span>Heure souhaitée · facultatif</span>
+                <div><Clock3 aria-hidden="true" /><input
+                  value={value.desiredDeliveryTime}
+                  type="time"
+                  min={currentTimeInAntananarivo()}
+                  onChange={(event) => setValue({ ...value, desiredDeliveryTime: event.target.value })}
+                /></div>
+                <small>Si vous indiquez une heure, elle doit être postérieure à maintenant.</small>
+              </label>
+            )}
             <label className="client-field client-field--icon">
               <span>Poids (kg) · facultatif</span>
               <div><Scale aria-hidden="true" /><input

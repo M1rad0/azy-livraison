@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ComponentProps } from 'react'
 import {
   AlertTriangle,
   CalendarDays,
@@ -14,6 +14,7 @@ import {
   createDeliveryRequest,
   type ClientDefaultPickup,
   type ClientLocation,
+  type DeliveryRequestKind,
   type DeliveryRequestRecord,
 } from '../api/client'
 import type { Location } from '../api/csvImports'
@@ -31,6 +32,15 @@ function tomorrow(): string {
   const month = Number(parts.find((part) => part.type === 'month')?.value)
   const day = Number(parts.find((part) => part.type === 'day')?.value)
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
+}
+
+function today(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Indian/Antananarivo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
 }
 
 function nextLocalId(): string {
@@ -69,13 +79,21 @@ export function ClientDeliveryRequestForm({
   defaultPickup,
   onCreated,
   onCancel,
+  requestKind = 'NORMAL',
+  createRequest,
+  quotePrice,
 }: {
   accessToken: string
   defaultPickup: ClientDefaultPickup | null
   onCreated: (request: DeliveryRequestRecord, savedDefaultPickup: boolean) => void
   onCancel: () => void
+  requestKind?: DeliveryRequestKind
+  createRequest?: (input: Parameters<typeof createDeliveryRequest>[0]) => Promise<DeliveryRequestRecord>
+  quotePrice?: ComponentProps<typeof ClientPackageDialog>['quotePrice']
 }) {
-  const [requestedDate, setRequestedDate] = useState(tomorrow)
+  const [requestedDate, setRequestedDate] = useState(() => (
+    requestKind === 'EXPRESS' ? today() : tomorrow()
+  ))
   const [pickup, setPickup] = useState<Location>(() => pickupLocation(defaultPickup))
   const [saveAsDefaultPickup, setSaveAsDefaultPickup] = useState(false)
   const [packages, setPackages] = useState<ClientPackageDraft[]>([])
@@ -130,8 +148,9 @@ export function ClientDeliveryRequestForm({
 
     setSubmitting(true)
     try {
-      const created = await createDeliveryRequest({
+      const created = await (createRequest ?? ((input) => createDeliveryRequest(input, accessToken)))({
         requestedDate,
+        requestKind,
         pickup: apiLocation(pickup, 'Point de retrait'),
         saveAsDefaultPickup,
         packages: packages.map((item, index) => ({
@@ -142,8 +161,11 @@ export function ClientDeliveryRequestForm({
           amountToCollectAriary: Number(item.amountToCollectAriary),
           mobileMoneyPaid: item.mobileMoneyPaid,
           ...(item.weightKg ? { weightKg: Number(item.weightKg) } : {}),
+          ...(requestKind === 'EXPRESS' && item.desiredDeliveryTime
+            ? { desiredDeliveryTime: item.desiredDeliveryTime }
+            : {}),
         })),
-      }, accessToken)
+      })
       onCreated(created, saveAsDefaultPickup)
     } catch (submitError) {
       if (submitError instanceof DailyCapacityExceededError) {
@@ -164,8 +186,8 @@ export function ClientDeliveryRequestForm({
     <section className="client-request-builder" aria-labelledby="client-request-title">
       <header className="client-page-heading">
         <div>
-          <p className="eyebrow">Nouvelle demande</p>
-          <h1 id="client-request-title">Préparer une livraison</h1>
+          <p className="eyebrow">{requestKind === 'EXPRESS' ? 'Livraison express' : 'Nouvelle demande'}</p>
+          <h1 id="client-request-title">Préparer une livraison{requestKind === 'EXPRESS' ? ' express' : ''}</h1>
           <p>Un retrait, puis autant de colis que nécessaire. Vous pourrez suivre leur traitement depuis l’historique.</p>
         </div>
         <button className="button button--secondary" type="button" onClick={onCancel}>Retour à l’historique</button>
@@ -180,11 +202,12 @@ export function ClientDeliveryRequestForm({
             </div>
             <div className="client-form-grid">
               <label className="client-field">
-                <span>Date souhaitée</span>
+                <span>{requestKind === 'EXPRESS' ? 'Traitement express' : 'Date souhaitée'}</span>
                 <input
                   type="date"
                   value={requestedDate}
-                  min={tomorrow()}
+                  min={requestKind === 'EXPRESS' ? today() : tomorrow()}
+                  disabled={requestKind === 'EXPRESS'}
                   onChange={(event) => {
                     setRequestedDate(event.target.value)
                     setCapacityError(undefined)
@@ -309,6 +332,8 @@ export function ClientDeliveryRequestForm({
           accessToken={accessToken}
           initialValue={dialogValue}
           packageNumber={editingIndex + 1}
+          requestKind={requestKind}
+          quotePrice={quotePrice}
           onSave={savePackage}
           onClose={() => setEditingIndex(null)}
         />

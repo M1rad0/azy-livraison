@@ -14,6 +14,8 @@ export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | '
 export type DispatchStatus = 'GENERATING' | 'READY' | 'READY_WITH_WARNINGS' | 'FAILED' | 'CANCELLED' | 'SUPERSEDED'
 export type OperationDayStatus = 'OPEN' | 'DISPATCHING' | 'DISPATCHED' | 'CLOSED'
 export type ReportFormat = 'pdf' | 'xlsx'
+export type DeliveryRequestKind = 'NORMAL' | 'EXPRESS'
+export type ExpressDeliveryStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED'
 
 export interface ConfirmedLocation {
   label?: string
@@ -41,6 +43,7 @@ export interface DeliveryPackage {
   contact: string
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
+  desiredDeliveryTime?: string | null
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
@@ -52,6 +55,10 @@ export interface DeliveryPackage {
   distanceFromCenterMeters?: number | null
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
+  pricingPolicyId?: number | null
+  baseDeliveryFeeAriary?: number | null
+  weightSurchargeAriary?: number | null
+  timeSurchargeAriary?: number | null
   effectiveWeightKg: number
   weightSource: 'PROVIDED' | 'DEFAULT_SETTING'
   status: DeliveryPackageStatus
@@ -73,6 +80,9 @@ export interface DeliveryRequest {
   ownerAccountId: string
   ownerDisplayName: string
   ownerPhone?: string | null
+  requestKind: DeliveryRequestKind
+  expressStatus?: ExpressDeliveryStatus | null
+  createdByAdministration: boolean
   requestedDate: string
   pickup: ConfirmedLocation
   capacity: {
@@ -94,6 +104,35 @@ export interface AdminQueue {
   date: string
   stats: AdminQueueStats
   requests: DeliveryRequest[]
+}
+
+export interface AdminClient {
+  accountId: string
+  username: string
+  displayName: string
+  phone: string
+  enabled: boolean
+  expressDeliveryEnabled: boolean
+  version: number
+}
+
+export interface AdminClientInput {
+  username: string
+  displayName: string
+  phone: string
+  enabled?: boolean
+  expressDeliveryEnabled?: boolean
+  temporaryPassword?: string
+  version?: number
+}
+
+export interface ExpressDelivery {
+  request: DeliveryRequest
+  couriers: Array<{ id: string; name: string }>
+  totalWeightKg: number
+  selectedCapacityKg: number
+  capacityWarning: boolean
+  confirmedAt?: string | null
 }
 
 export interface Courier {
@@ -194,6 +233,30 @@ export interface DeliveryPricingPolicyInput {
     maxDistanceMeters: number
     deliveryFeeAriary: number
   }>
+}
+
+export interface AdvancedPricingPolicy {
+  id: number
+  clientAccountId?: string | null
+  requestKind: DeliveryRequestKind
+  clientSpecific: boolean
+  version: number
+  center: ConfirmedLocation
+  defaultWeightKg: number
+  zones: DeliveryPricingZone[]
+  weightTiers: Array<{ id: string; maxWeightKg: number; surchargeAriary: number }>
+  timeSlots: Array<{ id: string; label: string; startTime: string; endTime: string; surchargeAriary: number }>
+}
+
+export interface AdvancedPricingPolicyInput {
+  clientAccountId?: string | null
+  requestKind: DeliveryRequestKind
+  version?: number | null
+  center: ConfirmedLocation
+  defaultWeightKg: number
+  zones: Array<{ id?: string; name: string; maxDistanceMeters: number; deliveryFeeAriary: number }>
+  weightTiers: Array<{ id?: string; maxWeightKg: number; surchargeAriary: number }>
+  timeSlots: Array<{ id?: string; label: string; startTime: string; endTime: string; surchargeAriary: number }>
 }
 
 export interface DispatchPlanSummary {
@@ -353,6 +416,7 @@ export interface DailyOperationPackage {
   ownerAccountId: string
   ownerDisplayName: string
   ownerPhone?: string | null
+  requestKind?: DeliveryRequestKind
   requestedDate: string
   pickup: ConfirmedLocation
   sequenceNumber: number
@@ -675,6 +739,111 @@ export function updateDeliveryPricingPolicy(input: DeliveryPricingPolicyInput, a
   return adminRequest<DeliveryPricingPolicy>('settings/pricing', accessToken, jsonRequest('PUT', input))
 }
 
+export function getAdvancedPricingPolicies(accessToken: string, clientAccountId?: string, signal?: AbortSignal) {
+  const suffix = clientAccountId ? `?clientAccountId=${encodeURIComponent(clientAccountId)}` : ''
+  return adminRequest<AdvancedPricingPolicy[]>(`pricing-policies${suffix}`, accessToken, { signal })
+}
+
+export function saveAdvancedPricingPolicy(input: AdvancedPricingPolicyInput, accessToken: string) {
+  return adminRequest<AdvancedPricingPolicy>('pricing-policies', accessToken, jsonRequest('PUT', input))
+}
+
+export function resetClientPricingPolicy(clientAccountId: string, requestKind: DeliveryRequestKind, accessToken: string) {
+  return adminRequest<void>(
+    `pricing-policies?clientAccountId=${encodeURIComponent(clientAccountId)}&requestKind=${requestKind}`,
+    accessToken,
+    { method: 'DELETE' },
+  )
+}
+
+export function listAdminClients(accessToken: string, signal?: AbortSignal) {
+  return adminRequest<AdminClient[]>('clients', accessToken, { signal })
+}
+
+export function createAdminClient(input: AdminClientInput, accessToken: string) {
+  return adminRequest<{ client: AdminClient; temporaryPassword: string }>(
+    'clients', accessToken, jsonRequest('POST', input),
+  )
+}
+
+export function updateAdminClient(accountId: string, input: AdminClientInput, accessToken: string) {
+  return adminRequest<AdminClient>(`clients/${encodeURIComponent(accountId)}`, accessToken, jsonRequest('PUT', input))
+}
+
+export function resetAdminClientPassword(accountId: string, accessToken: string) {
+  return adminRequest<{ temporaryPassword: string }>(
+    `clients/${encodeURIComponent(accountId)}/reset-password`, accessToken, { method: 'POST' },
+  )
+}
+
+export function createAdminDeliveryRequest(
+  clientAccountId: string,
+  input: {
+    requestedDate: string
+    requestKind: DeliveryRequestKind
+    pickup: ConfirmedLocation
+    saveAsDefaultPickup: boolean
+    packages: Array<{
+      recipientName: string
+      faritra: boolean
+      destination: ConfirmedLocation
+      contact: string
+      amountToCollectAriary: number
+      mobileMoneyPaid: boolean
+      weightKg?: number
+      desiredDeliveryTime?: string
+    }>
+  },
+  accessToken: string,
+) {
+  return adminRequest<DeliveryRequest>(
+    `clients/${encodeURIComponent(clientAccountId)}/delivery-requests`, accessToken, jsonRequest('POST', input),
+  )
+}
+
+export function quoteAdminDeliveryPrice(
+  clientAccountId: string,
+  destination: ConfirmedLocation,
+  requestKind: DeliveryRequestKind,
+  accessToken: string,
+  signal?: AbortSignal,
+  options: { weightKg?: number; desiredDeliveryTime?: string } = {},
+) {
+  return adminRequest<{
+    pricingZoneId: string
+    pricingZoneName: string
+    deliveryFeeAriary: number
+    distanceFromCenterMeters: number
+    pricingZoneMaxDistanceMeters: number
+    pricingPolicyVersion: number
+    baseDeliveryFeeAriary?: number
+    weightSurchargeAriary?: number
+    timeSurchargeAriary?: number
+    timeSlotLabel?: string | null
+  }>(`clients/${encodeURIComponent(clientAccountId)}/delivery-pricing/quote`, accessToken, {
+    ...jsonRequest('POST', { destination, requestKind, ...options }),
+    signal,
+  })
+}
+
+export function listExpressDeliveries(accessToken: string, signal?: AbortSignal) {
+  return adminRequest<ExpressDelivery[]>('express-deliveries', accessToken, { signal })
+}
+
+export function confirmExpressDelivery(id: string, courierIds: string[], version: number, accessToken: string) {
+  return adminRequest<ExpressDelivery>(
+    `express-deliveries/${encodeURIComponent(id)}/confirm`, accessToken,
+    jsonRequest('POST', { courierIds, version }),
+  )
+}
+
+export function cancelExpressDelivery(id: string, version: number, accessToken: string) {
+  return adminRequest<void>(
+    `express-deliveries/${encodeURIComponent(id)}/cancel`, accessToken,
+    jsonRequest('POST', { version }),
+  )
+}
+
 export function listVehiclePresets(accessToken: string, signal?: AbortSignal) {
   return adminRequest<VehiclePreset[]>('vehicle-presets', accessToken, { signal })
 }
@@ -804,7 +973,7 @@ export function updateDeliveryPackageOutcome(
   serviceDate: string,
   packageId: string,
   input: {
-    outcome: Exclude<DeliveryPackageOutcome, 'CANCELLED'>
+    outcome: DeliveryPackageOutcome
     actualCollectedAriary?: number | null
     actualCourierId?: string | null
     note?: string | null

@@ -59,4 +59,33 @@ describe('ClientPackageDialog', () => {
       }),
     }))
   })
+
+  it('ne propose pas d’heure souhaitée pour une demande normale', () => {
+    render(<ClientPackageDialog
+      accessToken="client-token"
+      initialValue={emptyClientPackage('package-normal')}
+      packageNumber={1}
+      requestKind="NORMAL"
+      onSave={vi.fn()}
+      onClose={vi.fn()}
+    />)
+
+    expect(screen.queryByLabelText(/Heure souhaitée/)).not.toBeInTheDocument()
+  })
+
+  it('réserve l’heure souhaitée aux demandes expresses et impose une heure future', () => {
+    render(<ClientPackageDialog
+      accessToken="client-token"
+      initialValue={emptyClientPackage('package-express')}
+      packageNumber={1}
+      requestKind="EXPRESS"
+      onSave={vi.fn()}
+      onClose={vi.fn()}
+    />)
+
+    const desiredTime = screen.getByLabelText(/Heure souhaitée/)
+    expect(desiredTime).toHaveAttribute('type', 'time')
+    expect(desiredTime).toHaveAttribute('min', expect.stringMatching(/^\d{2}:\d{2}$/))
+    expect(screen.getByText(/postérieure à maintenant/)).toBeInTheDocument()
+  })
 })

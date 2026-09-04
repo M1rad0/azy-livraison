@@ -43,7 +43,7 @@ export async function searchAddress(
   const response = await fetch(`${API_BASE_URL}/geocoding/search?${parameters}`, {
     headers: {
       Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     signal,
   })

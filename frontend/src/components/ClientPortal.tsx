@@ -16,6 +16,7 @@ import {
   Settings2,
   UserRound,
   WalletCards,
+  Zap,
 } from 'lucide-react'
 import {
   cancelDeliveryPackage,
@@ -36,9 +37,10 @@ import { ClientReportsPanel } from './ClientReportsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { LocationPicker } from './LocationPicker'
 import { usePortalNavigation } from './PortalShell'
+import { PricingTransparencyPanel } from './PricingTransparencyPanel'
 import './ClientPortal.css'
 
-type ClientView = 'history' | 'new-request' | 'reports' | 'profile'
+type ClientView = 'history' | 'new-request' | 'express' | 'pricing' | 'reports' | 'profile'
 type ClientProfileSection = 'information' | 'payouts'
 
 const REQUEST_STATUS: Record<DeliveryRequestStatus, string> = {
@@ -121,8 +123,9 @@ function RequestHistory({
                 {allCancelled ? 'Annulée' : allFinalized ? 'Terminée' : REQUEST_STATUS[request.status]}
               </span>
               <div className="client-history-card__identity">
-                <strong>{request.pickup.label}</strong>
+                <strong>{request.pickup.label} {request.requestKind === 'EXPRESS' && <em className="client-express-badge">Express</em>}</strong>
                 <small><CalendarClock aria-hidden="true" />{formatDate(request.requestedDate)}</small>
+                {request.createdByAdministration && <small>Créée par l’administration</small>}
               </div>
               <div className="client-history-card__metric"><small>Colis</small><strong>{request.packages.length}</strong></div>
               <div className="client-history-card__metric"><small>En traitement</small><strong>{processingPackages}</strong></div>
@@ -322,7 +325,7 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   const portalNavigation = usePortalNavigation()
   const [localView, setLocalView] = useState<ClientView>('history')
   const view = portalNavigation?.role === 'CLIENT'
-    && ['history', 'new-request', 'reports', 'profile'].includes(portalNavigation.section)
+    && ['history', 'new-request', 'express', 'pricing', 'reports', 'profile'].includes(portalNavigation.section)
     ? portalNavigation.section as ClientView
     : localView
   const [profile, setProfile] = useState<ClientProfile>()
@@ -366,9 +369,17 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   }, [accessToken])
 
   useEffect(() => {
-    if (view === 'new-request') setRequestFormMounted(true)
+    if (view === 'new-request' || view === 'express') setRequestFormMounted(true)
     if (view === 'profile') setProfileMounted(true)
   }, [view])
+
+  useEffect(() => {
+    if (portalNavigation?.role !== 'CLIENT' || !profile) return
+    portalNavigation.setSectionVisible('express', Boolean(profile.expressDeliveryEnabled))
+    if (!profile.expressDeliveryEnabled && portalNavigation.section === 'express') {
+      portalNavigation.navigate('history')
+    }
+  }, [portalNavigation, profile])
 
   const stats = useMemo(() => {
     const packages = requests.flatMap((request) => request.packages)
@@ -429,14 +440,17 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   return (
     <>
       {requestFormMounted && (
-        <div hidden={view !== 'new-request'}>
-          <ClientDeliveryRequestForm
-            key={requestFormKey}
+        <div hidden={view !== 'new-request' && view !== 'express'}>
+          {view === 'express' && !profile.expressDeliveryEnabled ? (
+            <section className="client-portal-state"><Zap /><strong>Livraison express non activée</strong><span>Contactez AZY Livraison pour activer les demandes expresses sur votre compte.</span><button className="button button--secondary" type="button" onClick={() => openView('history')}>Retour</button></section>
+          ) : <ClientDeliveryRequestForm
+            key={`${requestFormKey}-${view}`}
             accessToken={accessToken}
             defaultPickup={profile.defaultPickup}
+            requestKind={view === 'express' ? 'EXPRESS' : 'NORMAL'}
             onCreated={(request, saved) => void handleCreated(request, saved)}
             onCancel={() => openView('history')}
-          />
+          />}
         </div>
       )}
       {profileMounted && (
@@ -445,6 +459,7 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
         </div>
       )}
       {view === 'reports' && <ClientReportsPanel accessToken={accessToken} />}
+      {view === 'pricing' && <PricingTransparencyPanel accessToken={accessToken} />}
       <section className="client-portal" aria-labelledby="client-dashboard-title" hidden={view !== 'history'}>
       <header className="client-dashboard-hero">
         <div>
@@ -458,6 +473,7 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
             setSuccessMessage(undefined)
             openView('new-request')
           }}><PackagePlus aria-hidden="true" />Nouvelle demande</button>
+          {profile.expressDeliveryEnabled && <button className="button client-button--express" type="button" onClick={() => { setSuccessMessage(undefined); openView('express') }}><Zap aria-hidden="true" />Livraison express</button>}
         </div>
       </header>
 

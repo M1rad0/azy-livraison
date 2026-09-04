@@ -13,8 +13,10 @@ import {
   Settings2,
   Sparkles,
   UserRound,
+  UsersRound,
   WalletCards,
   X,
+  Zap,
 } from 'lucide-react'
 import {
   createContext,
@@ -42,6 +44,7 @@ interface PortalNavigationValue {
   role: AccountRole
   section: string
   navigate: (section: string) => void
+  setSectionVisible: (section: string, visible: boolean) => void
 }
 
 const PortalNavigationContext = createContext<PortalNavigationValue | null>(null)
@@ -59,9 +62,11 @@ const ROLE_LABELS: Record<AccountRole, string> = {
 const NAVIGATION: Record<AccountRole, PortalNavigationItem[]> = {
   ADMIN: [
     { id: 'queue', label: 'Livraisons', detail: 'File globale', icon: Boxes },
+    { id: 'express', label: 'Express', detail: 'Traitement immédiat', icon: Zap },
     { id: 'dispatch', label: 'Dispatch', detail: 'Préparer la journée', icon: Sparkles },
     { id: 'day', label: 'Compte rendu', detail: 'Suivi et clôture', icon: ClipboardCheck },
     { id: 'finance', label: 'Finances', detail: 'Versements et soldes', icon: WalletCards },
+    { id: 'clients', label: 'Clients', detail: 'Comptes et demandes', icon: UsersRound },
     { id: 'couriers', label: 'Livreurs', detail: 'Équipe et véhicules', icon: Bike },
     { id: 'pricing', label: 'Tarification', detail: 'Zones et frais', icon: BadgeDollarSign },
     { id: 'settings', label: 'Paramètres', detail: 'Règles opérationnelles', icon: Settings2 },
@@ -69,6 +74,8 @@ const NAVIGATION: Record<AccountRole, PortalNavigationItem[]> = {
   CLIENT: [
     { id: 'history', label: 'Mes livraisons', detail: 'Suivi des demandes', icon: LayoutDashboard },
     { id: 'new-request', label: 'Nouvelle demande', detail: 'Préparer des colis', icon: PackagePlus },
+    { id: 'express', label: 'Livraison express', detail: 'Traitement immédiat', icon: Zap },
+    { id: 'pricing', label: 'Mes tarifs', detail: 'Grilles applicables', icon: BadgeDollarSign },
     { id: 'reports', label: 'Mes rapports', detail: 'Journées clôturées', icon: FileText },
     { id: 'profile', label: 'Coordonnées', detail: 'Contacts, retrait et versements', icon: UserRound },
   ],
@@ -101,7 +108,13 @@ export interface PortalShellProps {
 }
 
 export function PortalShell({ account, children, onLogout }: PortalShellProps) {
-  const items = NAVIGATION[account.role]
+  const [hiddenSections, setHiddenSections] = useState<Set<string>>(() => (
+    account.role === 'CLIENT' ? new Set(['express']) : new Set()
+  ))
+  const items = useMemo(
+    () => NAVIGATION[account.role].filter((item) => !hiddenSections.has(item.id)),
+    [account.role, hiddenSections],
+  )
   const defaultSection = items[0].id
   const [section, setSection] = useState(() => sectionFromHash(account.role, items) ?? defaultSection)
   const [collapsed, setCollapsed] = useState(() => {
@@ -126,6 +139,17 @@ export function PortalShell({ account, children, onLogout }: PortalShellProps) {
     setMobileOpen(false)
   }, [account.role, items])
 
+  const setSectionVisible = useCallback((targetSection: string, visible: boolean) => {
+    setHiddenSections((current) => {
+      const alreadyHidden = current.has(targetSection)
+      if (visible === !alreadyHidden) return current
+      const next = new Set(current)
+      if (visible) next.delete(targetSection)
+      else next.add(targetSection)
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     const syncFromLocation = () => setSection(sectionFromHash(account.role, items) ?? defaultSection)
     window.addEventListener('hashchange', syncFromLocation)
@@ -140,6 +164,10 @@ export function PortalShell({ account, children, onLogout }: PortalShellProps) {
     const currentSection = sectionFromHash(account.role, items)
     if (!currentSection) window.history.replaceState(null, '', pathFor(account.role, defaultSection))
   }, [account.role, defaultSection, items])
+
+  useEffect(() => {
+    if (!items.some((item) => item.id === section)) navigate(defaultSection)
+  }, [defaultSection, items, navigate, section])
 
   useEffect(() => {
     try {
@@ -191,7 +219,8 @@ export function PortalShell({ account, children, onLogout }: PortalShellProps) {
     role: account.role,
     section,
     navigate,
-  }), [account.role, navigate, section])
+    setSectionVisible,
+  }), [account.role, navigate, section, setSectionVisible])
 
   async function handleLogout() {
     setLoggingOut(true)

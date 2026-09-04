@@ -1,11 +1,108 @@
 .client-portal,
 .client-request-builder,
-.client-profile-page {
+.client-profile-page,
+.client-pricing-page {
   width: 100%;
   max-width: var(--portal-content-width, 1500px);
   margin: 0 auto;
   padding: 1rem 0 2.5rem;
 }
+
+.client-express-badge {
+  display: inline-flex;
+  margin-left: .35rem;
+  padding: .2rem .45rem;
+  color: #a84409;
+  background: #fff1e8;
+  border-radius: 999px;
+  font-size: .58rem;
+  font-style: normal;
+  font-weight: 780;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.client-button--express { background: #f45b0b; }
+
+.client-pricing-page .client-page-heading h1 {
+  font-size: clamp(1.5rem, 2.5vw, 2.2rem);
+}
+
+.client-pricing-policy-grid {
+  display: grid;
+  gap: .85rem;
+  max-width: 1040px;
+  margin-inline: auto;
+}
+
+.client-pricing-policy { padding: 1.1rem 1.2rem 1.25rem; }
+.client-pricing-policy > header { display: flex; align-items: center; gap: .7rem; }
+.client-pricing-policy > header > span {
+  display: grid;
+  width: 2.45rem;
+  height: 2.45rem;
+  place-items: center;
+  color: var(--coral);
+  background: var(--orange-soft);
+  border-radius: .75rem;
+}
+.client-pricing-policy > header > span svg { width: 1rem; }
+.client-pricing-policy h2 { margin: .05rem 0 0; font-size: .95rem; letter-spacing: -.025em; }
+.client-pricing-policy .eyebrow { margin-bottom: .15rem; font-size: .54rem; }
+.client-pricing-policy__center {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: .8rem 0 0;
+  padding: .65rem .75rem;
+  color: var(--ink-soft);
+  background: #f7f9fb;
+  border-radius: .7rem;
+  font-size: .65rem;
+}
+.client-pricing-policy__center svg { width: .9rem; color: var(--coral); }
+.client-pricing-policy__center strong { color: var(--ink); }
+.client-pricing-table {
+  display: grid;
+  overflow: hidden;
+  margin-top: .75rem;
+  border: 1px solid var(--line);
+  border-radius: .8rem;
+}
+.client-pricing-table > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) .7fr .7fr;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.7rem;
+  padding: .58rem .75rem;
+  font-size: .66rem;
+}
+.client-pricing-table > div:first-child {
+  min-height: 2.35rem;
+  color: var(--ink-soft);
+  background: #f2f6f8;
+  font-size: .56rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.client-pricing-table > div + div { border-top: 1px solid var(--line); }
+.client-pricing-table > div > :last-child { text-align: right; }
+.client-pricing-addons { margin-top: .9rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+.client-pricing-addons h3 { display: flex; align-items: center; gap: .4rem; font-size: .73rem; }
+.client-pricing-addons h3 svg { width: .9rem; color: var(--coral); }
+.client-pricing-addons p {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: .35rem 0 0;
+  padding: .52rem .65rem;
+  background: #f8fafb;
+  border: 1px solid #eef2f4;
+  border-radius: .65rem;
+  font-size: .64rem;
+}
+.client-pricing-addons > small { display: block; margin-top: .45rem; color: var(--ink-soft); font-size: .58rem; }
 
 .client-dashboard-hero,
 .client-page-heading {

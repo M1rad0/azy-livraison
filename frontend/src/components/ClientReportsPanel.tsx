@@ -320,7 +320,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                       {report.packages.map((item) => (
                         <tr key={item.packageId}>
                           <td data-label="Destinataire"><strong>{item.recipientName}</strong></td>
-                          <td data-label="Destination / contact"><strong>{item.destinationLabel}</strong><small>{item.recipientContact}</small></td>
+                          <td data-label="Destination / contact"><strong>{item.destinationLabel}</strong><small>{item.recipientContact}{item.requestKind === 'EXPRESS' ? ' · Express' : ''}</small></td>
                           <td data-label="État"><span className={`client-report-package-status is-${item.outcome.toLowerCase()}`}>{outcomeLabel(item)}</span></td>
                           <td data-label="Commentaire" className="client-report-comment">{item.comment?.trim() || '—'}</td>
                           <td data-label="Récupéré" className="is-money"><strong>{formatAriary(item.actualAmountCollectedAriary)}</strong></td>

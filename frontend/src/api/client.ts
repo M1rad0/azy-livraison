@@ -22,6 +22,7 @@ export interface ClientProfile {
   displayName: string
   phone: string
   defaultPickup: ClientDefaultPickup | null
+  expressDeliveryEnabled?: boolean
   contactNumbers?: ClientContactNumber[]
   payoutDestinations?: ClientPayoutDestination[]
   version: number
@@ -85,6 +86,7 @@ export interface ClientReportPackage {
   recipientContact: string
   pickupLabel: string
   destinationLabel: string
+  requestKind?: DeliveryRequestKind | null
   outcome: DeliveryPackageOutcome
   comment?: string | null
   actualAmountCollectedAriary: number
@@ -118,6 +120,8 @@ export type DeliveryRequestStatus = 'PENDING' | 'PARTIALLY_DISPATCHED' | 'DISPAT
 export type DeliveryPackageStatus = 'PENDING' | 'DISPATCHED' | 'UNASSIGNED'
 export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | 'RETURN_TO_SENDER'
 export type PackageWeightSource = 'PROVIDED' | 'DEFAULT_SETTING'
+export type DeliveryRequestKind = 'NORMAL' | 'EXPRESS'
+export type ExpressDeliveryStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED'
 
 export interface DeliveryPackageRecord {
   id: string
@@ -128,6 +132,7 @@ export interface DeliveryPackageRecord {
   contact: string
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
+  desiredDeliveryTime?: string | null
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
@@ -136,6 +141,10 @@ export interface DeliveryPackageRecord {
   distanceFromCenterMeters?: number | null
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
+  pricingPolicyId?: number | null
+  baseDeliveryFeeAriary?: number | null
+  weightSurchargeAriary?: number | null
+  timeSurchargeAriary?: number | null
   effectiveWeightKg: number
   weightSource: PackageWeightSource
   status: DeliveryPackageStatus
@@ -153,12 +162,33 @@ export interface DeliveryPackageRecord {
 }
 
 export interface DeliveryPricingQuote {
+  pricingPolicyId?: number
   pricingZoneId: string
   pricingZoneName: string
   deliveryFeeAriary: number
   distanceFromCenterMeters: number
   pricingZoneMaxDistanceMeters: number
   pricingPolicyVersion: number
+  requestKind?: DeliveryRequestKind
+  baseDeliveryFeeAriary?: number
+  effectiveWeightKg?: number
+  weightSurchargeAriary?: number
+  desiredDeliveryTime?: string | null
+  timeSlotLabel?: string | null
+  timeSurchargeAriary?: number
+}
+
+export interface DeliveryPricingPolicy {
+  id: number
+  clientAccountId?: string | null
+  requestKind: DeliveryRequestKind
+  clientSpecific: boolean
+  version: number
+  center: ClientLocation
+  defaultWeightKg: number
+  zones: Array<{ id: string; name: string; maxDistanceMeters: number; deliveryFeeAriary: number }>
+  weightTiers: Array<{ id: string; maxWeightKg: number; surchargeAriary: number }>
+  timeSlots: Array<{ id: string; label: string; startTime: string; endTime: string; surchargeAriary: number }>
 }
 
 export interface CapacitySnapshot {
@@ -175,6 +205,9 @@ export interface DeliveryRequestRecord {
   ownerAccountId: string
   ownerDisplayName: string
   ownerPhone?: string | null
+  requestKind?: DeliveryRequestKind
+  expressStatus?: ExpressDeliveryStatus | null
+  createdByAdministration?: boolean
   requestedDate: string
   pickup: ClientLocation
   capacity: CapacitySnapshot
@@ -193,10 +226,12 @@ export interface CreateDeliveryPackageInput {
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
   weightKg?: number
+  desiredDeliveryTime?: string
 }
 
 export interface CreateDeliveryRequestInput {
   requestedDate: string
+  requestKind?: DeliveryRequestKind
   pickup: ClientLocation
   saveAsDefaultPickup: boolean
   packages: CreateDeliveryPackageInput[]
@@ -352,12 +387,45 @@ export function quoteDeliveryPrice(
   destination: ClientLocation,
   accessToken: string,
   signal?: AbortSignal,
+  options: { requestKind?: DeliveryRequestKind; weightKg?: number; desiredDeliveryTime?: string } = {},
 ): Promise<DeliveryPricingQuote> {
   return clientRequest<DeliveryPricingQuote>('delivery-pricing/quote', accessToken, {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ destination }),
+    body: JSON.stringify({ destination, ...options }),
+  })
+}
+
+export function getClientPricingPolicies(accessToken: string): Promise<DeliveryPricingPolicy[]> {
+  return clientRequest<DeliveryPricingPolicy[]>('delivery-pricing/policies', accessToken)
+}
+
+async function publicPricingRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/public/pricing/${path}`, {
+    ...init,
+    headers: { Accept: 'application/json', ...init?.headers },
+  })
+  const payload = await response.json().catch(() => undefined) as T | ApiErrorPayload | undefined
+  if (!response.ok) {
+    const error = payload as ApiErrorPayload | undefined
+    throw new ClientApiError(error?.message ?? 'Le tarif est indisponible.', error?.code ?? 'PUBLIC_PRICING_ERROR', response.status)
+  }
+  return payload as T
+}
+
+export function getPublicPricingPolicies(): Promise<DeliveryPricingPolicy[]> {
+  return publicPricingRequest<DeliveryPricingPolicy[]>('policies')
+}
+
+export function quotePublicDeliveryPrice(
+  destination: ClientLocation,
+  requestKind: DeliveryRequestKind,
+  signal?: AbortSignal,
+): Promise<DeliveryPricingQuote> {
+  return publicPricingRequest<DeliveryPricingQuote>('quote', {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ destination, requestKind }),
   })
 }
 

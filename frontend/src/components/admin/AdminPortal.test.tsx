@@ -12,14 +12,18 @@ function jsonResponse(payload: unknown) {
 const TEST_TODAY = antananarivoToday()
 
 const pricingPolicy = {
+  id: 1,
+  requestKind: 'NORMAL',
+  clientSpecific: false,
   version: 1,
   center: { label: 'Centre tarifaire', destinationQuery: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
+  defaultWeightKg: 1,
   zones: [
     { id: 'zone-centre', name: 'Centre-ville', maxDistanceMeters: 4_000, deliveryFeeAriary: 3_000 },
     { id: 'zone-peripherie', name: 'Périphérie', maxDistanceMeters: 8_000, deliveryFeeAriary: 4_000 },
   ],
-  createdAt: '2026-08-01T00:00:00Z',
-  updatedAt: '2026-08-23T00:00:00Z',
+  weightTiers: [],
+  timeSlots: [],
 }
 
 function requestFixture({
@@ -83,6 +87,11 @@ function portalFetchMock(
       }))
     }
     if (input.startsWith('/api/admin/dispatch-plans')) return Promise.resolve(jsonResponse(dispatchHistory))
+    if (input === '/api/admin/pricing-policies') return Promise.resolve(jsonResponse([
+      pricingPolicy,
+      { ...pricingPolicy, id: 2, requestKind: 'EXPRESS' },
+    ]))
+    if (input === '/api/admin/clients') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/settings/pricing') return Promise.resolve(jsonResponse(pricingPolicy))
     if (input === '/api/admin/couriers') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/vehicle-presets') return Promise.resolve(jsonResponse([]))
@@ -306,12 +315,12 @@ describe('AdminPortal', () => {
     await screen.findByText('Boutique Rado')
     fireEvent.click(screen.getByRole('button', { name: /Tarification/ }))
 
-    expect(await screen.findByRole('heading', { name: 'Tarification des livraisons' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tarification' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('Centre-ville')).toBeInTheDocument()
-    fireEvent.change(screen.getAllByLabelText(/Prix de livraison/)[0], { target: { value: '3500' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la tarification' }))
+    fireEvent.change(screen.getAllByDisplayValue('3000')[0], { target: { value: '3500' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer cette grille' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/settings/pricing', expect.objectContaining({
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/pricing-policies', expect.objectContaining({
       method: 'PUT',
       body: expect.stringContaining('"deliveryFeeAriary":3500'),
     })))
