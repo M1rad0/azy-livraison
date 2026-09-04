@@ -1,5 +1,6 @@
 package com.azylivraison.delivery.api;
 
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -134,7 +135,7 @@ class ExpressDeliveryApiIntegrationTest {
     }
 
     @Test
-    void savesAndAppliesACompleteClientPricingGrid() throws Exception {
+    void savesAndAppliesACompleteClientPricingGridClonedFromTheDefaultPolicy() throws Exception {
         mockMvc.perform(put("/api/admin/pricing-policies")
                         .with(admin())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -144,14 +145,15 @@ class ExpressDeliveryApiIntegrationTest {
                                   "requestKind":"EXPRESS",
                                   "center":{"label":"Analakely","destinationQuery":"Analakely","latitude":-18.9089,"longitude":47.5212},
                                   "defaultWeightKg":1,
-                                  "zones":[{"name":"Centre","maxDistanceMeters":5000,"deliveryFeeAriary":3500}],
+                                  "zones":[{"id":"72000000-0000-0000-0000-000000000001","name":"Centre","maxDistanceMeters":5000,"deliveryFeeAriary":3500}],
                                   "weightTiers":[{"maxWeightKg":5,"surchargeAriary":700}],
                                   "timeSlots":[{"label":"Soir","startTime":"18:00","endTime":"19:00","surchargeAriary":900}]
                                 }
                                 """.formatted(CLIENT_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clientSpecific").value(true))
-                .andExpect(jsonPath("$.requestKind").value("EXPRESS"));
+                .andExpect(jsonPath("$.requestKind").value("EXPRESS"))
+                .andExpect(jsonPath("$.zones[0].id").value(not("72000000-0000-0000-0000-000000000001")));
 
         mockMvc.perform(post("/api/admin/clients/{clientId}/delivery-pricing/quote", CLIENT_ID)
                         .with(admin())
