@@ -8,7 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -177,6 +180,33 @@ class ExpressDeliveryApiIntegrationTest {
                                   "weightKg":6
                                 }
                                 """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DELIVERY_PRICING_INVALID"));
+    }
+
+    @Test
+    void acceptsDesiredTimesOnlyForExpressRequestsAndOnlyInTheFuture() throws Exception {
+        jdbcTemplate.update("UPDATE client_profile SET express_delivery_enabled = TRUE WHERE account_id = ?", CLIENT_ID);
+        String currentMinute = LocalTime.now(ZoneId.of("Indian/Antananarivo"))
+                .truncatedTo(ChronoUnit.MINUTES)
+                .format(DateTimeFormatter.ofPattern("HH:mm"));
+        String withDesiredTime = expressRequestJson().replace(
+                "\"weightKg\":1",
+                "\"desiredDeliveryTime\":\"" + currentMinute + "\",\"weightKg\":1");
+
+        mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withDesiredTime))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DELIVERY_PRICING_INVALID"));
+
+        mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withDesiredTime.replace(
+                                "\"requestKind\":\"EXPRESS\"",
+                                "\"requestKind\":\"NORMAL\"")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("DELIVERY_PRICING_INVALID"));
     }

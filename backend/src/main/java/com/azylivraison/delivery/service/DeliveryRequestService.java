@@ -3,6 +3,7 @@ package com.azylivraison.delivery.service;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,12 +29,15 @@ import com.azylivraison.delivery.repository.DeliveryRequestRepository.QueueCount
 import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
 import com.azylivraison.pricing.domain.AdvancedPricingQuote;
 import com.azylivraison.pricing.service.AdvancedPricingService;
+import com.azylivraison.pricing.service.PricingConfigurationException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DeliveryRequestService {
+
+    private static final ZoneId ACTIVITY_ZONE = ZoneId.of("Indian/Antananarivo");
 
     private final DeliveryRequestRepository repository;
     private final AdvancedPricingService pricingService;
@@ -65,8 +69,9 @@ public class DeliveryRequestService {
         OperationalSettingsSnapshot settings = repository.lockOperationalSettings();
         boolean express = input.requestKind() == DeliveryRequestKind.EXPRESS;
         LocalDate requestedDate = express
-                ? LocalDate.now(ZoneId.of("Indian/Antananarivo"))
+                ? LocalDate.now(ACTIVITY_ZONE)
                 : input.requestedDate();
+        validateDesiredDeliveryTimes(input.packages(), express);
         if (!express && repository.isDateClosedForAdmissions(requestedDate)) {
             throw new DeliveryDateClosedException(requestedDate);
         }
@@ -236,6 +241,23 @@ public class DeliveryRequestService {
                 0,
                 now,
                 now);
+    }
+
+    private void validateDesiredDeliveryTimes(
+            List<CreateDeliveryPackageRequest> packages,
+            boolean express) {
+        LocalTime currentTime = LocalTime.now(ACTIVITY_ZONE);
+        for (CreateDeliveryPackageRequest deliveryPackage : packages) {
+            LocalTime desiredTime = deliveryPackage.desiredDeliveryTime();
+            if (!express && desiredTime != null) {
+                throw new PricingConfigurationException(
+                        "L'heure de livraison souhaitée est réservée aux demandes expresses.");
+            }
+            if (express && desiredTime != null && !desiredTime.isAfter(currentTime)) {
+                throw new PricingConfigurationException(
+                        "L'heure de livraison souhaitée d'une demande express doit être ultérieure à l'heure actuelle.");
+            }
+        }
     }
 
     private ConfirmedLocation location(ConfirmedLocationRequest input) {
