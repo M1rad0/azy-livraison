@@ -61,6 +61,8 @@
   font-size: .65rem;
 }
 .client-pricing-policy__center svg { width: .9rem; color: var(--coral); }
+.client-pricing-policy__center > span { display: grid; gap: .12rem; }
+.client-pricing-policy__center small { color: var(--ink-soft); font-size: .58rem; }
 .client-pricing-policy__center strong { color: var(--ink); }
 .client-pricing-table {
   display: grid;
@@ -734,6 +736,79 @@
   padding-left: 2.35rem;
 }
 
+.client-field--time-window {
+  grid-column: span 2;
+}
+
+.client-time-window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.client-time-window > span {
+  position: relative;
+  display: block;
+}
+
+.client-time-window svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0.8rem;
+  width: 1rem;
+  color: #748692;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.client-time-window input {
+  padding-left: 2.35rem;
+}
+
+.client-time-window input[readonly] {
+  color: #63727c;
+  background: #edf1f4;
+  cursor: default;
+}
+
+.client-time-window > i {
+  color: var(--ink-soft);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.client-express-date {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 3rem;
+  column-gap: 0.65rem;
+  padding: 0.62rem 0.8rem;
+  color: var(--ink);
+  background: #f4f7f9;
+  border: 1px solid var(--line);
+  border-radius: 0.78rem;
+}
+
+.client-express-date svg {
+  grid-row: 1 / span 2;
+  width: 1.05rem;
+  color: var(--coral);
+}
+
+.client-express-date strong {
+  font-size: 0.72rem;
+}
+
+.client-express-date small {
+  color: var(--ink-soft);
+  font-size: 0.58rem;
+  font-weight: 600;
+}
+
 .client-location-block {
   margin-top: 1rem;
   padding: 0.85rem;
@@ -854,6 +929,10 @@
 .client-choice-stack {
   display: grid;
   gap: 0.45rem;
+}
+
+.client-form-grid--three > .client-choice-stack {
+  grid-column: span 2;
 }
 
 .client-empty-state {
@@ -1416,6 +1495,11 @@
     grid-template-columns: 1fr;
   }
 
+  .client-field--time-window,
+  .client-form-grid--three > .client-choice-stack {
+    grid-column: auto;
+  }
+
   .client-history-card summary {
     grid-template-columns: minmax(110px, auto) minmax(0, 1fr) auto;
   }
@@ -1473,6 +1557,10 @@
   .client-stat-grid,
   .client-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .client-field--time-window {
+    grid-column: auto;
   }
 
   .client-stat-grid__pickup {

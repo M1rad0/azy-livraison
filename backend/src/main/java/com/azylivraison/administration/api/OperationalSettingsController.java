@@ -48,6 +48,12 @@ public class OperationalSettingsController {
                 request.defaultCourierCommissionDenominator() == null
                         ? current.defaultCourierCommissionDenominator()
                         : request.defaultCourierCommissionDenominator(),
+                request.defaultFuelPricePerLiterAriary() == null
+                        ? current.defaultFuelPricePerLiterAriary()
+                        : request.defaultFuelPricePerLiterAriary(),
+                request.defaultExpressReturnToPickup() == null
+                        ? current.defaultExpressReturnToPickup()
+                        : request.defaultExpressReturnToPickup(),
                 request.version() == null ? 0 : request.version(),
                 Instant.EPOCH,
                 Instant.EPOCH);

@@ -111,6 +111,9 @@ class HubDistributionOrToolsRoutingOptimizerTest {
 
     @Test
     void usesEveryCapableCourierAndBalancesPackageCounts() {
+        HubDistributionOrToolsRoutingOptimizer productionTimeOptimizer =
+                new HubDistributionOrToolsRoutingOptimizer(
+                        new OptimizationProperties(Duration.ofSeconds(5), 1_000));
         List<Courier> couriers = List.of(
                 courier("c1", 10),
                 courier("c2", 10),
@@ -126,7 +129,7 @@ class HubDistributionOrToolsRoutingOptimizerTest {
         HubDistributionProblem problem = problem(couriers, jobs, uniformMatrix(8, 1_000, 100),
                 new long[]{0, 0, 0});
 
-        HubDistributionSolvedOptimization solved = optimizer.solve(problem);
+        HubDistributionSolvedOptimization solved = productionTimeOptimizer.solve(problem);
 
         assertThat(solved.droppedJobIndexes()).isEmpty();
         assertThat(solved.routes()).hasSize(3);

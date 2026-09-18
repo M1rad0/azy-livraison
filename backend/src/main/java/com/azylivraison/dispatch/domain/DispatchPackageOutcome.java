@@ -2,6 +2,7 @@ package com.azylivraison.dispatch.domain;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.UUID;
 
 import com.azylivraison.planning.domain.Location;
@@ -23,6 +24,7 @@ public record DispatchPackageOutcome(
         String contact,
         long amountToCollectAriary,
         boolean mobileMoneyPaid,
+        LocalTime desiredDeliveryTime,
         DeliveryPricingSnapshot pricingSnapshot,
         BigDecimal effectiveWeightKg,
         Location destination) {

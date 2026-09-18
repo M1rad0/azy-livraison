@@ -160,6 +160,7 @@ class DeliveryPricingApiIntegrationTest {
                         .value("71000000-0000-0000-0000-000000000001"))
                 .andExpect(jsonPath("$.packages[0].pricingZoneName").value("Centre-ville"))
                 .andExpect(jsonPath("$.packages[0].deliveryFeeAriary").value(3_000))
+                .andExpect(jsonPath("$.packages[0].pricingDistanceMode").value("AIR_DISTANCE"))
                 .andExpect(jsonPath("$.packages[0].pricingPolicyVersion").value(0));
 
         Long savedFee = jdbcTemplate.queryForObject(

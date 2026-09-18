@@ -1,11 +1,14 @@
 package com.azylivraison.finance.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
+import com.azylivraison.delivery.domain.ExpressFuelCalculationStatus;
+import com.azylivraison.delivery.domain.ExpressFuelCalculation;
 
 /** Domain snapshots used by the finance services and their HTTP adapters. */
 public final class FinanceModels {
@@ -184,11 +187,47 @@ public final class FinanceModels {
             UUID finalizedByAccountId,
             long totalSuggestedAriary,
             long totalFinalAriary,
+            long totalSuggestedCommissionAriary,
+            long totalFinalCommissionAriary,
+            long totalSuggestedFuelAriary,
+            long totalFinalFuelAriary,
             int pendingReturnCount,
-            List<CompensationLine> lines) {
+            int unresolvedFuelCalculationCount,
+            List<CompensationLine> lines,
+            List<FuelCompensationLine> fuelLines,
+            List<ExpressFuelCalculation> fuelCalculations) {
 
         public CourierCompensationPreview {
             lines = List.copyOf(lines);
+            fuelLines = List.copyOf(fuelLines);
+            fuelCalculations = List.copyOf(fuelCalculations);
+        }
+    }
+
+    public record FuelCompensationLine(
+            UUID requestId,
+            String clientDisplayName,
+            String pickupLabel,
+            ExpressFuelCalculationStatus status,
+            String failureReason,
+            UUID courierId,
+            String courierName,
+            String courierContact,
+            List<UUID> packageIds,
+            boolean returnToPickup,
+            Long repositionDistanceMeters,
+            Long automaticDistanceMeters,
+            long finalDistanceMeters,
+            boolean fuelReimbursementEnabled,
+            BigDecimal fuelEfficiencyKmPerLiter,
+            long fuelPricePerLiterAriary,
+            long suggestedAmountAriary,
+            long finalAmountAriary,
+            String overrideReason,
+            boolean manual) {
+
+        public FuelCompensationLine {
+            packageIds = List.copyOf(packageIds == null ? List.of() : packageIds);
         }
     }
 
@@ -214,6 +253,33 @@ public final class FinanceModels {
             long finalAmountAriary,
             String overrideReason,
             Instant createdAt) {
+    }
+
+    public record CourierFuelEarning(
+            UUID id,
+            LocalDate serviceDate,
+            int closureRevision,
+            UUID requestId,
+            UUID courierId,
+            String courierName,
+            String courierContact,
+            boolean returnToPickup,
+            List<UUID> packageIds,
+            Long repositionDistanceMeters,
+            Long automaticDistanceMeters,
+            long finalDistanceMeters,
+            boolean fuelReimbursementEnabled,
+            BigDecimal fuelEfficiencyKmPerLiter,
+            long fuelPricePerLiterAriary,
+            long suggestedAmountAriary,
+            long finalAmountAriary,
+            String overrideReason,
+            boolean manual,
+            Instant createdAt) {
+
+        public CourierFuelEarning {
+            packageIds = List.copyOf(packageIds == null ? List.of() : packageIds);
+        }
     }
 
     public record CourierPayment(
@@ -244,28 +310,60 @@ public final class FinanceModels {
             DeliveryPackageOutcome outcome,
             Instant returnCompletedAt,
             long deliveryFeeAriary,
-            Long earnedAmountAriary) {
+            Long earnedAmountAriary,
+            Long fuelEarnedAmountAriary,
+            Long totalEarnedAmountAriary) {
+
+        public CourierDelivery(UUID packageId, LocalDate serviceDate, String clientDisplayName,
+                String recipientName, String pickupLabel, String destinationLabel,
+                DeliveryPackageOutcome outcome, Instant returnCompletedAt,
+                long deliveryFeeAriary, Long earnedAmountAriary) {
+            this(packageId, serviceDate, clientDisplayName, recipientName, pickupLabel,
+                    destinationLabel, outcome, returnCompletedAt, deliveryFeeAriary,
+                    earnedAmountAriary, null, earnedAmountAriary);
+        }
     }
 
     public record CourierFinance(
             UUID courierId,
             String courierName,
+            long totalCommissionEarnedAriary,
+            long totalFuelEarnedAriary,
             long totalEarnedAriary,
             long totalPaidAriary,
             long remainingToPayAriary,
             long advanceCreditAriary,
             List<CourierDelivery> deliveries,
             List<CourierEarning> earnings,
+            List<CourierFuelEarning> fuelEarnings,
             List<CourierPayment> payments) {
 
         public CourierFinance {
             deliveries = List.copyOf(deliveries);
             earnings = List.copyOf(earnings);
+            fuelEarnings = List.copyOf(fuelEarnings);
             payments = List.copyOf(payments);
+        }
+
+        public CourierFinance(UUID courierId, String courierName, long totalEarnedAriary,
+                long totalPaidAriary, long remainingToPayAriary, long advanceCreditAriary,
+                List<CourierDelivery> deliveries, List<CourierEarning> earnings,
+                List<CourierPayment> payments) {
+            this(courierId, courierName, totalEarnedAriary, 0, totalEarnedAriary,
+                    totalPaidAriary, remainingToPayAriary, advanceCreditAriary,
+                    deliveries, earnings, List.of(), payments);
         }
     }
 
     public record ClosedDay(LocalDate serviceDate, String status, int closureRevision) {
+    }
+
+    public record ClosedClient(
+            LocalDate serviceDate,
+            UUID clientAccountId,
+            int closureRevision,
+            UUID reportId,
+            Instant closedAt) {
     }
 
     public record CompensationBatch(
@@ -273,8 +371,13 @@ public final class FinanceModels {
             int closureRevision,
             long totalSuggestedAriary,
             long totalFinalAriary,
+            long totalSuggestedCommissionAriary,
+            long totalFinalCommissionAriary,
+            long totalSuggestedFuelAriary,
+            long totalFinalFuelAriary,
             Instant finalizedAt,
             UUID finalizedByAccountId,
-            long version) {
+            long version,
+            UUID clientAccountId) {
     }
 }

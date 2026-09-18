@@ -31,6 +31,7 @@ import {
   type DeliveryRequestStatus,
 } from '../api/client'
 import type { Location } from '../api/csvImports'
+import { formatOneHourWindow } from '../deliveryWindows'
 import { ClientDeliveryRequestForm } from './ClientDeliveryRequestForm'
 import { ClientContactPreferences } from './ClientContactPreferences'
 import { ClientReportsPanel } from './ClientReportsPanel'
@@ -159,7 +160,7 @@ function RequestHistory({
                   <article role="listitem" key={item.id}>
                     <span className="client-history-packages__number">{item.sequenceNumber}</span>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
-                    <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}</small></div>
+                    <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay) ? ` · ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay)}` : ''}</small></div>
                     <div><strong>{formatAriary(finalAmount)}</strong><small>{item.finalOutcome ? `frais facturés ${formatAriary(finalFee)}` : item.finalDeliveryFeeAriary != null || item.deliveryFeeAriary != null ? `dont ${formatAriary(applicableFee)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-history-packages__state">
                       <span className={`client-package-status client-package-status--${item.finalOutcome ? item.finalOutcome.toLowerCase() : 'processing'}`}>

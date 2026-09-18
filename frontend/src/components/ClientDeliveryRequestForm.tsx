@@ -18,7 +18,12 @@ import {
   type DeliveryRequestRecord,
 } from '../api/client'
 import type { Location } from '../api/csvImports'
-import { ClientPackageDialog, emptyClientPackage, type ClientPackageDraft } from './ClientPackageDialog'
+import { endOfOneHourWindow } from '../deliveryWindows'
+import {
+  ClientPackageDialog,
+  emptyClientPackage,
+  type ClientPackageDraft,
+} from './ClientPackageDialog'
 import { LocationPicker } from './LocationPicker'
 
 function tomorrow(): string {
@@ -161,7 +166,7 @@ export function ClientDeliveryRequestForm({
           amountToCollectAriary: Number(item.amountToCollectAriary),
           mobileMoneyPaid: item.mobileMoneyPaid,
           ...(item.weightKg ? { weightKg: Number(item.weightKg) } : {}),
-          ...(requestKind === 'EXPRESS' && item.desiredDeliveryTime
+          ...(item.desiredDeliveryTime
             ? { desiredDeliveryTime: item.desiredDeliveryTime }
             : {}),
         })),
@@ -201,19 +206,25 @@ export function ClientDeliveryRequestForm({
               <div><p className="eyebrow">Étape 1</p><h2>Date et retrait</h2></div>
             </div>
             <div className="client-form-grid">
-              <label className="client-field">
-                <span>{requestKind === 'EXPRESS' ? 'Traitement express' : 'Date souhaitée'}</span>
-                <input
-                  type="date"
-                  value={requestedDate}
-                  min={requestKind === 'EXPRESS' ? today() : tomorrow()}
-                  disabled={requestKind === 'EXPRESS'}
-                  onChange={(event) => {
-                    setRequestedDate(event.target.value)
-                    setCapacityError(undefined)
-                  }}
-                />
-              </label>
+              {requestKind === 'EXPRESS' ? (
+                <div className="client-field client-field--readonly" role="group" aria-label="Date de la demande express">
+                  <span>Traitement express</span>
+                  <div className="client-express-date"><CalendarDays aria-hidden="true" /><strong>Aujourd’hui</strong><small>{new Date(`${requestedDate}T12:00:00`).toLocaleDateString('fr-MG', { dateStyle: 'long' })}</small></div>
+                </div>
+              ) : (
+                <label className="client-field">
+                  <span>Date souhaitée</span>
+                  <input
+                    type="date"
+                    value={requestedDate}
+                    min={tomorrow()}
+                    onChange={(event) => {
+                      setRequestedDate(event.target.value)
+                      setCapacityError(undefined)
+                    }}
+                  />
+                </label>
+              )}
               <label className="client-field">
                 <span>Libellé du retrait</span>
                 <input
@@ -281,6 +292,7 @@ export function ClientDeliveryRequestForm({
                     <div><strong>{item.destination.label || item.destination.destinationQuery}</strong><small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Tarif à recalculer'}{item.faritra ? ' · Faritra' : ''}</small></div>
                     <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-package-row__tags">
+                      {item.desiredDeliveryTime && <span>{item.desiredDeliveryTime}–{endOfOneHourWindow(item.desiredDeliveryTime)}</span>}
                       {item.weightKg && <span>{item.weightKg} kg</span>}
                       {item.faritra && <span>Faritra</span>}
                     </div>

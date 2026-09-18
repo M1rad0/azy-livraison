@@ -9,6 +9,7 @@ import {
   FileCheck2,
   FileSpreadsheet,
   FileText,
+  Fuel,
   History,
   LoaderCircle,
   PackageCheck,
@@ -28,11 +29,13 @@ import {
   downloadAdminCourierPaymentProof,
   downloadCourierStatement,
   getAdminClientFinance,
+  getClientClosures,
   getCourierFinance,
   getDeliveryDay,
   voidClientPayment,
   voidCourierPayment,
   type ClientDaySummary,
+  type ClientClosureOverview,
   type ClientFinance,
   type ClientPaymentDirection,
   type ClientPayment,
@@ -52,7 +55,7 @@ import { antananarivoToday, errorMessage, formatAriary, formatDate, formatDateTi
 import './AdminFinancePanel.css'
 
 type FinanceView = 'CLIENTS' | 'COURIERS'
-type CourierHistoryView = 'DELIVERIES' | 'EARNINGS' | 'PAYMENTS'
+type CourierHistoryView = 'DELIVERIES' | 'EARNINGS' | 'FUEL' | 'PAYMENTS'
 
 interface ClientFinanceRow {
   client: ClientDaySummary
@@ -114,6 +117,7 @@ export function AdminFinancePanel({
   const [view, setView] = useState<FinanceView>('CLIENTS')
   const [date, setDate] = useState(initialDate || antananarivoToday())
   const [day, setDay] = useState<DailyOperation>()
+  const [clientClosures, setClientClosures] = useState<ClientClosureOverview>()
   const [clientRows, setClientRows] = useState<ClientFinanceRow[]>([])
   const [clientLoading, setClientLoading] = useState(true)
   const [clientQuery, setClientQuery] = useState('')
@@ -136,23 +140,45 @@ export function AdminFinancePanel({
     setClientLoading(true)
     setMessage(undefined)
     try {
-      const loadedDay = await getDeliveryDay(date, accessToken, signal)
+      const [loadedDay, loadedClosures] = await Promise.all([
+        getDeliveryDay(date, accessToken, signal),
+        getClientClosures(date, accessToken, signal),
+      ])
       setDay(loadedDay)
-      if (loadedDay.status !== 'CLOSED') {
+      setClientClosures(loadedClosures)
+      const closedClients = loadedClosures.clients.filter((client) => client.closed)
+      if (closedClients.length === 0) {
         setClientRows([])
         return
       }
-      const finances = await Promise.all(loadedDay.clients.map((client) => (
-        getAdminClientFinance(client.accountId, accessToken, signal)
+      const finances = await Promise.all(closedClients.map((client) => (
+        getAdminClientFinance(client.clientAccountId, accessToken, signal)
       )))
-      setClientRows(loadedDay.clients.map((client, index) => {
+      const summaries = new Map(loadedDay.clients.map((client) => [client.accountId, client]))
+      setClientRows(closedClients.map((closure, index) => {
         const finance = finances[index]
+        const client = summaries.get(closure.clientAccountId) ?? {
+          accountId: closure.clientAccountId,
+          displayName: closure.clientDisplayName,
+          phone: closure.clientPhone,
+          packageCount: closure.packageCount,
+          finalizedCount: closure.packageCount,
+          totals: {
+            recoveredAriary: closure.recoveredAriary,
+            deliveryFeesAriary: closure.deliveryFeesAriary,
+            amountToRemitAriary: closure.amountToRemitAriary,
+          },
+        }
         return {
           client,
           finance,
           settlement: finance.settlements.find((item) => (
-            item.serviceDate === loadedDay.serviceDate
-            && item.closureRevision === loadedDay.closureRevision
+            (closure.reportId != null && item.reportId === closure.reportId)
+            || (
+              item.serviceDate === loadedDay.serviceDate
+              && closure.closureRevision != null
+              && item.closureRevision === closure.closureRevision
+            )
           )),
         }
       }))
@@ -302,13 +328,13 @@ export function AdminFinancePanel({
       {view === 'CLIENTS' ? (
         <div className="admin-finance__workspace">
           <div className="admin-finance__toolbar">
-            <label><CalendarDays aria-hidden="true" /><span>Date clôturée</span><input type="date" value={date} onChange={(event) => event.target.value && setDate(event.target.value)} /></label>
+            <label><CalendarDays aria-hidden="true" /><span>Date d’activité</span><input type="date" value={date} onChange={(event) => event.target.value && setDate(event.target.value)} /></label>
             <label className="admin-finance__search"><Search aria-hidden="true" /><span className="sr-only">Rechercher un client</span><input type="search" value={clientQuery} placeholder="Client ou numéro" onChange={(event) => setClientQuery(event.target.value)} /></label>
             <button className="admin-icon-button" type="button" disabled={clientLoading} aria-label="Actualiser les reversements" onClick={() => void loadClients()}><RefreshCw className={clientLoading ? 'admin-spin' : undefined} aria-hidden="true" /></button>
           </div>
 
           {clientLoading && !day ? <div className="admin-empty"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement des rapports clients…</strong></div>
-            : day?.status !== 'CLOSED' ? <div className="admin-empty"><Clock3 aria-hidden="true" /><strong>La journée du {formatDate(date)} n’est pas clôturée</strong><span>Les reversements ne sont créés qu’à partir des rapports définitifs.</span></div>
+            : (clientClosures?.closedClientCount ?? 0) === 0 ? <div className="admin-empty"><Clock3 aria-hidden="true" /><strong>Aucun compte client clôturé le {formatDate(date)}</strong><span>Chaque client apparaîtra ici dès que son propre compte rendu sera clôturé, sans attendre la fin de la journée.</span></div>
               : visibleClientRows.length === 0 ? <div className="admin-empty"><UsersRound aria-hidden="true" /><strong>Aucun client à afficher</strong></div>
                 : <div className="admin-finance-client-list">{visibleClientRows.map((row) => {
                   const settlement = row.settlement
@@ -339,10 +365,30 @@ export function AdminFinancePanel({
             : courierLoading && !courierFinance ? <div className="admin-empty"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement du suivi…</strong></div>
               : courierFinance && selectedCourier ? <>
                 <div className="admin-finance-courier-heading"><div><span><UserRound aria-hidden="true" /></span><div><small>Suivi financier</small><h3>{courierFinance.courierName}</h3><p>{selectedCourier.payoutDestination ? `${selectedCourier.payoutDestination.operator} · ${selectedCourier.payoutDestination.number}` : 'Aucune destination de versement préenregistrée'}</p></div></div><div className="admin-finance-courier-heading__actions"><button className="admin-button admin-button--ghost" type="button" disabled={Boolean(downloadingStatement)} onClick={() => void downloadStatement('pdf')}><FileText aria-hidden="true" />{downloadingStatement === 'pdf' ? 'Préparation…' : 'PDF'}</button><button className="admin-button admin-button--ghost" type="button" disabled={Boolean(downloadingStatement)} onClick={() => void downloadStatement('xlsx')}><FileSpreadsheet aria-hidden="true" />{downloadingStatement === 'xlsx' ? 'Préparation…' : 'Excel'}</button><button className="admin-button" type="button" onClick={() => { setPaymentError(undefined); setPendingPayment({ kind: 'COURIER', courier: selectedCourier, finance: courierFinance }) }}><WalletCards aria-hidden="true" />Confirmer un versement</button></div></div>
-                <div className="admin-finance-courier-totals"><article><ReceiptText aria-hidden="true" /><div><small>Total gagné</small><strong>{formatAriary(courierFinance.totalEarnedAriary)}</strong></div></article><article><CheckCircle2 aria-hidden="true" /><div><small>Total versé</small><strong>{formatAriary(courierFinance.totalPaidAriary)}</strong></div></article><article className={courierFinance.remainingToPayAriary > 0 ? 'is-due' : undefined}><WalletCards aria-hidden="true" /><div><small>Reste à verser</small><strong>{formatAriary(courierFinance.remainingToPayAriary)}</strong></div></article><article><BanknoteArrowUp aria-hidden="true" /><div><small>Avance / crédit</small><strong>{formatAriary(courierFinance.advanceCreditAriary)}</strong></div></article></div>
-                <div className="admin-finance-history-tabs" role="tablist"><button type="button" role="tab" aria-selected={historyView === 'DELIVERIES'} className={historyView === 'DELIVERIES' ? 'is-active' : undefined} onClick={() => setHistoryView('DELIVERIES')}><PackageCheck aria-hidden="true" />Livraisons <b>{courierFinance.deliveries.length}</b></button><button type="button" role="tab" aria-selected={historyView === 'EARNINGS'} className={historyView === 'EARNINGS' ? 'is-active' : undefined} onClick={() => setHistoryView('EARNINGS')}><FileCheck2 aria-hidden="true" />Rémunérations <b>{courierFinance.earnings.length}</b></button><button type="button" role="tab" aria-selected={historyView === 'PAYMENTS'} className={historyView === 'PAYMENTS' ? 'is-active' : undefined} onClick={() => setHistoryView('PAYMENTS')}><History aria-hidden="true" />Versements <b>{courierFinance.payments.length}</b></button></div>
-                {historyView === 'DELIVERIES' && <div className="admin-finance-table"><div className="admin-finance-table__head"><span>Date</span><span>Client / destinataire</span><span>Trajet</span><span>Situation</span><span>Gain</span></div>{courierFinance.deliveries.map((delivery) => <div key={delivery.packageId}><span>{formatDate(delivery.serviceDate)}</span><span><strong>{delivery.clientDisplayName}</strong><small>{delivery.recipientName}</small></span><span><strong>{delivery.pickupLabel}</strong><small>{delivery.destinationLabel}</small></span><span>{delivery.outcome === 'DELIVERED' ? 'Livré' : delivery.returnCompletedAt ? 'Retourné' : 'Retour en attente'}</span><span><strong>{delivery.earnedAmountAriary == null ? 'Non validé' : formatAriary(delivery.earnedAmountAriary)}</strong></span></div>)}</div>}
-                {historyView === 'EARNINGS' && <div className="admin-finance-table"><div className="admin-finance-table__head"><span>Date</span><span>Fraction</span><span>Frais finaux</span><span>Suggestion</span><span>Montant retenu</span></div>{courierFinance.earnings.map((earning) => <div key={earning.id}><span>{formatDate(earning.serviceDate)}</span><span>{earning.commissionNumerator}/{earning.commissionDenominator}</span><span>{formatAriary(earning.deliveryFeeAriary)}</span><span>{formatAriary(earning.suggestedAmountAriary)}</span><span><strong>{formatAriary(earning.finalAmountAriary)}</strong>{earning.overrideReason && <small>{earning.overrideReason}</small>}</span></div>)}</div>}
+                <div className="admin-finance-courier-totals"><article><FileCheck2 aria-hidden="true" /><div><small>Parts de livraison</small><strong>{formatAriary(courierFinance.totalCommissionEarnedAriary)}</strong></div></article><article><Fuel aria-hidden="true" /><div><small>Carburant express</small><strong>{formatAriary(courierFinance.totalFuelEarnedAriary)}</strong></div></article><article><ReceiptText aria-hidden="true" /><div><small>Total gagné</small><strong>{formatAriary(courierFinance.totalEarnedAriary)}</strong></div></article><article><CheckCircle2 aria-hidden="true" /><div><small>Total versé</small><strong>{formatAriary(courierFinance.totalPaidAriary)}</strong></div></article><article className={courierFinance.remainingToPayAriary > 0 ? 'is-due' : undefined}><WalletCards aria-hidden="true" /><div><small>Reste à verser</small><strong>{formatAriary(courierFinance.remainingToPayAriary)}</strong></div></article><article><BanknoteArrowUp aria-hidden="true" /><div><small>Avance / crédit</small><strong>{formatAriary(courierFinance.advanceCreditAriary)}</strong></div></article></div>
+                <div className="admin-finance-history-tabs" role="tablist"><button type="button" role="tab" aria-selected={historyView === 'DELIVERIES'} className={historyView === 'DELIVERIES' ? 'is-active' : undefined} onClick={() => setHistoryView('DELIVERIES')}><PackageCheck aria-hidden="true" />Livraisons <b>{courierFinance.deliveries.length}</b></button><button type="button" role="tab" aria-selected={historyView === 'EARNINGS'} className={historyView === 'EARNINGS' ? 'is-active' : undefined} onClick={() => setHistoryView('EARNINGS')}><FileCheck2 aria-hidden="true" />Parts <b>{courierFinance.earnings.length}</b></button><button type="button" role="tab" aria-selected={historyView === 'FUEL'} className={historyView === 'FUEL' ? 'is-active' : undefined} onClick={() => setHistoryView('FUEL')}><Fuel aria-hidden="true" />Essence <b>{courierFinance.fuelEarnings.length}</b></button><button type="button" role="tab" aria-selected={historyView === 'PAYMENTS'} className={historyView === 'PAYMENTS' ? 'is-active' : undefined} onClick={() => setHistoryView('PAYMENTS')}><History aria-hidden="true" />Versements <b>{courierFinance.payments.length}</b></button></div>
+                {historyView === 'DELIVERIES' && <div className="admin-finance-table"><div className="admin-finance-table__head"><span>Date</span><span>Client / destinataire</span><span>Trajet</span><span>Situation</span><span>Part livraison</span></div>{courierFinance.deliveries.map((delivery) => <div key={delivery.packageId}><span>{formatDate(delivery.serviceDate)}</span><span><strong>{delivery.clientDisplayName}</strong><small>{delivery.recipientName}</small></span><span><strong>{delivery.pickupLabel}</strong><small>{delivery.destinationLabel}</small></span><span>{delivery.outcome === 'DELIVERED' ? 'Livré' : delivery.returnCompletedAt ? 'Retourné' : 'Retour en attente'}</span><span><strong>{delivery.earnedAmountAriary == null ? 'Non validé' : formatAriary(delivery.earnedAmountAriary)}</strong></span></div>)}</div>}
+                {historyView === 'EARNINGS' && <div className="admin-finance-table"><div className="admin-finance-table__head"><span>Date</span><span>Fraction</span><span>Frais finaux</span><span>Suggestion</span><span>Part retenue</span></div>{courierFinance.earnings.map((earning) => <div key={earning.id}><span>{formatDate(earning.serviceDate)}</span><span>{earning.commissionNumerator}/{earning.commissionDenominator}</span><span>{formatAriary(earning.deliveryFeeAriary)}</span><span>{formatAriary(earning.suggestedAmountAriary)}</span><span><strong>{formatAriary(earning.finalAmountAriary)}</strong>{earning.overrideReason && <small>{earning.overrideReason}</small>}</span></div>)}</div>}
+                {historyView === 'FUEL' && (
+                  <div className="admin-finance-table admin-finance-table--fuel">
+                    <div className="admin-finance-table__head"><span>Date</span><span>Demande express</span><span>Distance</span><span>Consommation</span><span>Prix/L</span><span>Essence retenue</span></div>
+                    {courierFinance.fuelEarnings.map((earning) => (
+                      <div key={earning.id}>
+                        <span>{formatDate(earning.serviceDate)}</span>
+                        <span><strong>{earning.packageIds.length} colis</strong><small>{earning.returnToPickup ? 'Retour au retrait inclus' : 'Sans retour au retrait'}</small></span>
+                        <span>
+                          <strong>{(earning.finalDistanceMeters / 1_000).toLocaleString('fr-MG', { maximumFractionDigits: 1 })} km</strong>
+                          {(earning.repositionDistanceMeters ?? 0) > 0 && <small>dont {(earning.repositionDistanceMeters! / 1_000).toLocaleString('fr-MG', { maximumFractionDigits: 1 })} km depuis l’express précédent</small>}
+                          {earning.manual && <small>Ajustée manuellement</small>}
+                        </span>
+                        <span>{earning.fuelEfficiencyKmPerLiter == null ? 'Désactivée' : `${earning.fuelEfficiencyKmPerLiter} km/L`}</span>
+                        <span>{formatAriary(earning.fuelPricePerLiterAriary)}</span>
+                        <span><strong>{formatAriary(earning.finalAmountAriary)}</strong>{earning.overrideReason && <small>{earning.overrideReason}</small>}</span>
+                      </div>
+                    ))}
+                    {courierFinance.fuelEarnings.length === 0 && <p>Aucun remboursement de carburant enregistré.</p>}
+                  </div>
+                )}
                 {historyView === 'PAYMENTS' && <div className="admin-finance-payments admin-finance-payments--courier">{courierFinance.payments.map((payment) => <div className={payment.status === 'VOIDED' ? 'is-voided' : undefined} key={payment.id}><span><WalletCards aria-hidden="true" /></span><div><strong>{formatAriary(payment.amountAriary)} · {payment.paymentMethod}</strong><small>{formatDateTime(payment.confirmedAt)}{payment.transactionReference ? ` · ${payment.transactionReference}` : ''}{payment.confirmedByAccountId ? ' · confirmé par l’administration' : ''}</small>{payment.status === 'VOIDED' && <em>Annulé : {payment.voidReason}{payment.voidedByAccountId ? ' · annulé par l’administration' : ''}</em>}</div><div>{payment.proof.available && <button type="button" onClick={() => void downloadProof('COURIER', payment.id)}><Download aria-hidden="true" />Justificatif</button>}{payment.status === 'CONFIRMED' && <button className="is-danger" type="button" onClick={() => { setPaymentError(undefined); setPaymentToVoid({ kind: 'COURIER', payment }) }}><XCircle aria-hidden="true" />Annuler</button>}</div></div>)}{courierFinance.payments.length === 0 && <p>Aucun versement enregistré pour ce livreur.</p>}</div>}
               </> : null}
         </div>

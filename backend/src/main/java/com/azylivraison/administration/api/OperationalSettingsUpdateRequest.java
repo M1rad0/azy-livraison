@@ -45,6 +45,9 @@ public record OperationalSettingsUpdateRequest(
         Integer defaultCourierCommissionNumerator,
         @Positive
         Integer defaultCourierCommissionDenominator,
+        @Positive(message = "Le prix du litre de carburant doit être positif.")
+        Long defaultFuelPricePerLiterAriary,
+        Boolean defaultExpressReturnToPickup,
         @PositiveOrZero(message = "La version ne peut pas être négative.")
         Long version) {
 

@@ -16,6 +16,7 @@ import com.azylivraison.delivery.api.LocationResponse;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 public record DailyOperationResponse(
         LocalDate serviceDate,
@@ -137,6 +138,8 @@ public record DailyOperationResponse(
             UUID pricingZoneId,
             String pricingZoneName,
             Long deliveryFeeAriary,
+            Long distanceFromCenterMeters,
+            PricingDistanceMode pricingDistanceMode,
             Long calculatedDeliveryFeeAriary,
             Long finalDeliveryFeeAriary,
             String deliveryFeeOverrideReason,
@@ -176,6 +179,8 @@ public record DailyOperationResponse(
                     deliveryPackage.amountToCollectAriary(), deliveryPackage.mobileMoneyPaid(),
                     deliveryPackage.pricingZoneId(), deliveryPackage.pricingZoneName(),
                     deliveryPackage.finalDeliveryFeeAriary(),
+                    deliveryPackage.distanceFromCenterMeters(),
+                    deliveryPackage.pricingDistanceMode(),
                     deliveryPackage.deliveryFeeAriary(),
                     deliveryPackage.finalDeliveryFeeAriary(),
                     deliveryPackage.deliveryFeeOverrideReason(),

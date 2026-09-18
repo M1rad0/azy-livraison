@@ -22,6 +22,7 @@ import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
 import com.azylivraison.delivery.domain.StoredDeliveryRequest;
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -343,7 +344,7 @@ public class DeliveryRequestRepository {
                     final_delivery_fee_ariary, delivery_fee_override_reason,
                     delivery_fee_overridden_at, delivery_fee_overridden_by_account_id,
                     delivery_fee_version,
-                    distance_from_center_meters, pricing_zone_max_distance_meters,
+                    distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
                     pricing_policy_version, pricing_policy_id,
                     base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                     effective_weight_kg, weight_source,
@@ -353,7 +354,7 @@ public class DeliveryRequestRepository {
                     return_completed_at, return_completed_by_account_id,
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 deliveryPackage.id(), deliveryPackage.deliveryRequestId(), deliveryPackage.sequenceNumber(),
                 deliveryPackage.recipientName(), deliveryPackage.faritra(),
@@ -371,6 +372,8 @@ public class DeliveryRequestRepository {
                 deliveryPackage.deliveryFeeOverriddenByAccountId(),
                 deliveryPackage.deliveryFeeVersion(),
                 deliveryPackage.pricingSnapshot().distanceFromCenterMeters(),
+                deliveryPackage.pricingSnapshot().distanceMode() == null ? null
+                        : deliveryPackage.pricingSnapshot().distanceMode().name(),
                 deliveryPackage.pricingSnapshot().pricingZoneMaxDistanceMeters(),
                 deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
                 deliveryPackage.pricingSnapshot().pricingPolicyId(),
@@ -490,6 +493,7 @@ public class DeliveryRequestRepository {
                         resultSet.getString("pricing_zone_name"),
                         nullableLong(resultSet, "delivery_fee_ariary"),
                         nullableLong(resultSet, "distance_from_center_meters"),
+                        pricingDistanceMode(resultSet, "pricing_distance_mode"),
                         nullableLong(resultSet, "pricing_zone_max_distance_meters"),
                         nullableLong(resultSet, "pricing_policy_version"),
                         resultSet.getObject("pricing_policy_id", Short.class),
@@ -528,6 +532,11 @@ public class DeliveryRequestRepository {
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private PricingDistanceMode pricingDistanceMode(ResultSet resultSet, String column) throws SQLException {
+        String value = resultSet.getString(column);
+        return value == null ? null : PricingDistanceMode.valueOf(value);
     }
 
     private Long coalesce(Long preferred, Long fallback) {

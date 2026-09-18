@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BadgeDollarSign, Calculator, LoaderCircle, X, Zap } from 'lucide-react'
 import { quotePublicDeliveryPrice, type DeliveryPricingQuote, type DeliveryRequestKind } from '../api/client'
 import type { Location } from '../api/csvImports'
+import { formatPricingDistanceSummary } from '../api/pricing'
 import { LocationPicker } from './LocationPicker'
 
 export function PublicPricingCalculator({ onClose }: { onClose: () => void }) {
@@ -56,7 +57,7 @@ export function PublicPricingCalculator({ onClose }: { onClose: () => void }) {
           </div>
           <LocationPicker accessToken="" value={destination} title="Destination" description="Recherchez le quartier ou placez précisément le point sur la carte." onChange={setDestination} />
           {loading && <div className="client-pricing-preview is-loading"><LoaderCircle className="spin" /><strong>Calcul du tarif…</strong></div>}
-          {quote && !loading && <div className="public-pricing-result"><span>Zone {quote.pricingZoneName}</span><strong>{quote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar</strong></div>}
+          {quote && !loading && <div className="public-pricing-result"><div><span>Zone {quote.pricingZoneName}</span><small>{formatPricingDistanceSummary(quote.distanceFromCenterMeters, quote.distanceMode)}</small></div><strong>{quote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar</strong></div>}
           {error && <p className="client-alert client-alert--error">{error}</p>}
         </div>
       </section>

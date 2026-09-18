@@ -42,6 +42,8 @@ public class OperationalSettingsService {
                 reduceDenominator(
                         requested.defaultCourierCommissionNumerator(),
                         requested.defaultCourierCommissionDenominator()),
+                requested.defaultFuelPricePerLiterAriary(),
+                requested.defaultExpressReturnToPickup(),
                 current.version(),
                 current.createdAt(),
                 current.updatedAt());

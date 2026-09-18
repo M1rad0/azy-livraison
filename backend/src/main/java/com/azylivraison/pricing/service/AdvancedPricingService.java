@@ -14,10 +14,13 @@ import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
 import com.azylivraison.pricing.domain.AdvancedPricingQuote;
 import com.azylivraison.pricing.domain.PricingCenter;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 import com.azylivraison.pricing.domain.PricingTimeSlot;
 import com.azylivraison.pricing.domain.PricingWeightTier;
 import com.azylivraison.pricing.domain.PricingZone;
 import com.azylivraison.pricing.repository.AdvancedPricingPolicyRepository;
+import com.azylivraison.routing.domain.RoutingPoint;
+import com.azylivraison.routing.service.RoutingService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,9 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdvancedPricingService {
 
     private final AdvancedPricingPolicyRepository repository;
+    private final RoutingService routingService;
 
-    public AdvancedPricingService(AdvancedPricingPolicyRepository repository) {
+    public AdvancedPricingService(AdvancedPricingPolicyRepository repository, RoutingService routingService) {
         this.repository = repository;
+        this.routingService = routingService;
     }
 
     @Transactional(readOnly = true)
@@ -56,8 +61,7 @@ public class AdvancedPricingService {
 
     public AdvancedPricingQuote quote(AdvancedPricingPolicy policy, double latitude,
             double longitude, BigDecimal weightKg, LocalTime desiredTime) {
-        double exactDistance = DeliveryPricingService.haversineMeters(
-                policy.center().latitude(), policy.center().longitude(), latitude, longitude);
+        double exactDistance = distanceMeters(policy, latitude, longitude);
         long distance = Math.round(exactDistance);
         PricingZone zone = policy.zones().stream()
                 .filter(item -> exactDistance <= item.maxDistanceMeters()).findFirst()
@@ -81,25 +85,27 @@ public class AdvancedPricingService {
         long timeSurcharge = slot == null ? 0 : slot.surchargeAriary();
         long total = Math.addExact(zone.deliveryFeeAriary(), Math.addExact(weightSurcharge, timeSurcharge));
         return new AdvancedPricingQuote(policy.id(), policy.version(), policy.clientAccountId(),
-                policy.requestKind(), zone.id(), zone.name(), distance, zone.maxDistanceMeters(),
+                policy.requestKind(), policy.distanceMode(), zone.id(), zone.name(),
+                distance, zone.maxDistanceMeters(),
                 zone.deliveryFeeAriary(), effectiveWeight, weightSurcharge, desiredTime,
                 slot == null ? null : slot.label(), timeSurcharge, total);
     }
 
     @Transactional
-    public AdvancedPricingPolicy save(UUID clientId, DeliveryRequestKind kind, PricingCenter center,
+    public AdvancedPricingPolicy save(UUID clientId, DeliveryRequestKind kind, PricingDistanceMode distanceMode,
+            PricingCenter center,
             BigDecimal defaultWeight, List<PricingZone> zones, List<PricingWeightTier> weights,
             List<PricingTimeSlot> slots, Long expectedVersion) {
         var existing = repository.findExact(clientId, kind);
-        AdvancedPricingPolicy normalized = normalize(clientId, kind, center, defaultWeight, zones, weights, slots,
-                existing.isPresent());
+        AdvancedPricingPolicy normalized = normalize(clientId, kind, distanceMode, center, defaultWeight,
+                zones, weights, slots, existing.isPresent());
         if (existing.isEmpty()) {
             short id = repository.create(normalized);
             return repository.findExact(clientId, kind).orElseThrow();
         }
         long version = expectedVersion == null ? existing.get().version() : expectedVersion;
         AdvancedPricingPolicy update = new AdvancedPricingPolicy(existing.get().id(), clientId, kind,
-                normalized.center(), normalized.defaultWeightKg(), normalized.zones(),
+                normalized.distanceMode(), normalized.center(), normalized.defaultWeightKg(), normalized.zones(),
                 normalized.weightTiers(), normalized.timeSlots(), existing.get().version(),
                 existing.get().createdAt(), Instant.now());
         if (!repository.update(update, version)) {
@@ -114,9 +120,12 @@ public class AdvancedPricingService {
         repository.deactivate(clientId, kind);
     }
 
-    private AdvancedPricingPolicy normalize(UUID clientId, DeliveryRequestKind kind, PricingCenter center,
+    private AdvancedPricingPolicy normalize(UUID clientId, DeliveryRequestKind kind,
+            PricingDistanceMode distanceMode, PricingCenter center,
             BigDecimal defaultWeight, List<PricingZone> zones, List<PricingWeightTier> weights,
             List<PricingTimeSlot> slots, boolean preserveChildIds) {
+        if (distanceMode == null)
+            throw new PricingConfigurationException("Le mode de calcul de distance est obligatoire.");
         if (center == null || center.label() == null || center.label().isBlank())
             throw new PricingConfigurationException("Le point central est obligatoire.");
         if (defaultWeight == null || defaultWeight.signum() <= 0)
@@ -158,8 +167,19 @@ public class AdvancedPricingService {
         }
         normalizedSlots.sort(Comparator.comparing(PricingTimeSlot::startTime));
         Instant now = Instant.now();
-        return new AdvancedPricingPolicy((short) 0, clientId, kind,
+        return new AdvancedPricingPolicy((short) 0, clientId, kind, distanceMode,
                 new PricingCenter(center.label().trim(), center.query(), center.latitude(), center.longitude()),
                 defaultWeight, normalizedZones, normalizedWeights, normalizedSlots, 0, now, now);
+    }
+
+    private double distanceMeters(AdvancedPricingPolicy policy, double latitude, double longitude) {
+        if (policy.distanceMode() == PricingDistanceMode.AIR_DISTANCE) {
+            return DeliveryPricingService.haversineMeters(
+                    policy.center().latitude(), policy.center().longitude(), latitude, longitude);
+        }
+        return routingService.route(List.of(
+                new RoutingPoint("pricing-center", policy.center().latitude(), policy.center().longitude()),
+                new RoutingPoint("pricing-destination", latitude, longitude)))
+                .distanceMeters();
     }
 }

@@ -76,7 +76,7 @@ const NAVIGATION: Record<AccountRole, PortalNavigationItem[]> = {
     { id: 'new-request', label: 'Nouvelle demande', detail: 'Préparer des colis', icon: PackagePlus },
     { id: 'express', label: 'Livraison express', detail: 'Traitement immédiat', icon: Zap },
     { id: 'pricing', label: 'Mes tarifs', detail: 'Grilles applicables', icon: BadgeDollarSign },
-    { id: 'reports', label: 'Mes rapports', detail: 'Journées clôturées', icon: FileText },
+    { id: 'reports', label: 'Mes rapports', detail: 'Comptes rendus finalisés', icon: FileText },
     { id: 'profile', label: 'Coordonnées', detail: 'Contacts, retrait et versements', icon: UserRound },
   ],
   COURIER: [

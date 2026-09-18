@@ -34,6 +34,11 @@ public record CourierCreateRequest(
         Integer commissionNumerator,
         @Positive
         Integer commissionDenominator,
+        Boolean fuelReimbursementEnabled,
+        @Positive(message = "La distance parcourue par litre doit être positive.")
+        BigDecimal fuelEfficiencyKmPerLiter,
+        @Positive(message = "Le prix du litre doit être positif.")
+        Long fuelPricePerLiterAriary,
         @NotNull(message = "L'heure de départ habituelle est obligatoire.")
         LocalTime defaultDepartureTime,
         @NotNull(message = "Le point de départ habituel est obligatoire.")

@@ -246,7 +246,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
   return (
     <section className="client-reports-page" aria-labelledby="client-reports-title">
       <header className="client-page-heading client-page-heading--compact">
-        <div><p className="eyebrow">Journées clôturées</p><h1 id="client-reports-title">Mes rapports</h1><p>Retrouvez les colis finalisés, les frais facturés, votre solde et les versements confirmés pour chaque journée terminée.</p></div>
+        <div><p className="eyebrow">Comptes rendus finalisés</p><h1 id="client-reports-title">Mes rapports</h1><p>Retrouvez vos colis finalisés, les frais facturés, votre solde et les versements confirmés dès que votre compte rendu est clôturé.</p></div>
         <button className="button button--secondary" type="button" disabled={loading} onClick={() => void loadList()}><RefreshCw aria-hidden="true" />Actualiser</button>
       </header>
 
@@ -258,7 +258,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
       ) : listLoadFailed ? (
         <div className="client-report-state"><FileText aria-hidden="true" /><strong>Impossible de charger vos rapports</strong><span>Réessayez dans quelques instants.</span><button className="button button--secondary" type="button" onClick={() => void loadList()}>Réessayer</button></div>
       ) : reports.length === 0 ? (
-        <div className="client-report-state"><CalendarCheck2 aria-hidden="true" /><strong>Aucun rapport disponible</strong><span>Un rapport apparaîtra ici dès qu’une journée comprenant vos colis aura été clôturée.</span></div>
+        <div className="client-report-state"><CalendarCheck2 aria-hidden="true" /><strong>Aucun rapport disponible</strong><span>Votre rapport apparaîtra ici dès que l’administration aura clôturé votre compte rendu, sans attendre les autres clients.</span></div>
       ) : selectedDate ? (
         <div className="client-report-view">
           <nav className="client-report-view__navigation" aria-label="Navigation du rapport">
@@ -383,7 +383,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
           ) : (
             <div className="client-report-list-table">
               <table>
-                <caption className="sr-only">Liste de vos rapports journaliers clôturés</caption>
+                <caption className="sr-only">Liste de vos rapports clients finalisés</caption>
                 <thead><tr><th scope="col">Date</th><th scope="col">Colis</th><th scope="col" className="is-money">Récupéré</th><th scope="col" className="is-money">Frais</th><th scope="col" className="is-money">Solde du rapport</th><th scope="col">Règlement</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
                 <tbody>{filteredReports.map((item) => {
                   const settlement = settlementForReport(finance, item.reportId)

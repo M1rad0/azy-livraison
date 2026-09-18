@@ -4,10 +4,13 @@ import static com.azylivraison.finance.domain.FinanceModels.*;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
+import com.azylivraison.delivery.domain.ExpressFuelCalculationStatus;
+import com.azylivraison.delivery.api.ExpressFuelResponse;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -194,16 +197,61 @@ public final class FinanceApiModels {
             UUID finalizedByAccountId,
             long totalSuggestedAriary,
             long totalFinalAriary,
+            long totalSuggestedCommissionAriary,
+            long totalFinalCommissionAriary,
+            long totalSuggestedFuelAriary,
+            long totalFinalFuelAriary,
             int pendingReturnCount,
-            List<CompensationLineResponse> lines) {
+            int unresolvedFuelCalculationCount,
+            List<CompensationLineResponse> lines,
+            List<FuelCompensationLineResponse> fuelLines,
+            List<ExpressFuelResponse> fuelCalculations) {
 
         static CourierCompensationResponse from(CourierCompensationPreview preview) {
             return new CourierCompensationResponse(
                     preview.serviceDate(), preview.closureRevision(), preview.finalized(),
                     preview.finalizedAt(), preview.finalizedByAccountId(),
                     preview.totalSuggestedAriary(), preview.totalFinalAriary(),
-                    preview.pendingReturnCount(),
-                    preview.lines().stream().map(CompensationLineResponse::from).toList());
+                    preview.totalSuggestedCommissionAriary(), preview.totalFinalCommissionAriary(),
+                    preview.totalSuggestedFuelAriary(), preview.totalFinalFuelAriary(),
+                    preview.pendingReturnCount(), preview.unresolvedFuelCalculationCount(),
+                    preview.lines().stream().map(CompensationLineResponse::from).toList(),
+                    preview.fuelLines().stream().map(FuelCompensationLineResponse::from).toList(),
+                    preview.fuelCalculations().stream().map(ExpressFuelResponse::from).toList());
+        }
+    }
+
+    public record FuelCompensationLineResponse(
+            UUID requestId,
+            String clientDisplayName,
+            String pickupLabel,
+            ExpressFuelCalculationStatus status,
+            String failureReason,
+            UUID courierId,
+            String courierName,
+            String courierContact,
+            List<UUID> packageIds,
+            boolean returnToPickup,
+            Long repositionDistanceMeters,
+            Long automaticDistanceMeters,
+            long finalDistanceMeters,
+            boolean fuelReimbursementEnabled,
+            BigDecimal fuelEfficiencyKmPerLiter,
+            long fuelPricePerLiterAriary,
+            long suggestedAmountAriary,
+            long finalAmountAriary,
+            String overrideReason,
+            boolean manual) {
+
+        static FuelCompensationLineResponse from(FuelCompensationLine line) {
+            return new FuelCompensationLineResponse(
+                    line.requestId(), line.clientDisplayName(), line.pickupLabel(), line.status(),
+                    line.failureReason(), line.courierId(), line.courierName(), line.courierContact(),
+                    line.packageIds(), line.returnToPickup(), line.repositionDistanceMeters(),
+                    line.automaticDistanceMeters(), line.finalDistanceMeters(), line.fuelReimbursementEnabled(),
+                    line.fuelEfficiencyKmPerLiter(), line.fuelPricePerLiterAriary(),
+                    line.suggestedAmountAriary(), line.finalAmountAriary(), line.overrideReason(),
+                    line.manual());
         }
     }
 
@@ -255,6 +303,36 @@ public final class FinanceApiModels {
         }
     }
 
+    public record CourierFuelEarningResponse(
+            UUID id,
+            LocalDate serviceDate,
+            int closureRevision,
+            UUID requestId,
+            boolean returnToPickup,
+            List<UUID> packageIds,
+            Long repositionDistanceMeters,
+            Long automaticDistanceMeters,
+            long finalDistanceMeters,
+            boolean fuelReimbursementEnabled,
+            BigDecimal fuelEfficiencyKmPerLiter,
+            long fuelPricePerLiterAriary,
+            long suggestedAmountAriary,
+            long finalAmountAriary,
+            String overrideReason,
+            boolean manual,
+            Instant createdAt) {
+
+        static CourierFuelEarningResponse from(CourierFuelEarning earning) {
+            return new CourierFuelEarningResponse(
+                    earning.id(), earning.serviceDate(), earning.closureRevision(), earning.requestId(),
+                    earning.returnToPickup(), earning.packageIds(), earning.repositionDistanceMeters(),
+                    earning.automaticDistanceMeters(), earning.finalDistanceMeters(), earning.fuelReimbursementEnabled(),
+                    earning.fuelEfficiencyKmPerLiter(), earning.fuelPricePerLiterAriary(),
+                    earning.suggestedAmountAriary(), earning.finalAmountAriary(), earning.overrideReason(),
+                    earning.manual(), earning.createdAt());
+        }
+    }
+
     public record CourierDeliveryResponse(
             UUID packageId,
             LocalDate serviceDate,
@@ -265,34 +343,42 @@ public final class FinanceApiModels {
             DeliveryPackageOutcome outcome,
             Instant returnCompletedAt,
             long deliveryFeeAriary,
-            Long earnedAmountAriary) {
+            Long earnedAmountAriary,
+            Long fuelEarnedAmountAriary,
+            Long totalEarnedAmountAriary) {
 
         static CourierDeliveryResponse from(CourierDelivery delivery) {
             return new CourierDeliveryResponse(
                     delivery.packageId(), delivery.serviceDate(), delivery.clientDisplayName(),
                     delivery.recipientName(), delivery.pickupLabel(), delivery.destinationLabel(),
                     delivery.outcome(), delivery.returnCompletedAt(), delivery.deliveryFeeAriary(),
-                    delivery.earnedAmountAriary());
+                    delivery.earnedAmountAriary(), delivery.fuelEarnedAmountAriary(),
+                    delivery.totalEarnedAmountAriary());
         }
     }
 
     public record CourierFinanceResponse(
             UUID courierId,
             String courierName,
+            long totalCommissionEarnedAriary,
+            long totalFuelEarnedAriary,
             long totalEarnedAriary,
             long totalPaidAriary,
             long remainingToPayAriary,
             long advanceCreditAriary,
             List<CourierDeliveryResponse> deliveries,
             List<CourierEarningResponse> earnings,
+            List<CourierFuelEarningResponse> fuelEarnings,
             List<CourierPaymentResponse> payments) {
 
         static CourierFinanceResponse from(CourierFinance finance) {
             return new CourierFinanceResponse(
-                    finance.courierId(), finance.courierName(), finance.totalEarnedAriary(),
+                    finance.courierId(), finance.courierName(), finance.totalCommissionEarnedAriary(),
+                    finance.totalFuelEarnedAriary(), finance.totalEarnedAriary(),
                     finance.totalPaidAriary(), finance.remainingToPayAriary(), finance.advanceCreditAriary(),
                     finance.deliveries().stream().map(CourierDeliveryResponse::from).toList(),
                     finance.earnings().stream().map(CourierEarningResponse::from).toList(),
+                    finance.fuelEarnings().stream().map(CourierFuelEarningResponse::from).toList(),
                     finance.payments().stream().map(CourierPaymentResponse::from).toList());
         }
     }

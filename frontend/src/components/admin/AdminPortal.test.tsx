@@ -16,6 +16,7 @@ const pricingPolicy = {
   requestKind: 'NORMAL',
   clientSpecific: false,
   version: 1,
+  distanceMode: 'AIR_DISTANCE',
   center: { label: 'Centre tarifaire', destinationQuery: 'Analakely', latitude: -18.9089, longitude: 47.5212 },
   defaultWeightKg: 1,
   zones: [
@@ -317,6 +318,7 @@ describe('AdminPortal', () => {
 
     expect(await screen.findByRole('heading', { name: 'Tarification' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('Centre-ville')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Par la route' }))
     fireEvent.change(screen.getAllByDisplayValue('3000')[0], { target: { value: '3500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer cette grille' }))
 
@@ -324,6 +326,8 @@ describe('AdminPortal', () => {
       method: 'PUT',
       body: expect.stringContaining('"deliveryFeeAriary":3500'),
     })))
+    expect(JSON.parse((fetchMock.mock.calls.find(([url, init]) => url === '/api/admin/pricing-policies' && init?.method === 'PUT')?.[1] as RequestInit).body as string))
+      .toEqual(expect.objectContaining({ distanceMode: 'ROAD_DISTANCE' }))
   })
 
   it('restitue le planning détaillé des collectes avant le siège', () => {

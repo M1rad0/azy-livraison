@@ -11,6 +11,7 @@ public record AdvancedPricingQuote(
         long pricingPolicyVersion,
         UUID clientAccountId,
         DeliveryRequestKind requestKind,
+        PricingDistanceMode distanceMode,
         UUID pricingZoneId,
         String pricingZoneName,
         long distanceFromCenterMeters,
@@ -26,7 +27,7 @@ public record AdvancedPricingQuote(
     public DeliveryPricingSnapshot toLegacySnapshot() {
         return new DeliveryPricingSnapshot(
                 pricingZoneId, pricingZoneName, deliveryFeeAriary,
-                distanceFromCenterMeters, pricingZoneMaxDistanceMeters, pricingPolicyVersion,
+                distanceFromCenterMeters, distanceMode, pricingZoneMaxDistanceMeters, pricingPolicyVersion,
                 pricingPolicyId, baseDeliveryFeeAriary, weightSurchargeAriary, timeSurchargeAriary);
     }
 }

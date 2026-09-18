@@ -10,6 +10,7 @@ import java.util.UUID;
 import com.azylivraison.dispatch.domain.DispatchSourcePackage;
 import com.azylivraison.planning.domain.Location;
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -31,9 +32,13 @@ public class DispatchSourceRepository {
                    p.destination_latitude, p.destination_longitude,
                    p.contact, p.amount_to_collect_ariary, p.mobile_money_paid,
                    p.pricing_zone_id, p.pricing_zone_name, p.delivery_fee_ariary,
-                   p.distance_from_center_meters, p.pricing_zone_max_distance_meters,
-                   p.pricing_policy_version,
-                   p.effective_weight_kg
+                   p.distance_from_center_meters, p.pricing_distance_mode,
+                   p.pricing_zone_max_distance_meters,
+                   p.pricing_policy_version, p.pricing_policy_id,
+                   p.base_delivery_fee_ariary, p.weight_surcharge_ariary,
+                   p.time_surcharge_ariary,
+                   p.effective_weight_kg,
+                   p.desired_delivery_time
             FROM delivery_package p
             JOIN delivery_request dr ON dr.id = p.delivery_request_id
             JOIN app_account a ON a.id = dr.owner_account_id
@@ -180,13 +185,24 @@ public class DispatchSourceRepository {
                         resultSet.getString("pricing_zone_name"),
                         nullableLong(resultSet, "delivery_fee_ariary"),
                         nullableLong(resultSet, "distance_from_center_meters"),
+                        pricingDistanceMode(resultSet),
                         nullableLong(resultSet, "pricing_zone_max_distance_meters"),
-                        nullableLong(resultSet, "pricing_policy_version")),
-                resultSet.getBigDecimal("effective_weight_kg"));
+                        nullableLong(resultSet, "pricing_policy_version"),
+                        resultSet.getObject("pricing_policy_id", Short.class),
+                        nullableLong(resultSet, "base_delivery_fee_ariary"),
+                        nullableLong(resultSet, "weight_surcharge_ariary"),
+                        nullableLong(resultSet, "time_surcharge_ariary")),
+                resultSet.getBigDecimal("effective_weight_kg"),
+                resultSet.getObject("desired_delivery_time", java.time.LocalTime.class));
     }
 
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private PricingDistanceMode pricingDistanceMode(ResultSet resultSet) throws SQLException {
+        String value = resultSet.getString("pricing_distance_mode");
+        return value == null ? null : PricingDistanceMode.valueOf(value);
     }
 }

@@ -21,8 +21,10 @@ import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.delivery.repository.ExpressDeliveryRepository;
 import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
+import com.azylivraison.delivery.service.ExpressOutcomesFinalizedEvent;
 import com.azylivraison.finance.service.FinancialSettlementService;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,14 +34,20 @@ public class DailyWorkflowService {
     private final DailyWorkflowRepository repository;
     private final FinancialSettlementService financialSettlementService;
     private final ExpressDeliveryRepository expressDeliveries;
+    private final ApplicationEventPublisher events;
+    private final ClientClosureService clientClosures;
 
     public DailyWorkflowService(
             DailyWorkflowRepository repository,
             FinancialSettlementService financialSettlementService,
-            ExpressDeliveryRepository expressDeliveries) {
+            ExpressDeliveryRepository expressDeliveries,
+            ApplicationEventPublisher events,
+            ClientClosureService clientClosures) {
         this.repository = repository;
         this.financialSettlementService = financialSettlementService;
         this.expressDeliveries = expressDeliveries;
+        this.events = events;
+        this.clientClosures = clientClosures;
     }
 
     @Transactional(readOnly = true)
@@ -47,7 +55,7 @@ public class DailyWorkflowService {
         OperationDay day = repository.findDay(serviceDate).orElseGet(() -> OperationDay.open(serviceDate));
         return DailyOperationDetails.of(
                 day,
-                day.dispatchPlanId() == null ? java.util.List.of() : repository.findPackages(day));
+                repository.findPackages(day));
     }
 
     @Transactional
@@ -76,12 +84,12 @@ public class DailyWorkflowService {
         LocalDate operationDate = deliveryPackage.dispatchPlanId() == null
                 ? deliveryPackage.requestedDate()
                 : repository.serviceDate(deliveryPackage.dispatchPlanId());
-        repository.findDay(operationDate).ifPresent(day -> {
-            if (day.status() == OperationDayStatus.CLOSED) {
-                throw new DailyWorkflowConflictException(
-                        "Rouvrez la journée avant de corriger les frais de livraison.");
-            }
-        });
+        OperationDay day = repository.lockDay(operationDate)
+                .orElseThrow(() -> new DailyWorkflowConflictException(
+                        "Le compte rendu est disponible après la génération du plan."));
+        requireOutcomeEditable(day, deliveryPackage.requestKind(),
+                "Rouvrez la journée avant de corriger les frais de livraison.");
+        clientClosures.assertClientOpen(operationDate, deliveryPackage.ownerAccountId());
         Long finalFee;
         String normalizedReason = normalizeNullable(reason);
         if (mode == DeliveryFeeMode.CALCULATED) {
@@ -117,9 +125,13 @@ public class DailyWorkflowService {
             throw new DailyWorkflowInputException(
                     "Choisissez Livré, Reporté ou À retourner pour le compte rendu.");
         }
-        OperationDay day = requireEditableDay(serviceDate);
+        OperationDay day = repository.lockDay(serviceDate)
+                .orElseThrow(() -> new DailyWorkflowNotFoundException("Cette journée est introuvable."));
         PackageForUpdate deliveryPackage = requirePackage(packageId);
         requirePackageInDay(day, deliveryPackage);
+        requireOutcomeEditable(day, deliveryPackage.requestKind(),
+                "Rouvrez la journée avant de corriger le compte rendu.");
+        clientClosures.assertClientOpen(serviceDate, deliveryPackage.ownerAccountId());
         requireVersion(expectedVersion, deliveryPackage.version(), "Le colis a été modifié entre-temps.");
         if (deliveryPackage.technicalStatus() != DeliveryPackageStatus.DISPATCHED) {
             throw new DailyWorkflowConflictException("Ce colis ne fait pas partie du plan dispatché.");
@@ -182,6 +194,7 @@ public class DailyWorkflowService {
                 Instant.now());
         if (deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS) {
             expressDeliveries.completeIfFinal(deliveryPackage.deliveryRequestId());
+            events.publishEvent(new ExpressOutcomesFinalizedEvent(deliveryPackage.deliveryRequestId()));
         }
         return currentDetails(serviceDate);
     }
@@ -194,12 +207,16 @@ public class DailyWorkflowService {
             UUID actorAccountId) {
         OperationDay day = repository.lockDay(serviceDate)
                 .orElseThrow(() -> new DailyWorkflowNotFoundException("Cette journée est introuvable."));
-        if (day.status() != OperationDayStatus.DISPATCHED && day.status() != OperationDayStatus.CLOSED) {
+        PackageForUpdate deliveryPackage = requirePackage(packageId);
+        requirePackageInDay(day, deliveryPackage);
+        boolean expressOpen = deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS
+                && day.status() == OperationDayStatus.OPEN;
+        if (!expressOpen
+                && day.status() != OperationDayStatus.DISPATCHED
+                && day.status() != OperationDayStatus.CLOSED) {
             throw new DailyWorkflowConflictException(
                     "Le retour ne peut être confirmé qu'après le dispatch.");
         }
-        PackageForUpdate deliveryPackage = requirePackage(packageId);
-        requirePackageInDay(day, deliveryPackage);
         requireVersion(expectedVersion, deliveryPackage.version(), "Le colis a été modifié entre-temps.");
         if (deliveryPackage.finalOutcome() != DeliveryPackageOutcome.RETURN_TO_SENDER) {
             throw new DailyWorkflowConflictException("Ce colis n'est pas marqué À retourner.");
@@ -250,9 +267,22 @@ public class DailyWorkflowService {
         OperationDay day = repository.lockDay(serviceDate)
                 .orElseThrow(() -> new DailyWorkflowNotFoundException("Aucun plan n'existe pour cette date."));
         requireVersion(expectedVersion, day.version(), "La journée a été modifiée entre-temps.");
-        if (day.status() != OperationDayStatus.DISPATCHED || day.dispatchPlanId() == null) {
+        boolean normalDispatchedDay = day.status() == OperationDayStatus.DISPATCHED
+                && day.dispatchPlanId() != null;
+        boolean expressOnlyOpenDay = day.status() == OperationDayStatus.OPEN
+                && day.dispatchPlanId() == null;
+        if (!normalDispatchedDay && !expressOnlyOpenDay) {
             throw new DailyWorkflowConflictException(
                     "La journée doit être dispatchée avant de pouvoir être clôturée.");
+        }
+        if (expressOnlyOpenDay) {
+            int undispatchedNormal = repository.undispatchedNormalPackageCount(serviceDate);
+            if (undispatchedNormal > 0) {
+                throw new DailyWorkflowConflictException(
+                        "Générez le plan normal avant la clôture : " + undispatchedNormal
+                                + " colis " + (undispatchedNormal > 1 ? "sont" : "est")
+                                + " encore en attente.");
+            }
         }
         int pendingExpress = repository.pendingExpressRequestCount(serviceDate);
         if (pendingExpress > 0) {
@@ -281,6 +311,7 @@ public class DailyWorkflowService {
                             + (notCarried == 1 ? "le colis reporté" : "les " + notCarried + " colis reportés")
                             + " avant la clôture.");
         }
+        clientClosures.assertAllClientsClosed(serviceDate);
         repository.close(day, actorAccountId, Instant.now());
         financialSettlementService.materializeClientSettlements(serviceDate);
         return currentDetails(serviceDate);
@@ -304,6 +335,7 @@ public class DailyWorkflowService {
         }
         financialSettlementService.assertDayCanReopen(serviceDate);
         repository.reopen(day, actorAccountId, normalizedReason, Instant.now());
+        clientClosures.reopenAllForDay(serviceDate, actorAccountId, normalizedReason);
         return currentDetails(serviceDate);
     }
 
@@ -330,18 +362,19 @@ public class DailyWorkflowService {
         repository.cancelPackage(deliveryPackage, actorAccountId, Instant.now());
     }
 
-    private OperationDay requireEditableDay(LocalDate serviceDate) {
-        OperationDay day = repository.lockDay(serviceDate)
-                .orElseThrow(() -> new DailyWorkflowNotFoundException("Cette journée est introuvable."));
+    private void requireOutcomeEditable(
+            OperationDay day,
+            DeliveryRequestKind requestKind,
+            String closedMessage) {
         if (day.status() == OperationDayStatus.CLOSED) {
-            throw new DailyWorkflowConflictException(
-                    "Rouvrez la journée avant de corriger le compte rendu.");
+            throw new DailyWorkflowConflictException(closedMessage);
         }
-        if (day.status() != OperationDayStatus.DISPATCHED) {
+        boolean expressOpen = requestKind == DeliveryRequestKind.EXPRESS
+                && day.status() == OperationDayStatus.OPEN;
+        if (!expressOpen && day.status() != OperationDayStatus.DISPATCHED) {
             throw new DailyWorkflowConflictException(
                     "Le compte rendu est disponible après la génération du plan.");
         }
-        return day;
     }
 
     private PackageForUpdate requirePackage(UUID packageId) {

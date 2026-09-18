@@ -11,6 +11,7 @@ public record AdvancedPricingPolicy(
         short id,
         UUID clientAccountId,
         DeliveryRequestKind requestKind,
+        PricingDistanceMode distanceMode,
         PricingCenter center,
         BigDecimal defaultWeightKg,
         List<PricingZone> zones,
@@ -21,6 +22,9 @@ public record AdvancedPricingPolicy(
         Instant updatedAt) {
 
     public AdvancedPricingPolicy {
+        if (distanceMode == null) {
+            throw new IllegalArgumentException("Le mode de calcul de distance est obligatoire.");
+        }
         zones = List.copyOf(zones);
         weightTiers = List.copyOf(weightTiers);
         timeSlots = List.copyOf(timeSlots);

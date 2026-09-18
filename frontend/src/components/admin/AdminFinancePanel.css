@@ -55,7 +55,7 @@
 .admin-finance-courier-heading h3 { margin: .05rem 0; font-size: .9rem; }
 .admin-finance-courier-heading__actions { display: flex; align-items: center; gap: .35rem; }
 .admin-finance-courier-heading__actions .admin-button { min-height: 2.35rem; padding: .48rem .62rem; font-size: .6rem; }
-.admin-finance-courier-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; }
+.admin-finance-courier-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; }
 .admin-finance-courier-totals article { display: flex; align-items: center; gap: .55rem; padding: .7rem; background: #fff; border: 1px solid var(--admin-line); border-radius: .8rem; }
 .admin-finance-courier-totals article.is-due { border-color: #ffc49d; background: var(--admin-orange-soft); }
 .admin-finance-courier-totals svg { width: .95rem; color: var(--admin-orange); }
@@ -69,6 +69,8 @@
 .admin-finance-history-tabs button.is-active { color: var(--admin-navy); background: var(--admin-orange-soft); }
 .admin-finance-table { display: grid; overflow-x: auto; border: 1px solid var(--admin-line); border-radius: .8rem; }
 .admin-finance-table > div { min-width: 760px; display: grid; grid-template-columns: .7fr 1.2fr 1.7fr .8fr .75fr; gap: .55rem; align-items: center; padding: .6rem .7rem; border-top: 1px solid var(--admin-line); font-size: .62rem; }
+.admin-finance-table--fuel > div { min-width: 880px; grid-template-columns: .75fr 1.15fr .8fr .8fr .7fr 1.2fr; }
+.admin-finance-table > p { margin: 0; padding: 1rem; color: var(--admin-ink-soft); font-size: .62rem; text-align: center; }
 .admin-finance-table > div:first-child { border-top: 0; }
 .admin-finance-table__head { color: var(--admin-ink-soft); background: #f5f8fa; font-size: .53rem !important; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .admin-finance-table span { display: grid; min-width: 0; }

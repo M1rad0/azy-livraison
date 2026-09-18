@@ -8,6 +8,7 @@ public record DeliveryPricingSnapshot(
         String pricingZoneName,
         Long deliveryFeeAriary,
         Long distanceFromCenterMeters,
+        PricingDistanceMode distanceMode,
         Long pricingZoneMaxDistanceMeters,
         Long pricingPolicyVersion,
         Short pricingPolicyId,
@@ -18,6 +19,15 @@ public record DeliveryPricingSnapshot(
     public DeliveryPricingSnapshot(UUID pricingZoneId, String pricingZoneName, Long deliveryFeeAriary,
             Long distanceFromCenterMeters, Long pricingZoneMaxDistanceMeters, Long pricingPolicyVersion) {
         this(pricingZoneId, pricingZoneName, deliveryFeeAriary, distanceFromCenterMeters,
+                pricingZoneId == null ? null : PricingDistanceMode.AIR_DISTANCE,
+                pricingZoneMaxDistanceMeters, pricingPolicyVersion, null, deliveryFeeAriary,
+                deliveryFeeAriary == null ? null : 0L, deliveryFeeAriary == null ? null : 0L);
+    }
+
+    public DeliveryPricingSnapshot(UUID pricingZoneId, String pricingZoneName, Long deliveryFeeAriary,
+            Long distanceFromCenterMeters, PricingDistanceMode distanceMode,
+            Long pricingZoneMaxDistanceMeters, Long pricingPolicyVersion) {
+        this(pricingZoneId, pricingZoneName, deliveryFeeAriary, distanceFromCenterMeters, distanceMode,
                 pricingZoneMaxDistanceMeters, pricingPolicyVersion, null, deliveryFeeAriary,
                 deliveryFeeAriary == null ? null : 0L, deliveryFeeAriary == null ? null : 0L);
     }
@@ -27,12 +37,14 @@ public record DeliveryPricingSnapshot(
                 && pricingZoneName == null
                 && deliveryFeeAriary == null
                 && distanceFromCenterMeters == null
+                && distanceMode == null
                 && pricingZoneMaxDistanceMeters == null
                 && pricingPolicyVersion == null;
         boolean allPresent = pricingZoneId != null
                 && pricingZoneName != null
                 && deliveryFeeAriary != null
                 && distanceFromCenterMeters != null
+                && distanceMode != null
                 && pricingZoneMaxDistanceMeters != null
                 && pricingPolicyVersion != null;
         if (!allNull && !allPresent) {
@@ -41,7 +53,7 @@ public record DeliveryPricingSnapshot(
     }
 
     public static DeliveryPricingSnapshot absent() {
-        return new DeliveryPricingSnapshot(null, null, null, null, null, null,
+        return new DeliveryPricingSnapshot(null, null, null, null, null, null, null,
                 null, null, null, null);
     }
 

@@ -1,14 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   cancelAdminDeliveryPackage,
+  closeDeliveryClient,
   closeDeliveryDay,
+  confirmExpressDelivery,
   createDispatchPlan,
   downloadCourierStatement,
   downloadGeneralDailyReport,
+  finalizeCourierCompensations,
+  getClientClosures,
+  getCourierCompensations,
   getDeliveryDay,
   getDeliveryPricingPolicy,
   getAdminQueue,
   listDeliveryRequests,
+  recalculateExpressFuel,
+  reopenDeliveryClient,
+  updateExpressFuel,
   updateOperationalSettings,
   updateDeliveryPricingPolicy,
   type AdminQueue,
@@ -123,6 +131,92 @@ describe('API administrateur', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/delivery-days/2026-08-22/close', expect.objectContaining({ body: JSON.stringify({ version: 2 }) }))
   })
 
+  it('raccorde la clôture progressive et les rémunérations d’un client', async () => {
+    const overview = {
+      serviceDate: '2026-08-22', dayStatus: 'DISPATCHED', dayVersion: 7,
+      currentClosureRevision: 2, clientCount: 2, closedClientCount: 1,
+      allClientsClosed: false, clients: [],
+    }
+    const compensation = { serviceDate: '2026-08-22', closureRevision: 2, lines: [] }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => overview })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => overview })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => overview })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => compensation })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => compensation })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getClientClosures('2026-08-22', 'admin-token')
+    await closeDeliveryClient('2026-08-22', 'client/soa', 7, 'admin-token')
+    await reopenDeliveryClient('2026-08-22', 'client/soa', 3, 'Correction requise', 'admin-token')
+    await getCourierCompensations('2026-08-22', 'admin-token', undefined, 'client/soa')
+    await finalizeCourierCompensations('2026-08-22', 2, [], 'admin-token', 'client/soa')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/delivery-days/2026-08-22/client-closures', expect.anything())
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/delivery-days/2026-08-22/clients/client%2Fsoa/close', expect.objectContaining({ body: JSON.stringify({ version: 7 }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/delivery-days/2026-08-22/clients/client%2Fsoa/reopen', expect.objectContaining({ body: JSON.stringify({ version: 3, reason: 'Correction requise' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/admin/finance/delivery-days/2026-08-22/clients/client%2Fsoa/courier-compensations', expect.anything())
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/admin/finance/delivery-days/2026-08-22/clients/client%2Fsoa/courier-compensations/finalize', expect.objectContaining({ body: JSON.stringify({ closureRevision: 2, overrides: [] }) }))
+  })
+
+  it('fige le choix de retour lors de la confirmation d’une express', async () => {
+    const express = { request: { id: 'express-1' } }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => express })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await confirmExpressDelivery('express-1', ['courier-1', 'courier-2'], 4, false, 'admin-token')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/express-deliveries/express-1/confirm',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          courierIds: ['courier-1', 'courier-2'],
+          version: 4,
+          returnToPickup: false,
+        }),
+      }),
+    )
+  })
+
+  it('raccorde le recalcul et la correction manuelle du carburant express', async () => {
+    const calculation = { requestId: 'express-1', version: 7 }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => calculation })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => calculation })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await recalculateExpressFuel('express-1', 6, 'admin-token')
+    await updateExpressFuel('express-1', 7, [{
+      courierId: 'courier-1',
+      finalDistanceMeters: 12_300,
+      finalFuelAmountAriary: 1_540,
+      reason: 'Détour constaté',
+    }], 'admin-token')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/admin/express-deliveries/express-1/fuel/recalculate',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ version: 6 }) }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/admin/express-deliveries/express-1/fuel',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          version: 7,
+          lines: [{
+            courierId: 'courier-1',
+            finalDistanceMeters: 12_300,
+            finalFuelAmountAriary: 1_540,
+            reason: 'Détour constaté',
+          }],
+        }),
+      }),
+    )
+  })
+
   it('télécharge un rapport binaire avec le nom fourni par le serveur', async () => {
     const blob = new Blob(['rapport'], { type: 'application/pdf' })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -177,6 +271,8 @@ describe('API administrateur', () => {
       routingPreset: 'MAIN_ROADS',
       defaultCourierCommissionNumerator: 1,
       defaultCourierCommissionDenominator: 3,
+      defaultFuelPricePerLiterAriary: 5_000,
+      defaultExpressReturnToPickup: true,
       version: 2,
       createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-22T00:00:00Z',
@@ -208,6 +304,7 @@ describe('API administrateur', () => {
     await getDeliveryPricingPolicy('admin-token')
     await updateDeliveryPricingPolicy({
       version: policy.version,
+      distanceMode: 'AIR_DISTANCE',
       center: policy.center,
       zones: policy.zones,
     }, 'admin-token')
@@ -217,7 +314,7 @@ describe('API administrateur', () => {
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/settings/pricing', expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ version: policy.version, center: policy.center, zones: policy.zones }),
+      body: JSON.stringify({ version: policy.version, distanceMode: 'AIR_DISTANCE', center: policy.center, zones: policy.zones }),
     }))
   })
 

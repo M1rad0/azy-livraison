@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { Banknote, BadgeDollarSign, Check, Clock3, LoaderCircle, MapPin, PackagePlus, Scale, TriangleAlert, X } from 'lucide-react'
 import { ClientApiError, quoteDeliveryPrice, type DeliveryPricingQuote, type DeliveryRequestKind } from '../api/client'
 import type { Location } from '../api/csvImports'
+import { formatPricingDistanceSummary } from '../api/pricing'
+import { endOfOneHourWindow } from '../deliveryWindows'
 import { LocationPicker } from './LocationPicker'
 
 export interface ClientPackageDraft {
@@ -46,6 +48,16 @@ function currentTimeInAntananarivo(): string {
   }).format(new Date())
 }
 
+function nextMinuteInAntananarivo(): { value: string; available: boolean } {
+  const [hours, minutes] = currentTimeInAntananarivo().split(':').map(Number)
+  const nextMinute = hours * 60 + minutes + 1
+  if (nextMinute >= 24 * 60) return { value: '23:59', available: false }
+  return {
+    value: `${String(Math.floor(nextMinute / 60)).padStart(2, '0')}:${String(nextMinute % 60).padStart(2, '0')}`,
+    available: true,
+  }
+}
+
 export function ClientPackageDialog({
   accessToken,
   initialValue,
@@ -72,6 +84,8 @@ export function ClientPackageDialog({
   const [error, setError] = useState<string>()
   const [quoteBusy, setQuoteBusy] = useState(false)
   const [quoteError, setQuoteError] = useState<{ message: string; outside: boolean }>()
+  const expressMinimum = nextMinuteInAntananarivo()
+  const desiredDeliveryEndTime = endOfOneHourWindow(value.desiredDeliveryTime)
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -111,7 +125,7 @@ export function ClientPackageDialog({
     const options = {
       requestKind,
       ...(value.weightKg ? { weightKg: Number(value.weightKg) } : {}),
-      ...(requestKind === 'EXPRESS' && value.desiredDeliveryTime
+      ...(value.desiredDeliveryTime
         ? { desiredDeliveryTime: value.desiredDeliveryTime }
         : {}),
     }
@@ -177,7 +191,6 @@ export function ClientPackageDialog({
     }
     onSave({
       ...value,
-      desiredDeliveryTime: requestKind === 'EXPRESS' ? value.desiredDeliveryTime : '',
       recipientName: value.recipientName.trim(),
       contact: value.contact.trim(),
       destination: {
@@ -271,6 +284,7 @@ export function ClientPackageDialog({
                 <div>
                   <small>Zone {value.pricingQuote.pricingZoneName}{value.pricingQuote.timeSlotLabel ? ` · ${value.pricingQuote.timeSlotLabel}` : ''}</small>
                   <strong>{value.pricingQuote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar de livraison</strong>
+                  <small>{formatPricingDistanceSummary(value.pricingQuote.distanceFromCenterMeters, value.pricingQuote.distanceMode)}</small>
                   {(value.pricingQuote.weightSurchargeAriary || value.pricingQuote.timeSurchargeAriary) ? (
                     <small>Base {(value.pricingQuote.baseDeliveryFeeAriary ?? 0).toLocaleString('fr-MG')} Ar
                       {value.pricingQuote.weightSurchargeAriary ? ` · poids +${value.pricingQuote.weightSurchargeAriary.toLocaleString('fr-MG')} Ar` : ''}
@@ -300,18 +314,36 @@ export function ClientPackageDialog({
                 onChange={(event) => setValue({ ...value, amountToCollectAriary: event.target.value })}
               /></div>
             </label>
-            {requestKind === 'EXPRESS' && (
-              <label className="client-field client-field--icon">
-                <span>Heure souhaitée · facultatif</span>
-                <div><Clock3 aria-hidden="true" /><input
+            <div
+              className="client-field client-field--time-window"
+              role="group"
+              aria-labelledby={`${titleId}-delivery-window-label`}
+            >
+              <span id={`${titleId}-delivery-window-label`}>Créneau de livraison d’une heure · facultatif</span>
+              <div className="client-time-window">
+                <span><Clock3 aria-hidden="true" /><input
+                  aria-label="Début du créneau"
                   value={value.desiredDeliveryTime}
                   type="time"
-                  min={currentTimeInAntananarivo()}
+                  min={requestKind === 'EXPRESS' ? expressMinimum.value : '00:00'}
+                  disabled={requestKind === 'EXPRESS' && !expressMinimum.available}
                   onChange={(event) => setValue({ ...value, desiredDeliveryTime: event.target.value })}
-                /></div>
-                <small>Si vous indiquez une heure, elle doit être postérieure à maintenant.</small>
-              </label>
-            )}
+                /></span>
+                <i aria-hidden="true">à</i>
+                <span><Clock3 aria-hidden="true" /><input
+                  aria-label="Fin du créneau"
+                  value={desiredDeliveryEndTime}
+                  type="time"
+                  readOnly
+                  tabIndex={-1}
+                /></span>
+              </div>
+              <small>{requestKind === 'EXPRESS'
+                ? expressMinimum.available
+                  ? 'Le début doit être postérieur à maintenant.'
+                  : 'Aucun nouveau créneau ne peut commencer avant minuit.'
+                : 'La fin est fixée automatiquement une heure après le début.'}{value.desiredDeliveryTime.startsWith('23:') ? ' La fin se situe le lendemain.' : ''}</small>
+            </div>
             <label className="client-field client-field--icon">
               <span>Poids (kg) · facultatif</span>
               <div><Scale aria-hidden="true" /><input

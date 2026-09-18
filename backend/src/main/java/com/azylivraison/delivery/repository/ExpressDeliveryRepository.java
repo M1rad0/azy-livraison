@@ -1,8 +1,10 @@
 package com.azylivraison.delivery.repository;
 
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,7 +31,7 @@ public class ExpressDeliveryRepository {
 
     public ExpressState lock(UUID requestId) {
         List<ExpressState> states = jdbcTemplate.query("""
-                SELECT id, owner_account_id, express_status, version,
+                SELECT id, owner_account_id, requested_date, express_status, version,
                        cancelled_before_processing_at,
                        (SELECT COALESCE(SUM(effective_weight_kg), 0)
                         FROM delivery_package WHERE delivery_request_id = delivery_request.id
@@ -38,21 +40,56 @@ public class ExpressDeliveryRepository {
                 WHERE id = ? AND request_kind = 'EXPRESS'
                 FOR UPDATE
                 """, (rs, row) -> new ExpressState(rs.getObject("id", UUID.class),
-                        rs.getObject("owner_account_id", UUID.class), rs.getString("express_status"),
+                        rs.getObject("owner_account_id", UUID.class),
+                        rs.getObject("requested_date", LocalDate.class), rs.getString("express_status"),
                         rs.getLong("version"), rs.getTimestamp("cancelled_before_processing_at") != null,
                         rs.getBigDecimal("total_weight")), requestId);
         return states.stream().findFirst().orElse(null);
     }
 
+    /**
+     * Creates the operational day needed to follow an express request without
+     * reserving it for a normal dispatch or closing admissions. The admission
+     * gate is shared with dispatch creation to make the insert/status check
+     * atomic.
+     */
+    public OperationDayState ensureOperationDay(LocalDate serviceDate, UUID actorId, Instant now) {
+        jdbcTemplate.queryForObject(
+                "SELECT id FROM operational_settings WHERE id = 1 FOR UPDATE", Integer.class);
+        List<OperationDayState> days = jdbcTemplate.query("""
+                SELECT status, dispatch_plan_id
+                FROM delivery_operation_day
+                WHERE service_date = ?
+                FOR UPDATE
+                """, (rs, row) -> new OperationDayState(
+                rs.getString("status"), rs.getObject("dispatch_plan_id", UUID.class)),
+                Date.valueOf(serviceDate));
+        if (!days.isEmpty()) return days.getFirst();
+
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day (
+                    service_date, status, admissions_closed_at,
+                    dispatch_plan_id, created_at, updated_at
+                ) VALUES (?, 'OPEN', NULL, NULL, ?, ?)
+                """, Date.valueOf(serviceDate), Timestamp.from(now), Timestamp.from(now));
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day_event (
+                    id, service_date, event_type, actor_account_id, payload_json, created_at
+                ) VALUES (?, ?, 'EXPRESS_ACTIVITY_OPENED', ?, NULL, ?)
+                """, UUID.randomUUID(), Date.valueOf(serviceDate), actorId, Timestamp.from(now));
+        return new OperationDayState("OPEN", null);
+    }
+
     public boolean confirm(UUID requestId, long expectedVersion, List<CourierSnapshot> couriers,
-            UUID actorId, Instant now) {
+            boolean returnToPickup, boolean returnToPickupOverridden, UUID actorId, Instant now) {
         int updated = jdbcTemplate.update("""
                 UPDATE delivery_request
                 SET express_status = 'CONFIRMED', status = 'DISPATCHED',
+                    express_return_to_pickup = ?, express_return_to_pickup_overridden = ?,
                     version = version + 1, updated_at = ?
                 WHERE id = ? AND request_kind = 'EXPRESS' AND express_status = 'PENDING'
                   AND cancelled_before_processing_at IS NULL AND version = ?
-                """, Timestamp.from(now), requestId, expectedVersion);
+                """, returnToPickup, returnToPickupOverridden, Timestamp.from(now), requestId, expectedVersion);
         if (updated == 0) return false;
         jdbcTemplate.update("""
                 UPDATE delivery_package SET status = 'DISPATCHED', version = version + 1, updated_at = ?
@@ -107,6 +144,16 @@ public class ExpressDeliveryRepository {
         return values.isEmpty() ? null : values.getFirst();
     }
 
+    public ReturnConfiguration returnConfiguration(UUID requestId) {
+        return jdbcTemplate.query("""
+                SELECT express_return_to_pickup, express_return_to_pickup_overridden
+                FROM delivery_request WHERE id = ? AND request_kind = 'EXPRESS'
+                """, (rs, row) -> new ReturnConfiguration(
+                rs.getBoolean("express_return_to_pickup"),
+                rs.getBoolean("express_return_to_pickup_overridden")), requestId)
+                .stream().findFirst().orElse(null);
+    }
+
     public void completeIfFinal(UUID requestId) {
         jdbcTemplate.update("""
                 UPDATE delivery_request request
@@ -130,7 +177,9 @@ public class ExpressDeliveryRepository {
                 """, UUID.randomUUID(), requestId, type, from, to, actorId, Timestamp.from(now));
     }
 
-    public record ExpressState(UUID id, UUID ownerAccountId, String status, long version,
+    public record ExpressState(UUID id, UUID ownerAccountId, LocalDate requestedDate, String status, long version,
             boolean cancelled, BigDecimal totalWeightKg) {}
     public record CourierSnapshot(UUID id, String name, BigDecimal capacityKg) {}
+    public record ReturnConfiguration(boolean returnToPickup, boolean overridden) {}
+    public record OperationDayState(String status, UUID dispatchPlanId) {}
 }

@@ -8,11 +8,13 @@ import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 public record AdvancedPricingPolicyResponse(
         short id,
         UUID clientAccountId,
         DeliveryRequestKind requestKind,
+        PricingDistanceMode distanceMode,
         boolean clientSpecific,
         long version,
         PricingCenterResponse center,
@@ -25,7 +27,8 @@ public record AdvancedPricingPolicyResponse(
 
     public static AdvancedPricingPolicyResponse from(AdvancedPricingPolicy policy) {
         return new AdvancedPricingPolicyResponse(policy.id(), policy.clientAccountId(), policy.requestKind(),
-                policy.clientAccountId() != null, policy.version(), PricingCenterResponse.from(policy.center()),
+                policy.distanceMode(), policy.clientAccountId() != null, policy.version(),
+                PricingCenterResponse.from(policy.center()),
                 policy.defaultWeightKg(),
                 policy.zones().stream().map(item -> new Zone(item.id(), item.name(),
                         item.maxDistanceMeters(), item.deliveryFeeAriary())).toList(),

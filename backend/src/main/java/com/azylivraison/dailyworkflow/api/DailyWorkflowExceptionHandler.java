@@ -18,7 +18,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = {
         AdminDailyWorkflowController.class,
-        ClientPackageWorkflowController.class
+        ClientPackageWorkflowController.class,
+        ClientClosureController.class
 })
 public class DailyWorkflowExceptionHandler {
 

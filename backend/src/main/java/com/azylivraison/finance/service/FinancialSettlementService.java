@@ -19,6 +19,9 @@ import com.azylivraison.account.domain.Account;
 import com.azylivraison.account.repository.AccountRepository;
 import com.azylivraison.dailyworkflow.service.DailyWorkflowConflictException;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
+import com.azylivraison.delivery.domain.ExpressFuelCalculation;
+import com.azylivraison.delivery.domain.ExpressFuelCalculationStatus;
+import com.azylivraison.delivery.service.ExpressFuelService;
 import com.azylivraison.finance.render.CourierStatementPdfRenderer;
 import com.azylivraison.finance.render.CourierStatementXlsxRenderer;
 import com.azylivraison.finance.repository.FinanceRepository;
@@ -26,6 +29,7 @@ import com.azylivraison.reporting.domain.DailyReport;
 import com.azylivraison.reporting.service.DailyReportService;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -43,20 +47,35 @@ public class FinancialSettlementService {
     private final PaymentProofStorage proofStorage;
     private final CourierStatementPdfRenderer courierStatementPdfRenderer;
     private final CourierStatementXlsxRenderer courierStatementXlsxRenderer;
+    private final ExpressFuelService expressFuelService;
 
+    @Autowired
     public FinancialSettlementService(
             FinanceRepository repository,
             DailyReportService dailyReportService,
             AccountRepository accountRepository,
             PaymentProofStorage proofStorage,
             CourierStatementPdfRenderer courierStatementPdfRenderer,
-            CourierStatementXlsxRenderer courierStatementXlsxRenderer) {
+            CourierStatementXlsxRenderer courierStatementXlsxRenderer,
+            ExpressFuelService expressFuelService) {
         this.repository = repository;
         this.dailyReportService = dailyReportService;
         this.accountRepository = accountRepository;
         this.proofStorage = proofStorage;
         this.courierStatementPdfRenderer = courierStatementPdfRenderer;
         this.courierStatementXlsxRenderer = courierStatementXlsxRenderer;
+        this.expressFuelService = expressFuelService;
+    }
+
+    FinancialSettlementService(
+            FinanceRepository repository,
+            DailyReportService dailyReportService,
+            AccountRepository accountRepository,
+            PaymentProofStorage proofStorage,
+            CourierStatementPdfRenderer courierStatementPdfRenderer,
+            CourierStatementXlsxRenderer courierStatementXlsxRenderer) {
+        this(repository, dailyReportService, accountRepository, proofStorage,
+                courierStatementPdfRenderer, courierStatementXlsxRenderer, null);
     }
 
     /** Idempotent hook intended to be called immediately after a day is closed. */
@@ -65,6 +84,18 @@ public class FinancialSettlementService {
         DailyReport report = dailyReportService.getGeneralReport(serviceDate);
         List<ClientDailySettlement> settlements = new ArrayList<>();
         for (DailyReport.ClientSummary client : report.clients()) {
+            Optional<ClosedClient> progressiveClosure = repository.findClosedClient(
+                    report.serviceDate(), client.accountId());
+            if (progressiveClosure.isPresent()) {
+                ClosedClient closure = progressiveClosure.get();
+                settlements.add(repository.findSettlement(
+                                closure.serviceDate(), closure.closureRevision(), closure.clientAccountId())
+                        .orElseGet(() -> ensureSettlementForReport(
+                                closure.reportId(), closure.serviceDate(), closure.closureRevision(),
+                                closure.clientAccountId(), client.displayName(),
+                                client.totals().amountToRemitAriary(), closure.closedAt())));
+                continue;
+            }
             settlements.add(ensureSettlement(
                     report.reportId(), report.serviceDate(), report.closure().version(),
                     client.accountId(), client.displayName(), client.totals().amountToRemitAriary(),
@@ -127,15 +158,14 @@ public class FinancialSettlementService {
         PaymentDestination normalizedDestination = normalizeDestination(destination);
         ClientDailySettlement settlement = repository.lockSettlement(settlementId)
                 .orElseThrow(() -> new FinanceNotFoundException("Ce rapport client est introuvable."));
-        ClosedDay day = repository.lockDay(settlement.serviceDate())
-                .orElseThrow(() -> new FinanceConflictException(
-                        "Le versement ne peut être lié qu'au rapport actif d'une journée clôturée."));
-        if (!"CLOSED".equals(day.status())) {
+        // Serialize payment confirmation with both client-level and day-level
+        // reopening. Once this lock is granted, the active-settlement check
+        // necessarily sees the definitive closure state.
+        repository.lockDay(settlement.serviceDate())
+                .orElseThrow(() -> new FinanceNotFoundException("Cette journée est introuvable."));
+        if (!repository.isSettlementActive(settlement)) {
             throw new FinanceConflictException(
-                    "Le versement ne peut être lié qu'au rapport actif d'une journée clôturée.");
-        }
-        if (day.closureRevision() != settlement.closureRevision()) {
-            throw new FinanceConflictException("Ce rapport a été remplacé par une clôture plus récente.");
+                    "Le versement ne peut être lié qu'à un rapport client clôturé et actif.");
         }
         ProofMetadata proof = storeProofWithRollbackCleanup(proofFile);
         ClientPayment payment = new ClientPayment(
@@ -184,10 +214,23 @@ public class FinancialSettlementService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CourierCompensationPreview previewCompensations(LocalDate serviceDate) {
+        requireLegacyDayWideCompensation(serviceDate);
         ClosedDay day = requireClosedDay(serviceDate);
         return repository.findCompensationBatch(serviceDate, day.closureRevision())
                 .map(batch -> finalizedPreview(batch, repository.compensationSourceLines(serviceDate)))
-                .orElseGet(() -> livePreview(day));
+                .orElseGet(() -> livePreview(serviceDate, day.closureRevision(), null));
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public CourierCompensationPreview previewCompensations(
+            LocalDate serviceDate, UUID clientAccountId) {
+        ClosedClient closure = requireClosedClient(serviceDate, clientAccountId);
+        return repository.findClientCompensationBatch(
+                        serviceDate, closure.closureRevision(), clientAccountId)
+                .map(batch -> finalizedPreview(
+                        batch, repository.compensationSourceLines(serviceDate, clientAccountId)))
+                .orElseGet(() -> livePreview(
+                        serviceDate, closure.closureRevision(), clientAccountId));
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -196,30 +239,73 @@ public class FinancialSettlementService {
             int expectedClosureRevision,
             List<CompensationOverride> requestedOverrides,
             UUID actorAccountId) {
+        return finalizeCompensations(
+                serviceDate, expectedClosureRevision, null, requestedOverrides, actorAccountId);
+    }
+
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public CourierCompensationPreview finalizeCompensations(
+            LocalDate serviceDate,
+            UUID clientAccountId,
+            int expectedClosureRevision,
+            List<CompensationOverride> requestedOverrides,
+            UUID actorAccountId) {
+        return finalizeCompensations(
+                serviceDate, expectedClosureRevision, clientAccountId,
+                requestedOverrides, actorAccountId);
+    }
+
+    private CourierCompensationPreview finalizeCompensations(
+            LocalDate serviceDate,
+            int expectedClosureRevision,
+            UUID clientAccountId,
+            List<CompensationOverride> requestedOverrides,
+            UUID actorAccountId) {
         ClosedDay day = repository.lockDay(serviceDate)
                 .orElseThrow(() -> new FinanceNotFoundException("Cette journée est introuvable."));
-        if (!"CLOSED".equals(day.status())) {
-            throw new FinanceConflictException("Clôturez la journée avant de valider les rémunérations.");
+        int activeRevision;
+        if (clientAccountId == null) {
+            requireLegacyDayWideCompensation(serviceDate);
+            if (!"CLOSED".equals(day.status())) {
+                throw new FinanceConflictException("Clôturez la journée avant de valider les rémunérations.");
+            }
+            activeRevision = day.closureRevision();
+        } else {
+            ClosedClient closure = repository.lockClosedClient(serviceDate, clientAccountId)
+                    .orElseThrow(() -> new FinanceConflictException(
+                            "Clôturez ce client avant de valider ses rémunérations."));
+            activeRevision = closure.closureRevision();
         }
-        if (day.closureRevision() != expectedClosureRevision) {
+        if (activeRevision != expectedClosureRevision) {
             throw new FinanceConflictException(
                     "La clôture a été modifiée entre-temps. Rechargez la page avant de continuer.");
         }
-        if (repository.findCompensationBatch(serviceDate, day.closureRevision()).isPresent()) {
+        Optional<CompensationBatch> existingBatch = clientAccountId == null
+                ? repository.findCompensationBatch(serviceDate, activeRevision)
+                : repository.findClientCompensationBatch(serviceDate, activeRevision, clientAccountId);
+        if (existingBatch.isPresent()) {
             throw new FinanceConflictException("Les rémunérations de cette journée sont déjà validées.");
         }
-        List<CompensationSourceLine> sources = repository.compensationSourceLines(serviceDate);
+        List<CompensationSourceLine> sources = compensationSourceLines(serviceDate, clientAccountId);
         long pendingReturns = sources.stream().filter(source -> !source.eligible()).count();
         if (pendingReturns > 0) {
             throw new FinanceConflictException(
                     "Confirmez d'abord le retour de " + pendingReturns
                             + " colis avant de valider les rémunérations.");
         }
+        List<ExpressFuelCalculation> fuelCalculations = fuelCalculations(serviceDate, clientAccountId);
+        int unresolvedFuel = unresolvedFuelCount(fuelCalculations);
+        if (unresolvedFuel > 0) {
+            throw new FinanceConflictException(
+                    "Recalculez ou renseignez manuellement le carburant de " + unresolvedFuel
+                            + " demande" + (unresolvedFuel > 1 ? "s expresses" : " express")
+                            + " avant de valider les rémunérations.");
+        }
         Map<UUID, CompensationOverride> overrides = normalizeOverrides(requestedOverrides, sources);
         Instant now = Instant.now();
         List<CourierEarning> earnings = new ArrayList<>();
-        long totalSuggested = 0;
-        long totalFinal = 0;
+        long totalSuggestedCommission = 0;
+        long totalFinalCommission = 0;
         for (CompensationSourceLine source : sources) {
             long suggested = suggestedAmount(source.deliveryFeeAriary(),
                     source.commissionNumerator(), source.commissionDenominator());
@@ -228,19 +314,37 @@ public class FinancialSettlementService {
             String overrideReason = finalAmount == suggested ? null : required(
                     override.reason(), 1000,
                     "Expliquez toute rémunération différente du montant suggéré.");
-            totalSuggested = Math.addExact(totalSuggested, suggested);
-            totalFinal = Math.addExact(totalFinal, finalAmount);
+            totalSuggestedCommission = Math.addExact(totalSuggestedCommission, suggested);
+            totalFinalCommission = Math.addExact(totalFinalCommission, finalAmount);
             earnings.add(new CourierEarning(
-                    UUID.randomUUID(), serviceDate, day.closureRevision(), source.packageId(),
+                    UUID.randomUUID(), serviceDate, activeRevision, source.packageId(),
                     source.courierId(), source.courierName(), source.courierContact(), source.outcome(),
                     source.deliveryFeeAriary(), source.commissionNumerator(), source.commissionDenominator(),
                     suggested, finalAmount, overrideReason, now));
         }
+        List<FuelCompensationLine> fuelLines = fuelLines(fuelCalculations);
+        long totalSuggestedFuel = fuelLines.stream().filter(line -> line.courierId() != null)
+                .mapToLong(FuelCompensationLine::suggestedAmountAriary).reduce(0, Math::addExact);
+        long totalFinalFuel = fuelLines.stream().filter(line -> line.courierId() != null)
+                .mapToLong(FuelCompensationLine::finalAmountAriary).reduce(0, Math::addExact);
+        long totalSuggested = Math.addExact(totalSuggestedCommission, totalSuggestedFuel);
+        long totalFinal = Math.addExact(totalFinalCommission, totalFinalFuel);
         CompensationBatch batch = new CompensationBatch(
-                serviceDate, day.closureRevision(), totalSuggested, totalFinal,
-                now, actorAccountId, 0);
+                serviceDate, activeRevision, totalSuggested, totalFinal,
+                totalSuggestedCommission, totalFinalCommission, totalSuggestedFuel, totalFinalFuel,
+                now, actorAccountId, 0, clientAccountId);
         repository.insertCompensationBatch(batch);
         earnings.forEach(repository::insertEarning);
+        fuelLines.stream().filter(line -> line.courierId() != null).forEach(line ->
+                repository.insertFuelEarning(new CourierFuelEarning(
+                        UUID.randomUUID(), serviceDate, activeRevision, line.requestId(),
+                        line.courierId(), line.courierName(), line.courierContact(),
+                        line.returnToPickup(), line.packageIds(), line.repositionDistanceMeters(),
+                        line.automaticDistanceMeters(),
+                        line.finalDistanceMeters(), line.fuelReimbursementEnabled(),
+                        line.fuelEfficiencyKmPerLiter(), line.fuelPricePerLiterAriary(),
+                        line.suggestedAmountAriary(), line.finalAmountAriary(), line.overrideReason(),
+                        line.manual(), now)));
         return finalizedPreview(batch, sources);
     }
 
@@ -249,16 +353,19 @@ public class FinancialSettlementService {
         validateDateRange(from, to);
         String courierName = repository.findCourierName(courierId)
                 .orElseThrow(() -> new FinanceNotFoundException("Ce livreur est introuvable."));
-        long totalEarned = repository.totalCourierEarnings(courierId);
+        long totalCommissionEarned = repository.totalCourierEarnings(courierId);
+        long totalFuelEarned = repository.totalCourierFuelEarnings(courierId);
+        long totalEarned = Math.addExact(totalCommissionEarned, totalFuelEarned);
         long totalPaid = repository.totalConfirmedCourierPayments(courierId);
         long balance = Math.subtractExact(totalEarned, totalPaid);
         Instant fromInstant = from == null ? null : from.atStartOfDay(BUSINESS_ZONE).toInstant();
         Instant toExclusive = to == null ? null : to.plusDays(1).atStartOfDay(BUSINESS_ZONE).toInstant();
         return new CourierFinance(
-                courierId, courierName, totalEarned, totalPaid,
+                courierId, courierName, totalCommissionEarned, totalFuelEarned, totalEarned, totalPaid,
                 Math.max(balance, 0), balance == Long.MIN_VALUE ? Long.MAX_VALUE : Math.max(-balance, 0),
                 repository.listCourierDeliveries(courierId, from, to),
                 repository.listCourierEarnings(courierId, from, to),
+                repository.listCourierFuelEarnings(courierId, from, to),
                 repository.listCourierPayments(courierId, fromInstant, toExclusive));
     }
 
@@ -340,7 +447,7 @@ public class FinancialSettlementService {
         Account account = requireAccount(clientAccountId);
         for (DailyReportService.ClientReportSnapshot summary
                 : dailyReportService.listClientReportSnapshots(clientAccountId)) {
-            ensureSettlement(
+            ensureSettlementForReport(
                     summary.reportId(), summary.serviceDate(), summary.revision(), clientAccountId,
                     account.displayName(), summary.totals().amountToRemitAriary(), summary.closedAt());
         }
@@ -358,6 +465,22 @@ public class FinancialSettlementService {
                 serviceDate, closureRevision, clientAccountId);
         if (existing.isPresent()) return existing.get();
         UUID clientReportId = DailyReportService.deriveClientReportId(generalReportId, clientAccountId);
+        return ensureSettlementForReport(
+                clientReportId, serviceDate, closureRevision, clientAccountId,
+                clientDisplayName, amountDueAriary, createdAt);
+    }
+
+    private ClientDailySettlement ensureSettlementForReport(
+            UUID clientReportId,
+            LocalDate serviceDate,
+            int closureRevision,
+            UUID clientAccountId,
+            String clientDisplayName,
+            long amountDueAriary,
+            Instant createdAt) {
+        Optional<ClientDailySettlement> existing = repository.findSettlement(
+                serviceDate, closureRevision, clientAccountId);
+        if (existing.isPresent()) return existing.get();
         ClientDailySettlement settlement = new ClientDailySettlement(
                 UUID.randomUUID(), clientReportId, serviceDate, closureRevision, clientAccountId,
                 clientDisplayName == null || clientDisplayName.isBlank()
@@ -369,15 +492,16 @@ public class FinancialSettlementService {
                         "Le relevé client n'a pas pu être matérialisé de manière cohérente."));
     }
 
-    private CourierCompensationPreview livePreview(ClosedDay day) {
+    private CourierCompensationPreview livePreview(
+            LocalDate serviceDate, int closureRevision, UUID clientAccountId) {
         List<CompensationLine> lines = new ArrayList<>();
-        long totalSuggested = 0;
+        long totalSuggestedCommission = 0;
         int pendingReturns = 0;
-        for (CompensationSourceLine source : repository.compensationSourceLines(day.serviceDate())) {
+        for (CompensationSourceLine source : compensationSourceLines(serviceDate, clientAccountId)) {
             long suggested = suggestedAmount(
                     source.deliveryFeeAriary(), source.commissionNumerator(), source.commissionDenominator());
             if (source.eligible()) {
-                totalSuggested = Math.addExact(totalSuggested, suggested);
+                totalSuggestedCommission = Math.addExact(totalSuggestedCommission, suggested);
             } else {
                 pendingReturns++;
             }
@@ -388,9 +512,19 @@ public class FinancialSettlementService {
                     suggested, source.eligible() ? suggested : null, null,
                     source.recipientName(), source.destinationLabel()));
         }
+        List<ExpressFuelCalculation> calculations = fuelCalculations(serviceDate, clientAccountId);
+        List<FuelCompensationLine> fuelLines = fuelLines(calculations);
+        long totalSuggestedFuel = fuelLines.stream().filter(line -> line.courierId() != null)
+                .mapToLong(FuelCompensationLine::suggestedAmountAriary).reduce(0, Math::addExact);
+        long totalFinalFuel = fuelLines.stream().filter(line -> line.courierId() != null)
+                .mapToLong(FuelCompensationLine::finalAmountAriary).reduce(0, Math::addExact);
+        long total = Math.addExact(totalSuggestedCommission, totalFinalFuel);
         return new CourierCompensationPreview(
-                day.serviceDate(), day.closureRevision(), false, null, null,
-                totalSuggested, totalSuggested, pendingReturns, lines);
+                serviceDate, closureRevision, false, null, null,
+                Math.addExact(totalSuggestedCommission, totalSuggestedFuel), total,
+                totalSuggestedCommission, totalSuggestedCommission,
+                totalSuggestedFuel, totalFinalFuel,
+                pendingReturns, unresolvedFuelCount(calculations), lines, fuelLines, calculations);
     }
 
     private CourierCompensationPreview finalizedPreview(
@@ -411,10 +545,92 @@ public class FinancialSettlementService {
                             source == null ? null : source.recipientName(),
                             source == null ? null : source.destinationLabel());
                 }).toList();
+        Map<UUID, ExpressFuelCalculation> calculations = new HashMap<>();
+        List<ExpressFuelCalculation> scopedCalculations = fuelCalculations(
+                batch.serviceDate(), batch.clientAccountId());
+        scopedCalculations.forEach(item -> calculations.put(item.requestId(), item));
+        List<FuelCompensationLine> fuelLines = repository.listBatchFuelEarnings(
+                        batch.serviceDate(), batch.closureRevision()).stream()
+                .map(earning -> {
+                    ExpressFuelCalculation calculation = calculations.get(earning.requestId());
+                    return new FuelCompensationLine(
+                            earning.requestId(),
+                            calculation == null ? null : calculation.clientDisplayName(),
+                            calculation == null ? null : calculation.pickupLabel(),
+                            earning.manual() ? ExpressFuelCalculationStatus.MANUAL
+                                    : ExpressFuelCalculationStatus.CALCULATED,
+                            null, earning.courierId(), earning.courierName(), earning.courierContact(),
+                            earning.packageIds(), earning.returnToPickup(), earning.repositionDistanceMeters(),
+                            earning.automaticDistanceMeters(),
+                            earning.finalDistanceMeters(), earning.fuelReimbursementEnabled(),
+                            earning.fuelEfficiencyKmPerLiter(), earning.fuelPricePerLiterAriary(),
+                            earning.suggestedAmountAriary(), earning.finalAmountAriary(),
+                            earning.overrideReason(), earning.manual());
+                }).toList();
         return new CourierCompensationPreview(
                 batch.serviceDate(), batch.closureRevision(), true,
                 batch.finalizedAt(), batch.finalizedByAccountId(),
-                batch.totalSuggestedAriary(), batch.totalFinalAriary(), 0, lines);
+                batch.totalSuggestedAriary(), batch.totalFinalAriary(),
+                batch.totalSuggestedCommissionAriary(), batch.totalFinalCommissionAriary(),
+                batch.totalSuggestedFuelAriary(), batch.totalFinalFuelAriary(),
+                0, 0, lines, fuelLines, List.copyOf(calculations.values()));
+    }
+
+    private List<FuelCompensationLine> fuelLines(List<ExpressFuelCalculation> calculations) {
+        List<FuelCompensationLine> result = new ArrayList<>();
+        for (ExpressFuelCalculation calculation : calculations) {
+            if (calculation.lines().isEmpty()) {
+                result.add(new FuelCompensationLine(
+                        calculation.requestId(), calculation.clientDisplayName(), calculation.pickupLabel(),
+                        calculation.status(), calculation.failureReason(), null, null, null, List.of(),
+                        calculation.returnToPickup(), null, null, 0, false, null, 0, 0, 0,
+                        null, false));
+                continue;
+            }
+            calculation.lines().forEach(line -> result.add(new FuelCompensationLine(
+                    calculation.requestId(), calculation.clientDisplayName(), calculation.pickupLabel(),
+                    calculation.status(), calculation.failureReason(), line.courierId(), line.courierName(),
+                    line.courierContact(), line.packageIds(), calculation.returnToPickup(),
+                    line.repositionDistanceMeters(), line.automaticDistanceMeters(), line.finalDistanceMeters(),
+                    line.fuelReimbursementEnabled(), line.fuelEfficiencyKmPerLiter(),
+                    line.fuelPricePerLiterAriary(), line.suggestedFuelAriary(), line.finalFuelAriary(),
+                    line.overrideReason(), line.manual())));
+        }
+        return List.copyOf(result);
+    }
+
+    /**
+     * The package-private constructor is kept for focused finance unit tests
+     * which do not load the express-delivery module. Production wiring always
+     * supplies the fuel service through the {@link Autowired} constructor.
+     */
+    private List<ExpressFuelCalculation> fuelCalculations(
+            LocalDate serviceDate, UUID clientAccountId) {
+        if (expressFuelService == null) return List.of();
+        return clientAccountId == null
+                ? expressFuelService.forDate(serviceDate)
+                : expressFuelService.forDateAndClient(serviceDate, clientAccountId);
+    }
+
+    private List<CompensationSourceLine> compensationSourceLines(
+            LocalDate serviceDate, UUID clientAccountId) {
+        return clientAccountId == null
+                ? repository.compensationSourceLines(serviceDate)
+                : repository.compensationSourceLines(serviceDate, clientAccountId);
+    }
+
+    private void requireLegacyDayWideCompensation(LocalDate serviceDate) {
+        if (repository.hasClosedClientOnDate(serviceDate)) {
+            throw new FinanceConflictException(
+                    "Les rémunérations de cette journée sont validées client par client.");
+        }
+    }
+
+    private int unresolvedFuelCount(List<ExpressFuelCalculation> calculations) {
+        return (int) calculations.stream()
+                .filter(item -> item.status() != ExpressFuelCalculationStatus.CALCULATED
+                        && item.status() != ExpressFuelCalculationStatus.MANUAL)
+                .count();
     }
 
     private Map<UUID, CompensationOverride> normalizeOverrides(
@@ -442,6 +658,14 @@ public class FinancialSettlementService {
         return repository.findClosedDay(serviceDate)
                 .orElseThrow(() -> new FinanceConflictException(
                         "Clôturez la journée avant d'accéder à ses informations financières."));
+    }
+
+    private ClosedClient requireClosedClient(LocalDate serviceDate, UUID clientAccountId) {
+        if (serviceDate == null) throw new FinanceInputException("Indiquez la date d'activité.");
+        if (clientAccountId == null) throw new FinanceInputException("Indiquez le client.");
+        return repository.findClosedClient(serviceDate, clientAccountId)
+                .orElseThrow(() -> new FinanceConflictException(
+                        "Clôturez ce client avant d'accéder à ses informations financières."));
     }
 
     private Account requireAccount(UUID accountId) {

@@ -9,6 +9,7 @@ import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 public record DeliveryPackageResponse(
         UUID id,
@@ -20,6 +21,8 @@ public record DeliveryPackageResponse(
         long amountToCollectAriary,
         boolean mobileMoneyPaid,
         LocalTime desiredDeliveryTime,
+        LocalTime desiredDeliveryEndTime,
+        boolean desiredDeliveryEndsNextDay,
         UUID pricingZoneId,
         String pricingZoneName,
         Long deliveryFeeAriary,
@@ -29,6 +32,7 @@ public record DeliveryPackageResponse(
         Instant deliveryFeeOverriddenAt,
         long deliveryFeeVersion,
         Long distanceFromCenterMeters,
+        PricingDistanceMode pricingDistanceMode,
         Long pricingZoneMaxDistanceMeters,
         Long pricingPolicyVersion,
         Short pricingPolicyId,
@@ -61,6 +65,11 @@ public record DeliveryPackageResponse(
                 deliveryPackage.amountToCollectAriary(),
                 deliveryPackage.mobileMoneyPaid(),
                 deliveryPackage.desiredDeliveryTime(),
+                deliveryPackage.desiredDeliveryTime() == null
+                        ? null : deliveryPackage.desiredDeliveryTime().plusHours(1),
+                deliveryPackage.desiredDeliveryTime() != null
+                        && deliveryPackage.desiredDeliveryTime().plusHours(1)
+                                .isBefore(deliveryPackage.desiredDeliveryTime()),
                 deliveryPackage.pricingSnapshot().pricingZoneId(),
                 deliveryPackage.pricingSnapshot().pricingZoneName(),
                 deliveryPackage.finalDeliveryFeeAriary(),
@@ -70,6 +79,7 @@ public record DeliveryPackageResponse(
                 deliveryPackage.deliveryFeeOverriddenAt(),
                 deliveryPackage.deliveryFeeVersion(),
                 deliveryPackage.pricingSnapshot().distanceFromCenterMeters(),
+                deliveryPackage.pricingSnapshot().distanceMode(),
                 deliveryPackage.pricingSnapshot().pricingZoneMaxDistanceMeters(),
                 deliveryPackage.pricingSnapshot().pricingPolicyVersion(),
                 deliveryPackage.pricingSnapshot().pricingPolicyId(),

@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Size;
 
 public record ConfirmExpressDeliveryRequest(
         @NotEmpty @Size(max = 50) List<@NotNull UUID> courierIds,
+        Boolean returnToPickup,
         @NotNull Long version) {
 
     public ConfirmExpressDeliveryRequest {

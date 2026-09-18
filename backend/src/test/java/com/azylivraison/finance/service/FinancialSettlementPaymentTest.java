@@ -2,6 +2,7 @@ package com.azylivraison.finance.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import com.azylivraison.reporting.service.DailyReportService;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 class FinancialSettlementPaymentTest {
 
@@ -46,7 +48,8 @@ class FinancialSettlementPaymentTest {
                         settlementId, UUID.randomUUID(), serviceDate, 1,
                         clientId, "Client", 12_000, 0, Instant.now())));
         when(repository.lockDay(serviceDate)).thenReturn(Optional.of(
-                new ClosedDay(serviceDate, "CLOSED", 1)));
+                new ClosedDay(serviceDate, "OPEN", 1)));
+        when(repository.isSettlementActive(any(ClientDailySettlement.class))).thenReturn(true);
         when(proofStorage.store(null)).thenReturn(null);
 
         ClientPayment created = service.createClientPayment(
@@ -59,6 +62,11 @@ class FinancialSettlementPaymentTest {
         ArgumentCaptor<ClientPayment> inserted = ArgumentCaptor.forClass(ClientPayment.class);
         verify(repository).insertClientPayment(inserted.capture());
         assertThat(inserted.getValue()).isEqualTo(created);
+        InOrder closureGuard = inOrder(repository);
+        closureGuard.verify(repository).lockSettlement(settlementId);
+        closureGuard.verify(repository).lockDay(serviceDate);
+        closureGuard.verify(repository).isSettlementActive(any(ClientDailySettlement.class));
+        closureGuard.verify(repository).insertClientPayment(any(ClientPayment.class));
         verify(proofStorage).store(any());
     }
 }

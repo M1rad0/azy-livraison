@@ -75,6 +75,66 @@ public class FinanceRepository {
                 .stream().findFirst();
     }
 
+    public Optional<ClosedClient> findClosedClient(LocalDate serviceDate, UUID clientAccountId) {
+        return queryClosedClient(serviceDate, clientAccountId, false);
+    }
+
+    public Optional<ClosedClient> lockClosedClient(LocalDate serviceDate, UUID clientAccountId) {
+        return queryClosedClient(serviceDate, clientAccountId, true);
+    }
+
+    private Optional<ClosedClient> queryClosedClient(
+            LocalDate serviceDate, UUID clientAccountId, boolean lock) {
+        String sql = """
+                SELECT service_date, client_account_id, closure_revision, report_id, closed_at
+                FROM delivery_operation_client_closure
+                WHERE service_date = ? AND client_account_id = ? AND status = 'CLOSED'
+                ORDER BY closure_revision DESC
+                FETCH FIRST 1 ROW ONLY
+                """ + (lock ? " FOR UPDATE" : "");
+        return jdbcTemplate.query(sql, (resultSet, rowNumber) -> new ClosedClient(
+                resultSet.getObject("service_date", LocalDate.class),
+                resultSet.getObject("client_account_id", UUID.class),
+                resultSet.getInt("closure_revision"), resultSet.getObject("report_id", UUID.class),
+                resultSet.getTimestamp("closed_at").toInstant()),
+                Date.valueOf(serviceDate), clientAccountId).stream().findFirst();
+    }
+
+    public boolean hasClosedClientOnDate(LocalDate serviceDate) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_operation_client_closure
+                WHERE service_date = ? AND status = 'CLOSED'
+                """, Integer.class, Date.valueOf(serviceDate));
+        return count != null && count > 0;
+    }
+
+    public boolean isSettlementActive(ClientDailySettlement settlement) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM delivery_operation_day operation_day
+                WHERE operation_day.service_date = ?
+                  AND (
+                      EXISTS (
+                          SELECT 1 FROM delivery_operation_client_closure closure
+                          WHERE closure.service_date = operation_day.service_date
+                            AND closure.client_account_id = ?
+                            AND closure.closure_revision = ?
+                            AND closure.status = 'CLOSED'
+                      )
+                      OR (operation_day.status = 'CLOSED'
+                          AND operation_day.closure_revision = ?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM delivery_operation_client_closure any_closure
+                              WHERE any_closure.service_date = operation_day.service_date
+                                AND any_closure.client_account_id = ?
+                          ))
+                  )
+                """, Integer.class, Date.valueOf(settlement.serviceDate()),
+                settlement.clientAccountId(), settlement.closureRevision(), settlement.closureRevision(),
+                settlement.clientAccountId());
+        return count != null && count > 0;
+    }
+
     public Optional<ClientDailySettlement> findSettlement(
             LocalDate serviceDate,
             int closureRevision,
@@ -139,13 +199,29 @@ public class FinanceRepository {
                                THEN -payment.amount_ariary
                            ELSE 0 END), 0) AS confirmed_signed_payments_ariary
                 FROM client_daily_settlement settlement
-                JOIN delivery_operation_day operation_day
-                  ON operation_day.service_date = settlement.service_date
-                 AND operation_day.closure_revision = settlement.closure_revision
-                 AND operation_day.status = 'CLOSED'
                 LEFT JOIN client_settlement_payment payment
                        ON payment.settlement_id = settlement.id
                 WHERE settlement.client_account_id = ?
+                  AND (
+                      EXISTS (
+                          SELECT 1 FROM delivery_operation_client_closure closure
+                          WHERE closure.service_date = settlement.service_date
+                            AND closure.client_account_id = settlement.client_account_id
+                            AND closure.closure_revision = settlement.closure_revision
+                            AND closure.status = 'CLOSED'
+                      )
+                      OR EXISTS (
+                          SELECT 1 FROM delivery_operation_day operation_day
+                          WHERE operation_day.service_date = settlement.service_date
+                            AND operation_day.closure_revision = settlement.closure_revision
+                            AND operation_day.status = 'CLOSED'
+                            AND NOT EXISTS (
+                                SELECT 1 FROM delivery_operation_client_closure any_closure
+                                WHERE any_closure.service_date = settlement.service_date
+                                  AND any_closure.client_account_id = settlement.client_account_id
+                            )
+                      )
+                  )
                 GROUP BY settlement.id
                 ORDER BY settlement.service_date DESC, settlement.created_at DESC
                 """, (resultSet, rowNumber) -> mapSettlement(resultSet), clientAccountId);
@@ -235,7 +311,12 @@ public class FinanceRepository {
     }
 
     public List<CompensationSourceLine> compensationSourceLines(LocalDate serviceDate) {
-        return jdbcTemplate.query("""
+        return compensationSourceLines(serviceDate, null);
+    }
+
+    public List<CompensationSourceLine> compensationSourceLines(
+            LocalDate serviceDate, UUID clientAccountId) {
+        String sql = """
                 SELECT package.id AS package_id,
                        package.actual_delivery_courier_id AS courier_id,
                        package.actual_delivery_courier_name AS courier_name,
@@ -261,8 +342,13 @@ public class FinanceRepository {
                        OR (request.requested_date = ? AND request.request_kind = 'EXPRESS'
                            AND request.express_status = 'COMPLETED'))
                   AND package.final_outcome IN ('DELIVERED', 'RETURN_TO_SENDER')
-                ORDER BY package.actual_delivery_courier_name, package.priority_at, package.id
-                """, (resultSet, rowNumber) -> new CompensationSourceLine(
+                """;
+        if (clientAccountId != null) sql += " AND request.owner_account_id = ?";
+        sql += " ORDER BY package.actual_delivery_courier_name, package.priority_at, package.id";
+        Object[] parameters = clientAccountId == null
+                ? new Object[] { Date.valueOf(serviceDate), Date.valueOf(serviceDate) }
+                : new Object[] { Date.valueOf(serviceDate), Date.valueOf(serviceDate), clientAccountId };
+        return jdbcTemplate.query(sql, (resultSet, rowNumber) -> new CompensationSourceLine(
                 resultSet.getObject("package_id", UUID.class),
                 resultSet.getObject("courier_id", UUID.class),
                 resultSet.getString("courier_name"),
@@ -273,17 +359,34 @@ public class FinanceRepository {
                 resultSet.getInt("commission_numerator"),
                 resultSet.getInt("commission_denominator"),
                 resultSet.getString("recipient_name"),
-                resultSet.getString("destination_label")), Date.valueOf(serviceDate), Date.valueOf(serviceDate));
+                resultSet.getString("destination_label")), parameters);
     }
 
     public Optional<CompensationBatch> findCompensationBatch(LocalDate serviceDate, int closureRevision) {
         return jdbcTemplate.query("""
                 SELECT service_date, closure_revision, total_suggested_ariary,
-                       total_final_ariary, finalized_at, finalized_by_account_id, version
+                       total_final_ariary, total_suggested_commission_ariary,
+                       total_final_commission_ariary, total_suggested_fuel_ariary,
+                       total_final_fuel_ariary, finalized_at, finalized_by_account_id, version,
+                       client_account_id
                 FROM courier_compensation_batch
-                WHERE service_date = ? AND closure_revision = ?
+                WHERE service_date = ? AND closure_revision = ? AND client_account_id IS NULL
                 """, (resultSet, rowNumber) -> mapCompensationBatch(resultSet),
                 Date.valueOf(serviceDate), closureRevision).stream().findFirst();
+    }
+
+    public Optional<CompensationBatch> findClientCompensationBatch(
+            LocalDate serviceDate, int closureRevision, UUID clientAccountId) {
+        return jdbcTemplate.query("""
+                SELECT service_date, closure_revision, total_suggested_ariary,
+                       total_final_ariary, total_suggested_commission_ariary,
+                       total_final_commission_ariary, total_suggested_fuel_ariary,
+                       total_final_fuel_ariary, finalized_at, finalized_by_account_id, version,
+                       client_account_id
+                FROM courier_compensation_batch
+                WHERE service_date = ? AND closure_revision = ? AND client_account_id = ?
+                """, (resultSet, rowNumber) -> mapCompensationBatch(resultSet),
+                Date.valueOf(serviceDate), closureRevision, clientAccountId).stream().findFirst();
     }
 
     public boolean hasCompensationBatchOnDate(LocalDate serviceDate) {
@@ -297,11 +400,16 @@ public class FinanceRepository {
         jdbcTemplate.update("""
                 INSERT INTO courier_compensation_batch (
                     service_date, closure_revision, total_suggested_ariary,
-                    total_final_ariary, finalized_at, finalized_by_account_id, version
-                ) VALUES (?, ?, ?, ?, ?, ?, 0)
+                    total_final_ariary, total_suggested_commission_ariary,
+                    total_final_commission_ariary, total_suggested_fuel_ariary,
+                    total_final_fuel_ariary, finalized_at, finalized_by_account_id, version,
+                    client_account_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 """, Date.valueOf(batch.serviceDate()), batch.closureRevision(),
                 batch.totalSuggestedAriary(), batch.totalFinalAriary(),
-                timestamp(batch.finalizedAt()), batch.finalizedByAccountId());
+                batch.totalSuggestedCommissionAriary(), batch.totalFinalCommissionAriary(),
+                batch.totalSuggestedFuelAriary(), batch.totalFinalFuelAriary(),
+                timestamp(batch.finalizedAt()), batch.finalizedByAccountId(), batch.clientAccountId());
     }
 
     public void insertEarning(CourierEarning earning) {
@@ -328,6 +436,36 @@ public class FinanceRepository {
                 Date.valueOf(serviceDate), closureRevision);
     }
 
+    public void insertFuelEarning(CourierFuelEarning earning) {
+        jdbcTemplate.update("""
+                INSERT INTO courier_fuel_earning (
+                    id, service_date, closure_revision, delivery_request_id,
+                    courier_id, courier_name, courier_contact, return_to_pickup,
+                    package_ids_json, reposition_distance_meters,
+                    automatic_distance_meters, final_distance_meters,
+                    fuel_reimbursement_enabled, fuel_efficiency_km_per_liter,
+                    fuel_price_per_liter_ariary, suggested_amount_ariary,
+                    final_amount_ariary, override_reason, manual, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, earning.id(), Date.valueOf(earning.serviceDate()), earning.closureRevision(),
+                earning.requestId(), earning.courierId(), earning.courierName(), earning.courierContact(),
+                earning.returnToPickup(), writeIds(earning.packageIds()), earning.repositionDistanceMeters(),
+                earning.automaticDistanceMeters(),
+                earning.finalDistanceMeters(), earning.fuelReimbursementEnabled(),
+                earning.fuelEfficiencyKmPerLiter(), earning.fuelPricePerLiterAriary(),
+                earning.suggestedAmountAriary(), earning.finalAmountAriary(), earning.overrideReason(),
+                earning.manual(), timestamp(earning.createdAt()));
+    }
+
+    public List<CourierFuelEarning> listBatchFuelEarnings(LocalDate serviceDate, int closureRevision) {
+        return jdbcTemplate.query("""
+                SELECT * FROM courier_fuel_earning
+                WHERE service_date = ? AND closure_revision = ?
+                ORDER BY courier_name, created_at, id
+                """, (resultSet, rowNumber) -> mapFuelEarning(resultSet),
+                Date.valueOf(serviceDate), closureRevision);
+    }
+
     public Optional<String> findCourierName(UUID courierId) {
         return jdbcTemplate.query("SELECT name FROM courier_profile WHERE id = ?",
                 (resultSet, rowNumber) -> resultSet.getString("name"), courierId)
@@ -343,6 +481,16 @@ public class FinanceRepository {
                 (resultSet, rowNumber) -> mapEarning(resultSet));
     }
 
+    public List<CourierFuelEarning> listCourierFuelEarnings(UUID courierId, LocalDate from, LocalDate to) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT * FROM courier_fuel_earning WHERE courier_id = :courierId");
+        MapSqlParameterSource parameters = new MapSqlParameterSource("courierId", courierId);
+        appendDateRange(sql, parameters, "service_date", from, to);
+        sql.append(" ORDER BY service_date DESC, created_at DESC, id");
+        return namedJdbcTemplate.query(sql.toString(), parameters,
+                (resultSet, rowNumber) -> mapFuelEarning(resultSet));
+    }
+
     public List<CourierDelivery> listCourierDeliveries(UUID courierId, LocalDate from, LocalDate to) {
         StringBuilder sql = new StringBuilder("""
                 SELECT package.id AS package_id,
@@ -353,11 +501,15 @@ public class FinanceRepository {
                        COALESCE(package.final_delivery_fee_ariary, package.delivery_fee_ariary, 0)
                            AS delivery_fee_ariary,
                        earning.final_amount_ariary AS earned_amount_ariary
+                       , fuel_earning.final_amount_ariary AS fuel_earned_amount_ariary
                 FROM delivery_package package
                 JOIN delivery_request request ON request.id = package.delivery_request_id
                 JOIN app_account account ON account.id = request.owner_account_id
                 LEFT JOIN dispatch_plan plan ON plan.id = package.dispatch_plan_id
                 LEFT JOIN courier_earning earning ON earning.delivery_package_id = package.id
+                LEFT JOIN courier_fuel_earning fuel_earning
+                       ON fuel_earning.delivery_request_id = request.id
+                      AND fuel_earning.courier_id = package.actual_delivery_courier_id
                 WHERE package.actual_delivery_courier_id = :courierId
                   AND (plan.lifecycle_status = 'ACTIVE'
                        OR (request.request_kind = 'EXPRESS' AND request.express_status = 'COMPLETED'))
@@ -375,12 +527,21 @@ public class FinanceRepository {
                 DeliveryPackageOutcome.valueOf(resultSet.getString("final_outcome")),
                 instant(resultSet, "return_completed_at"),
                 resultSet.getLong("delivery_fee_ariary"),
-                nullableLong(resultSet, "earned_amount_ariary")));
+                nullableLong(resultSet, "earned_amount_ariary"),
+                nullableLong(resultSet, "fuel_earned_amount_ariary"),
+                nullableSum(resultSet, "earned_amount_ariary", "fuel_earned_amount_ariary")));
     }
 
     public long totalCourierEarnings(UUID courierId) {
         Long total = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(final_amount_ariary), 0) FROM courier_earning WHERE courier_id = ?",
+                Long.class, courierId);
+        return total == null ? 0 : total;
+    }
+
+    public long totalCourierFuelEarnings(UUID courierId) {
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(final_amount_ariary), 0) FROM courier_fuel_earning WHERE courier_id = ?",
                 Long.class, courierId);
         return total == null ? 0 : total;
     }
@@ -520,9 +681,14 @@ public class FinanceRepository {
                 resultSet.getInt("closure_revision"),
                 resultSet.getLong("total_suggested_ariary"),
                 resultSet.getLong("total_final_ariary"),
+                resultSet.getLong("total_suggested_commission_ariary"),
+                resultSet.getLong("total_final_commission_ariary"),
+                resultSet.getLong("total_suggested_fuel_ariary"),
+                resultSet.getLong("total_final_fuel_ariary"),
                 resultSet.getTimestamp("finalized_at").toInstant(),
                 resultSet.getObject("finalized_by_account_id", UUID.class),
-                resultSet.getLong("version"));
+                resultSet.getLong("version"),
+                resultSet.getObject("client_account_id", UUID.class));
     }
 
     private CourierEarning mapEarning(ResultSet resultSet) throws SQLException {
@@ -541,6 +707,26 @@ public class FinanceRepository {
                 resultSet.getLong("suggested_amount_ariary"),
                 resultSet.getLong("final_amount_ariary"),
                 resultSet.getString("override_reason"),
+                resultSet.getTimestamp("created_at").toInstant());
+    }
+
+    private CourierFuelEarning mapFuelEarning(ResultSet resultSet) throws SQLException {
+        return new CourierFuelEarning(
+                resultSet.getObject("id", UUID.class),
+                resultSet.getObject("service_date", LocalDate.class),
+                resultSet.getInt("closure_revision"),
+                resultSet.getObject("delivery_request_id", UUID.class),
+                resultSet.getObject("courier_id", UUID.class),
+                resultSet.getString("courier_name"), resultSet.getString("courier_contact"),
+                resultSet.getBoolean("return_to_pickup"), readIds(resultSet.getString("package_ids_json")),
+                nullableLong(resultSet, "reposition_distance_meters"),
+                nullableLong(resultSet, "automatic_distance_meters"),
+                resultSet.getLong("final_distance_meters"),
+                resultSet.getBoolean("fuel_reimbursement_enabled"),
+                resultSet.getBigDecimal("fuel_efficiency_km_per_liter"),
+                resultSet.getLong("fuel_price_per_liter_ariary"),
+                resultSet.getLong("suggested_amount_ariary"), resultSet.getLong("final_amount_ariary"),
+                resultSet.getString("override_reason"), resultSet.getBoolean("manual"),
                 resultSet.getTimestamp("created_at").toInstant());
     }
 
@@ -612,6 +798,27 @@ public class FinanceRepository {
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private Long nullableSum(ResultSet resultSet, String leftColumn, String rightColumn) throws SQLException {
+        Long left = nullableLong(resultSet, leftColumn);
+        Long right = nullableLong(resultSet, rightColumn);
+        return left == null && right == null ? null
+                : Math.addExact(left == null ? 0 : left, right == null ? 0 : right);
+    }
+
+    private String writeIds(List<UUID> ids) {
+        return ids.stream().map(id -> "\"" + id + "\"")
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+    }
+
+    private List<UUID> readIds(String json) {
+        if (json == null || json.length() <= 2) return List.of();
+        String body = json.substring(1, json.length() - 1);
+        if (body.isBlank()) return List.of();
+        return java.util.Arrays.stream(body.split(","))
+                .map(value -> value.trim().replace("\"", ""))
+                .map(UUID::fromString).toList();
     }
 
     private Instant instant(ResultSet resultSet, String column) throws SQLException {

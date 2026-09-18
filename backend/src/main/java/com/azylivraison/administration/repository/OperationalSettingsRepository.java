@@ -32,6 +32,8 @@ public class OperationalSettingsRepository {
                        optimization_time_limit_seconds, routing_preset,
                        default_courier_commission_numerator,
                        default_courier_commission_denominator,
+                       default_fuel_price_per_liter_ariary,
+                       default_express_return_to_pickup,
                        version, created_at, updated_at
                 FROM operational_settings
                 WHERE id = 1
@@ -58,6 +60,8 @@ public class OperationalSettingsRepository {
                     routing_preset = ?,
                     default_courier_commission_numerator = ?,
                     default_courier_commission_denominator = ?,
+                    default_fuel_price_per_liter_ariary = ?,
+                    default_express_return_to_pickup = ?,
                     version = version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1 AND version = ?
@@ -77,6 +81,8 @@ public class OperationalSettingsRepository {
                 settings.routingPreset().name(),
                 settings.defaultCourierCommissionNumerator(),
                 settings.defaultCourierCommissionDenominator(),
+                settings.defaultFuelPricePerLiterAriary(),
+                settings.defaultExpressReturnToPickup(),
                 expectedVersion) == 1;
     }
 
@@ -104,6 +110,8 @@ public class OperationalSettingsRepository {
                 RoutingPreset.valueOf(resultSet.getString("routing_preset")),
                 resultSet.getInt("default_courier_commission_numerator"),
                 resultSet.getInt("default_courier_commission_denominator"),
+                resultSet.getLong("default_fuel_price_per_liter_ariary"),
+                resultSet.getBoolean("default_express_return_to_pickup"),
                 resultSet.getLong("version"),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant());

@@ -20,6 +20,9 @@ public record CourierProfileCommand(
         BigDecimal averageSpeedKmh,
         Integer commissionNumerator,
         Integer commissionDenominator,
+        Boolean fuelReimbursementEnabled,
+        BigDecimal fuelEfficiencyKmPerLiter,
+        Long fuelPricePerLiterAriary,
         LocalTime defaultDepartureTime,
         ConfirmedLocation departureLocation) {
 }

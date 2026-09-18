@@ -144,7 +144,7 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
     return (
       <ClientDeliveryRequestForm
         accessToken={accessToken}
-        defaultPickup={null}
+        defaultPickup={deliveryClient.defaultPickup}
         requestKind={deliveryKind}
         createRequest={async (input) => await createAdminDeliveryRequest(
           deliveryClient.accountId,
@@ -154,9 +154,10 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
         quotePrice={(destination, signal, options) => quoteAdminDeliveryPrice(
           deliveryClient.accountId, destination, deliveryKind, accessToken, signal, options,
         )}
-        onCreated={(_request) => {
+        onCreated={(_request, savedDefaultPickup) => {
           setMessage(`${deliveryKind === 'EXPRESS' ? 'Livraison express' : 'Demande'} enregistrée pour ${deliveryClient.displayName}.`)
           setDeliveryClient(undefined)
+          if (savedDefaultPickup) void load()
           if (deliveryKind === 'EXPRESS') onExpressCreated?.()
         }}
         onCancel={() => setDeliveryClient(undefined)}

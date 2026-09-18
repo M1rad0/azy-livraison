@@ -440,12 +440,12 @@ class DailyReportApiIntegrationTest {
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
-                    distance_from_center_meters, pricing_zone_max_distance_meters,
+                    distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
                     pricing_policy_version,
                     effective_weight_kg, weight_source,
                     status, priority_at, carried_forward_from_package_id
                 ) VALUES (?, ?, ?, ?, FALSE, ?, ?, -18.89, 47.53,
-                          '034 00 200 00', ?, ?, ?, 'Zone rapport', ?, 1000, 5000, 1,
+                          '034 00 200 00', ?, ?, ?, 'Zone rapport', ?, 1000, 'AIR_DISTANCE', 5000, 1,
                           1, 'PROVIDED', ?, ?, ?)
                 """, packageId, requestId, sequence, recipient, recipient + " à Antananarivo",
                 recipient + ", Antananarivo", amount, mobileMoney, PRICING_ZONE_ID, fee,

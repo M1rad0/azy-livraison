@@ -18,6 +18,8 @@ public record OperationalSettings(
         RoutingPreset routingPreset,
         int defaultCourierCommissionNumerator,
         int defaultCourierCommissionDenominator,
+        long defaultFuelPricePerLiterAriary,
+        boolean defaultExpressReturnToPickup,
         long version,
         Instant createdAt,
         Instant updatedAt) {
