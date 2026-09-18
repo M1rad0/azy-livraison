@@ -19,9 +19,16 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     event.preventDefault()
     setErrorMessage(undefined)
 
+    // Some mobile browsers and password managers fill the native inputs
+    // without notifying React. Read the submitted form itself so the visible
+    // credentials are always the credentials sent to the API.
+    const formData = new FormData(event.currentTarget)
+    const submittedUsername = String(formData.get('username') ?? '').trim()
+    const submittedPassword = String(formData.get('password') ?? '')
+
     setSubmitting(true)
     try {
-      const session = await login(username, password)
+      const session = await login(submittedUsername, submittedPassword)
       onAuthenticated(session)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'La demande a échoué.')
@@ -57,6 +64,9 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             <input
               name="username"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               maxLength={100}
               value={username}
               onChange={(event) => setUsername(event.target.value)}

@@ -27,6 +27,18 @@ function MapPositionController({ location }: { location: Location }) {
   return null
 }
 
+function MapVisibilityController({ visible }: { visible: boolean }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!visible) return
+    const timeout = window.setTimeout(() => map.invalidateSize({ animate: false }), 0)
+    return () => window.clearTimeout(timeout)
+  }, [map, visible])
+
+  return null
+}
+
 function MapClickHandler({ onPick }: { onPick: (latitude: number, longitude: number) => void }) {
   useMapEvents({
     click: (event) => onPick(event.latlng.lat, event.latlng.lng),
@@ -55,6 +67,7 @@ function LocationPickerDialog({
   const [candidates, setCandidates] = useState<GeocodingCandidate[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
+  const [mobilePanel, setMobilePanel] = useState<'search' | 'map'>('search')
   const searchRequest = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -141,7 +154,16 @@ function LocationPickerDialog({
           <button className="icon-button" type="button" aria-label="Fermer la sélection du lieu" onClick={onClose}><X aria-hidden="true" /></button>
         </header>
 
-        <div className="location-modal__body">
+        <nav className="location-modal__mobile-tabs" aria-label="Mode de sélection du lieu">
+          <button type="button" aria-pressed={mobilePanel === 'search'} className={mobilePanel === 'search' ? 'is-active' : undefined} onClick={() => setMobilePanel('search')}>
+            <Search aria-hidden="true" />Recherche
+          </button>
+          <button type="button" aria-pressed={mobilePanel === 'map'} className={mobilePanel === 'map' ? 'is-active' : undefined} onClick={() => setMobilePanel('map')}>
+            <MapPinned aria-hidden="true" />Carte
+          </button>
+        </nav>
+
+        <div className={`location-modal__body is-${mobilePanel}-view`}>
           <aside className="location-modal__search">
             <p>{description}</p>
             <div className="location-modal__searchbar">
@@ -202,6 +224,7 @@ function LocationPickerDialog({
             <MapContainer center={hasCoordinates(selection) ? [selection.latitude as number, selection.longitude as number] : ANTANANARIVO} zoom={hasCoordinates(selection) ? 16 : 13} scrollWheelZoom>
               <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
               <MapPositionController location={selection} />
+              <MapVisibilityController visible={mobilePanel === 'map'} />
               <MapClickHandler onPick={selectMapPoint} />
               {hasCoordinates(selection) && (
                 <CircleMarker center={[selection.latitude as number, selection.longitude as number]} radius={10} pathOptions={{ color: '#fff', fillColor: '#f45b0b', fillOpacity: 1, weight: 4 }}>
@@ -210,6 +233,28 @@ function LocationPickerDialog({
               )}
             </MapContainer>
             <span className="location-modal__map-hint"><MapPin aria-hidden="true" />Vous pouvez aussi cliquer directement sur la carte</span>
+            <div className={`location-modal__map-actions${hasCoordinates(selection) ? ' is-confirmed' : ''}`}>
+              <div>
+                <small>{hasCoordinates(selection) ? 'Point prêt à être utilisé' : 'Touchez la carte pour placer le point'}</small>
+                <strong>{selection.destinationQuery || 'Aucun lieu sélectionné'}</strong>
+              </div>
+              <div>
+                <button className="button button--secondary" type="button" onClick={() => setMobilePanel('search')}>
+                  <Search aria-hidden="true" />Recherche
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!hasCoordinates(selection)}
+                  onClick={() => {
+                    onConfirm(selection)
+                    onClose()
+                  }}
+                >
+                  <Check aria-hidden="true" />Utiliser ce point
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>

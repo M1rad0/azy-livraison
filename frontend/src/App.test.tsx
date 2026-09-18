@@ -339,7 +339,9 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Bienvenue' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Identifiant')).toBeInTheDocument()
+    expect(screen.getByLabelText('Identifiant')).toHaveAttribute('autocapitalize', 'none')
+    expect(screen.getByLabelText('Identifiant')).toHaveAttribute('autocorrect', 'off')
+    expect(screen.getByLabelText('Identifiant')).toHaveAttribute('spellcheck', 'false')
     expect(screen.getByLabelText('Mot de passe')).toHaveAttribute('type', 'password')
     const pricingButton = screen.getByRole('button', { name: /Calculer un tarif/ })
     expect(pricingButton).toBeVisible()
@@ -370,6 +372,32 @@ describe('App', () => {
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',
+        body: JSON.stringify({ username: 'admin', password: 'secret-password' }),
+      }),
+    )
+  })
+
+  it('uses credentials filled natively by a mobile password manager', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 'INVALID_REFRESH_TOKEN' }, 401))
+      .mockResolvedValueOnce(jsonResponse(session))
+      .mockResolvedValueOnce(jsonResponse(systemStatus))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const usernameInput = await screen.findByLabelText('Identifiant')
+    const passwordInput = screen.getByLabelText('Mot de passe')
+    const nativeValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    nativeValueSetter?.call(usernameInput, ' admin ')
+    nativeValueSetter?.call(passwordInput, 'secret-password')
+
+    fireEvent.submit(usernameInput.closest('form') as HTMLFormElement)
+
+    await screen.findByRole('heading', { name: 'Piloter les livraisons' })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/auth/login',
+      expect.objectContaining({
         body: JSON.stringify({ username: 'admin', password: 'secret-password' }),
       }),
     )
