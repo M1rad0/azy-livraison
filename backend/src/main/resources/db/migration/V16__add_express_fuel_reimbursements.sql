@@ -30,7 +30,7 @@ CREATE TABLE express_fuel_calculation (
     delivery_request_id UUID PRIMARY KEY REFERENCES delivery_request(id) ON DELETE CASCADE,
     status VARCHAR(30) NOT NULL DEFAULT 'WAITING_FOR_OUTCOMES'
         CHECK (status IN ('WAITING_FOR_OUTCOMES', 'CALCULATED', 'ROUTING_FAILED',
-                          'CONFIGURATION_MISSING', 'MANUAL_INCOMPLETE', 'MANUAL')),
+                          'CONFIGURATION_MISSING', 'MANUAL')),
     return_to_pickup BOOLEAN NOT NULL,
     failure_reason VARCHAR(1000),
     total_distance_meters BIGINT NOT NULL DEFAULT 0 CHECK (total_distance_meters >= 0),
@@ -51,8 +51,6 @@ CREATE TABLE express_fuel_courier_calculation (
     courier_name_snapshot VARCHAR(150) NOT NULL,
     courier_contact_snapshot VARCHAR(100),
     package_ids_json TEXT NOT NULL,
-    reposition_distance_meters BIGINT
-        CHECK (reposition_distance_meters IS NULL OR reposition_distance_meters >= 0),
     automatic_distance_meters BIGINT CHECK (automatic_distance_meters IS NULL OR automatic_distance_meters >= 0),
     final_distance_meters BIGINT NOT NULL CHECK (final_distance_meters >= 0),
     fuel_reimbursement_enabled BOOLEAN NOT NULL,
@@ -66,10 +64,8 @@ CREATE TABLE express_fuel_courier_calculation (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (delivery_request_id, courier_id),
     CONSTRAINT express_fuel_line_efficiency_check CHECK (
-        (fuel_reimbursement_enabled
-             AND ((fuel_efficiency_km_per_liter IS NOT NULL
-                       AND fuel_efficiency_km_per_liter > 0)
-                  OR manual))
+        (fuel_reimbursement_enabled AND fuel_efficiency_km_per_liter IS NOT NULL
+             AND fuel_efficiency_km_per_liter > 0)
         OR (NOT fuel_reimbursement_enabled)
     ),
     CONSTRAINT express_fuel_line_override_check CHECK (
@@ -111,8 +107,6 @@ CREATE TABLE courier_fuel_earning (
     courier_contact VARCHAR(100),
     return_to_pickup BOOLEAN NOT NULL,
     package_ids_json TEXT NOT NULL,
-    reposition_distance_meters BIGINT
-        CHECK (reposition_distance_meters IS NULL OR reposition_distance_meters >= 0),
     automatic_distance_meters BIGINT,
     final_distance_meters BIGINT NOT NULL CHECK (final_distance_meters >= 0),
     fuel_reimbursement_enabled BOOLEAN NOT NULL,
