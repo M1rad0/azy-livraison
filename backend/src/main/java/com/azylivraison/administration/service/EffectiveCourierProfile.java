@@ -9,5 +9,8 @@ public record EffectiveCourierProfile(
         BigDecimal maxWeightKg,
         BigDecimal averageSpeedKmh,
         int commissionNumerator,
-        int commissionDenominator) {
+        int commissionDenominator,
+        boolean fuelReimbursementEnabled,
+        BigDecimal fuelEfficiencyKmPerLiter,
+        long fuelPricePerLiterAriary) {
 }

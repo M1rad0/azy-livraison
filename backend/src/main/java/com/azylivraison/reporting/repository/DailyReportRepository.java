@@ -38,6 +38,11 @@ public class DailyReportRepository {
 
     public List<LocalDate> listClosedDatesForClient(UUID accountId) {
         return jdbcTemplate.query("""
+                SELECT closure.service_date
+                FROM delivery_operation_client_closure closure
+                WHERE closure.client_account_id = :accountId
+                  AND closure.status = 'CLOSED'
+                UNION
                 SELECT operation_day.service_date
                 FROM delivery_operation_day operation_day
                 JOIN delivery_operation_client_snapshot snapshot
@@ -45,13 +50,24 @@ public class DailyReportRepository {
                  AND snapshot.closure_revision = operation_day.closure_revision
                 WHERE operation_day.status = 'CLOSED'
                   AND snapshot.account_id = :accountId
-                ORDER BY operation_day.service_date DESC
+                  AND NOT EXISTS (
+                      SELECT 1 FROM delivery_operation_client_closure closure
+                      WHERE closure.service_date = operation_day.service_date
+                        AND closure.client_account_id = :accountId
+                  )
+                ORDER BY service_date DESC
                 """, Map.of("accountId", accountId),
                 (resultSet, rowNumber) -> resultSet.getObject("service_date", LocalDate.class));
     }
 
     public ReportSource load(OperationDay day) {
-        List<DailyPackageRecord> packages = workflowRepository.findPackages(day);
+        return load(day, null);
+    }
+
+    public ReportSource load(OperationDay day, UUID clientAccountId) {
+        List<DailyPackageRecord> packages = workflowRepository.findPackages(day).stream()
+                .filter(item -> clientAccountId == null || item.ownerAccountId().equals(clientAccountId))
+                .toList();
         ReportContext context = context(day);
         Set<UUID> accountIds = packages.stream()
                 .map(DailyPackageRecord::ownerAccountId)
@@ -92,7 +108,7 @@ public class DailyReportRepository {
 
     private ReportContext context(OperationDay day) {
         return jdbcTemplate.query("""
-                SELECT plan.hub_label,
+                SELECT COALESCE(plan.hub_label, 'Livraisons expresses') AS hub_label,
                        closer.username AS closed_by_username,
                        closer.display_name AS closed_by_display_name,
                        (SELECT COUNT(*)
@@ -100,12 +116,12 @@ public class DailyReportRepository {
                         WHERE source_plan.service_date = :serviceDate
                           AND source_plan.status IN ('READY', 'READY_WITH_WARNINGS')
                           AND source_plan.lifecycle_status = 'ACTIVE') AS source_plan_count
-                FROM dispatch_plan plan
+                FROM delivery_operation_day operation_day
                 JOIN app_account closer ON closer.id = :closedByAccountId
-                WHERE plan.id = :dispatchPlanId
+                LEFT JOIN dispatch_plan plan ON plan.id = operation_day.dispatch_plan_id
+                WHERE operation_day.service_date = :serviceDate
                 """, Map.of(
                         "closedByAccountId", day.closedByAccountId(),
-                        "dispatchPlanId", day.dispatchPlanId(),
                         "serviceDate", day.serviceDate()),
                 (resultSet, rowNumber) -> new ReportContext(
                         resultSet.getString("hub_label"),
@@ -114,7 +130,8 @@ public class DailyReportRepository {
                         resultSet.getInt("source_plan_count")))
                 .stream()
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Les métadonnées du plan clôturé sont absentes."));
+                .orElseThrow(() -> new IllegalStateException(
+                        "Les métadonnées de la journée clôturée sont absentes."));
     }
 
     private Map<UUID, ClientIdentity> clientIdentities(Set<UUID> accountIds) {

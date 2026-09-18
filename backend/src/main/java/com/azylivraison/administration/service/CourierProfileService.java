@@ -55,6 +55,9 @@ public class CourierProfileService {
                 command.averageSpeedKmh(),
                 reducedNumerator(command.commissionNumerator(), command.commissionDenominator()),
                 reducedDenominator(command.commissionNumerator(), command.commissionDenominator()),
+                command.fuelReimbursementEnabled(),
+                command.fuelEfficiencyKmPerLiter(),
+                command.fuelPricePerLiterAriary(),
                 command.defaultDepartureTime(),
                 command.departureLocation(),
                 0,
@@ -83,6 +86,9 @@ public class CourierProfileService {
                 command.averageSpeedKmh(),
                 reducedNumerator(command.commissionNumerator(), command.commissionDenominator()),
                 reducedDenominator(command.commissionNumerator(), command.commissionDenominator()),
+                command.fuelReimbursementEnabled(),
+                command.fuelEfficiencyKmPerLiter(),
+                command.fuelPricePerLiterAriary(),
                 command.defaultDepartureTime(),
                 command.departureLocation(),
                 current.version(),
@@ -126,7 +132,17 @@ public class CourierProfileService {
                         : courier.commissionNumerator(),
                 courier.commissionDenominator() == null
                         ? settings.defaultCourierCommissionDenominator()
-                        : courier.commissionDenominator());
+                        : courier.commissionDenominator(),
+                courier.fuelReimbursementEnabled() == null
+                        ? courier.vehicleType() == com.azylivraison.planning.domain.VehicleType.MOTO
+                        : courier.fuelReimbursementEnabled(),
+                courier.fuelEfficiencyKmPerLiter() == null
+                        && courier.vehicleType() == com.azylivraison.planning.domain.VehicleType.MOTO
+                                ? new java.math.BigDecimal("40")
+                                : courier.fuelEfficiencyKmPerLiter(),
+                courier.fuelPricePerLiterAriary() == null
+                        ? settings.defaultFuelPricePerLiterAriary()
+                        : courier.fuelPricePerLiterAriary());
     }
 
     private Integer reducedNumerator(Integer numerator, Integer denominator) {

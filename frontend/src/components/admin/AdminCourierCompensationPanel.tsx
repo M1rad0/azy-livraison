@@ -1,16 +1,34 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BadgeCheck, BadgePercent, Calculator, CheckCheck, LoaderCircle, RotateCcw, TriangleAlert, UsersRound } from 'lucide-react'
+import { BadgeCheck, BadgePercent, Calculator, CheckCheck, Fuel, LoaderCircle, Pencil, Plus, RefreshCw, Route, RotateCcw, TriangleAlert, UsersRound, X } from 'lucide-react'
 import {
   finalizeCourierCompensations,
   getCourierCompensations,
+  recalculateExpressFuel,
+  updateExpressFuel,
   type CompensationLine,
+  type Courier,
   type CourierCompensation,
+  type ExpressFuelCalculation,
+  type ExpressFuelLine,
 } from '../../api/admin'
 import { errorMessage, formatAriary, formatDateTime } from './adminHelpers'
+import { CourierCombobox } from './CourierCombobox'
 import './AdminCourierCompensationPanel.css'
 
 interface CompensationDraft {
   amount: string
+  reason: string
+}
+
+interface FuelEditorState {
+  calculation: ExpressFuelCalculation
+  line?: ExpressFuelLine
+}
+
+interface FuelDraft {
+  courierId: string
+  distanceKm: string
+  amountAriary: string
   reason: string
 }
 
@@ -24,11 +42,17 @@ function makeDraft(compensation: CourierCompensation): Record<string, Compensati
 export function AdminCourierCompensationPanel({
   accessToken,
   serviceDate,
+  couriers,
+  clientAccountId,
+  clientDisplayName,
   refreshKey,
   onFinalized,
 }: {
   accessToken: string
   serviceDate: string
+  couriers: Courier[]
+  clientAccountId?: string
+  clientDisplayName?: string
   refreshKey?: number
   onFinalized?: () => void
 }) {
@@ -36,13 +60,16 @@ export function AdminCourierCompensationPanel({
   const [drafts, setDrafts] = useState<Record<string, CompensationDraft>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [fuelBusyId, setFuelBusyId] = useState<string>()
+  const [fuelEditor, setFuelEditor] = useState<FuelEditorState>()
+  const [fuelDraft, setFuelDraft] = useState<FuelDraft>({ courierId: '', distanceKm: '', amountAriary: '', reason: '' })
   const [message, setMessage] = useState<string>()
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setMessage(undefined)
     try {
-      const loaded = await getCourierCompensations(serviceDate, accessToken, signal)
+      const loaded = await getCourierCompensations(serviceDate, accessToken, signal, clientAccountId)
       setCompensation(loaded)
       setDrafts(makeDraft(loaded))
     } catch (error) {
@@ -50,7 +77,7 @@ export function AdminCourierCompensationPanel({
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [accessToken, serviceDate])
+  }, [accessToken, clientAccountId, serviceDate])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -68,11 +95,15 @@ export function AdminCourierCompensationPanel({
     return [...groups.values()]
   }, [compensation])
 
-  const draftTotal = useMemo(() => (compensation?.lines ?? []).reduce((total, line) => {
+  const commissionDraftTotal = useMemo(() => (compensation?.lines ?? []).reduce((total, line) => {
     if (!line.eligible) return total
     const amount = Number(drafts[line.packageId]?.amount)
     return Number.isSafeInteger(amount) && amount >= 0 ? total + amount : total
   }, 0), [compensation, drafts])
+  const fuelDraftTotal = compensation?.totalFinalFuelAriary ?? 0
+  const combinedDraftTotal = commissionDraftTotal + fuelDraftTotal
+  const fuelCalculations = compensation?.fuelCalculations ?? []
+  const fuelReady = (compensation?.unresolvedFuelCalculationCount ?? 0) === 0
 
   function acceptSuggestions() {
     if (!compensation || compensation.finalized) return
@@ -81,6 +112,62 @@ export function AdminCourierCompensationPanel({
       reason: '',
     }])))
     setMessage(undefined)
+  }
+
+  function openFuelEditor(calculation: ExpressFuelCalculation, line?: ExpressFuelLine) {
+    setFuelEditor({ calculation, line })
+    setFuelDraft({
+      courierId: line?.courierId ?? '',
+      distanceKm: line ? String(line.finalDistanceMeters / 1_000) : '',
+      amountAriary: line ? String(line.finalFuelAriary) : '',
+      reason: line?.overrideReason ?? '',
+    })
+    setMessage(undefined)
+  }
+
+  async function recalculateFuel(calculation: ExpressFuelCalculation) {
+    setFuelBusyId(calculation.requestId)
+    setMessage(undefined)
+    try {
+      await recalculateExpressFuel(calculation.requestId, calculation.version, accessToken)
+      await load()
+    } catch (error) {
+      setMessage(errorMessage(error))
+    } finally {
+      setFuelBusyId(undefined)
+    }
+  }
+
+  async function saveFuelAdjustment() {
+    if (!fuelEditor) return
+    const distanceKm = fuelDraft.distanceKm.trim() ? Number(fuelDraft.distanceKm) : undefined
+    const amountAriary = fuelDraft.amountAriary.trim() ? Number(fuelDraft.amountAriary) : undefined
+    if (!fuelDraft.courierId) { setMessage('Choisissez le livreur qui doit recevoir ce remboursement.'); return }
+    if (distanceKm == null && amountAriary == null) { setMessage('Indiquez les kilomètres réels, le montant retenu, ou les deux.'); return }
+    if (distanceKm != null && (!Number.isFinite(distanceKm) || distanceKm < 0)) { setMessage('La distance réelle doit être positive ou nulle.'); return }
+    if (amountAriary != null && (!Number.isSafeInteger(amountAriary) || amountAriary < 0)) { setMessage('Le montant de carburant doit être un entier positif ou nul.'); return }
+    if (!fuelDraft.reason.trim()) { setMessage('Expliquez cet ajustement de carburant.'); return }
+    setFuelBusyId(fuelEditor.calculation.requestId)
+    setMessage(undefined)
+    try {
+      await updateExpressFuel(
+        fuelEditor.calculation.requestId,
+        fuelEditor.calculation.version,
+        [{
+          courierId: fuelDraft.courierId,
+          finalDistanceMeters: distanceKm == null ? null : Math.round(distanceKm * 1_000),
+          finalFuelAmountAriary: amountAriary ?? null,
+          reason: fuelDraft.reason.trim(),
+        }],
+        accessToken,
+      )
+      setFuelEditor(undefined)
+      await load()
+    } catch (error) {
+      setMessage(errorMessage(error))
+    } finally {
+      setFuelBusyId(undefined)
+    }
   }
 
   async function finalize() {
@@ -110,6 +197,7 @@ export function AdminCourierCompensationPanel({
         compensation.closureRevision,
         overrides,
         accessToken,
+        clientAccountId,
       )
       setCompensation(saved)
       setDrafts(makeDraft(saved))
@@ -122,9 +210,9 @@ export function AdminCourierCompensationPanel({
   }
 
   return (
-    <section className="admin-compensation" aria-labelledby="courier-compensation-title">
+    <section className="admin-compensation" aria-labelledby={`courier-compensation-title-${clientAccountId ?? 'day'}`}>
       <header>
-        <div><p className="admin-eyebrow">Après la clôture</p><h3 id="courier-compensation-title">Rémunération des livreurs</h3><p>Validez ce qui est réellement gagné par livraison. Ces montants alimenteront ensuite le solde global de chaque livreur.</p></div>
+        <div><p className="admin-eyebrow">{clientAccountId ? 'Clôture du client' : 'Après la clôture'}</p><h3 id={`courier-compensation-title-${clientAccountId ?? 'day'}`}>Rémunération des livreurs</h3><p>{clientDisplayName ? `Périmètre : ${clientDisplayName}. ` : ''}Validez séparément les parts de livraison et le carburant des demandes express. Leur somme alimentera le solde global de chaque livreur.</p></div>
         {compensation?.finalized
           ? <span className="admin-compensation__finalized"><BadgeCheck aria-hidden="true" />Validé{compensation.finalizedAt ? ` le ${formatDateTime(compensation.finalizedAt)}` : ''}</span>
           : <button className="admin-button admin-button--ghost" type="button" disabled={loading || saving} onClick={acceptSuggestions}><RotateCcw aria-hidden="true" />Reprendre les suggestions</button>}
@@ -135,9 +223,10 @@ export function AdminCourierCompensationPanel({
       ) : compensation ? (
         <>
           <div className="admin-compensation__totals">
-            <article><Calculator aria-hidden="true" /><div><small>Montant suggéré</small><strong>{formatAriary(compensation.totalSuggestedAriary)}</strong></div></article>
-            <article><BadgePercent aria-hidden="true" /><div><small>Montant final</small><strong>{formatAriary(compensation.finalized ? compensation.totalFinalAriary : draftTotal)}</strong></div></article>
-            <article><UsersRound aria-hidden="true" /><div><small>Livreurs concernés</small><strong>{grouped.length}</strong></div></article>
+            <article><BadgePercent aria-hidden="true" /><div><small>Parts de livraison</small><strong>{formatAriary(compensation.finalized ? compensation.totalFinalCommissionAriary : commissionDraftTotal)}</strong></div></article>
+            <article><Fuel aria-hidden="true" /><div><small>Carburant express</small><strong>{formatAriary(fuelDraftTotal)}</strong></div></article>
+            <article><Calculator aria-hidden="true" /><div><small>Total à verser</small><strong>{formatAriary(compensation.finalized ? compensation.totalFinalAriary : combinedDraftTotal)}</strong></div></article>
+            <article><UsersRound aria-hidden="true" /><div><small>Livreurs concernés</small><strong>{new Set([...(compensation.lines ?? []).map((line) => line.courierId), ...(compensation.fuelLines ?? []).map((line) => line.courierId).filter((id): id is string => Boolean(id))]).size}</strong></div></article>
           </div>
 
           {compensation.pendingReturnCount > 0 && <div className="admin-callout admin-callout--warning"><TriangleAlert aria-hidden="true" /><div><strong>Validation en attente</strong><span>Confirmez encore {compensation.pendingReturnCount} retour{compensation.pendingReturnCount > 1 ? 's' : ''} à l’expéditeur avant de figer les rémunérations.</span></div></div>}
@@ -174,12 +263,82 @@ export function AdminCourierCompensationPanel({
                 </article>
               )
             })}
-            {grouped.length === 0 && <div className="admin-empty"><UsersRound aria-hidden="true" /><strong>Aucune rémunération pour cette journée</strong><span>Aucun colis livré ou retourné ne donne lieu à une part livreur.</span></div>}
+            {grouped.length === 0 && <div className="admin-empty"><UsersRound aria-hidden="true" /><strong>Aucune part de livraison sur ce périmètre</strong><span>Aucun colis livré ou retourné ne donne lieu à une part livreur.</span></div>}
           </div>
 
-          {!compensation.finalized && <footer><div><small>Total à inscrire dans les soldes livreurs</small><strong>{formatAriary(draftTotal)}</strong></div><button className="admin-button" type="button" disabled={saving || compensation.pendingReturnCount > 0} onClick={() => void finalize()}><CheckCheck aria-hidden="true" />{saving ? 'Validation…' : 'Valider les rémunérations'}</button></footer>}
+          {fuelCalculations.length > 0 && (
+            <section className="admin-compensation__fuel" aria-labelledby={`express-fuel-title-${clientAccountId ?? 'day'}`}>
+              <header><div><p className="admin-eyebrow">Demandes express</p><h4 id={`express-fuel-title-${clientAccountId ?? 'day'}`}>Carburant</h4><p>Chaque demande est calculée séparément, avec une tournée routière par livreur réel.</p></div><strong>{formatAriary(fuelDraftTotal)}</strong></header>
+              <div className="admin-fuel-requests">
+                {fuelCalculations.map((calculation) => {
+                  const ready = calculation.status === 'CALCULATED' || calculation.status === 'MANUAL'
+                  const busy = fuelBusyId === calculation.requestId
+                  return (
+                    <article className={`admin-fuel-request is-${calculation.status.toLowerCase()}`} key={calculation.requestId}>
+                      <header><div><span><Fuel aria-hidden="true" /></span><div><small>Demande express · {calculation.pickupLabel ?? 'Retrait non renseigné'}</small><strong>{calculation.clientDisplayName ?? 'Client'}</strong></div></div><div><span className={`admin-fuel-status${ready ? ' is-ready' : ''}`}>{calculation.status === 'CALCULATED' ? 'Calculée' : calculation.status === 'MANUAL' ? 'Ajustée' : calculation.status === 'MANUAL_INCOMPLETE' ? 'Saisie incomplète' : calculation.status === 'ROUTING_FAILED' ? 'Calcul impossible' : calculation.status === 'CONFIGURATION_MISSING' ? 'Configuration incomplète' : 'En attente'}</span><strong>{formatAriary(calculation.totalFinalFuelAriary)}</strong></div></header>
+                      {calculation.failureReason && <div className="admin-callout admin-callout--warning"><TriangleAlert aria-hidden="true" /><div><strong>Le trajet routier n’a pas pu être calculé</strong><span>{calculation.failureReason}</span></div></div>}
+                      <div className="admin-fuel-lines">
+                        {calculation.lines.map((line) => (
+                          <div key={line.courierId}>
+                            <div><strong>{line.courierName}</strong><small>{line.packageIds.length} colis · {line.manual ? 'valeur ajustée' : 'calcul automatique'}</small></div>
+                            <div>
+                              <small>Distance retenue</small>
+                              <strong>{(line.finalDistanceMeters / 1_000).toLocaleString('fr-MG', { maximumFractionDigits: 1 })} km</strong>
+                              {(line.repositionDistanceMeters ?? 0) > 0 && (
+                                <small>dont {(line.repositionDistanceMeters! / 1_000).toLocaleString('fr-MG', { maximumFractionDigits: 1 })} km depuis l’express précédent</small>
+                              )}
+                            </div>
+                            <div><small>Référence</small><strong>{line.fuelReimbursementEnabled && line.fuelEfficiencyKmPerLiter != null ? `${line.fuelEfficiencyKmPerLiter} km/L` : 'Non remboursé'}</strong><small>{line.fuelPricePerLiterAriary.toLocaleString('fr-MG')} Ar/L</small></div>
+                            <div><small>Suggestion</small><strong>{formatAriary(line.suggestedFuelAriary)}</strong></div>
+                            <div><small>Essence retenue</small><strong>{formatAriary(line.finalFuelAriary)}</strong>{line.overrideReason && <small>{line.overrideReason}</small>}</div>
+                            {!compensation.finalized && <button className="admin-icon-button" type="button" aria-label={`Ajuster le carburant de ${line.courierName}`} disabled={busy} onClick={() => openFuelEditor(calculation, line)}><Pencil aria-hidden="true" /></button>}
+                          </div>
+                        ))}
+                        {calculation.lines.length === 0 && <p>Aucun trajet carburant automatique pour cette demande. Ajoutez une valeur manuelle uniquement si un déplacement a réellement eu lieu.</p>}
+                      </div>
+                      <footer><span><Route aria-hidden="true" />{calculation.returnToPickup ? 'Retour au retrait inclus' : 'Sans retour au retrait'}</span>{!compensation.finalized && <div><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={busy} onClick={() => void recalculateFuel(calculation)}><RefreshCw className={busy ? 'admin-spin' : undefined} aria-hidden="true" />Recalculer</button><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={busy} onClick={() => openFuelEditor(calculation)}><Plus aria-hidden="true" />Ajouter un remboursement</button></div>}</footer>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {!compensation.finalized && <footer><div><small>Total à inscrire dans les soldes livreurs</small><strong>{formatAriary(combinedDraftTotal)}</strong></div><button className="admin-button" type="button" disabled={saving || compensation.pendingReturnCount > 0 || !fuelReady} onClick={() => void finalize()}><CheckCheck aria-hidden="true" />{saving ? 'Validation…' : 'Valider les rémunérations'}</button></footer>}
         </>
+      ) : message ? (
+        <div className="admin-callout admin-callout--error" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Chargement impossible</strong><span>{message}</span></div></div>
       ) : null}
+
+      {fuelEditor && (
+        <div className="admin-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !fuelBusyId) setFuelEditor(undefined) }}>
+          <section className="admin-modal admin-fuel-dialog" role="dialog" aria-modal="true" aria-labelledby={`fuel-adjustment-title-${clientAccountId ?? 'day'}`}>
+            <header><div><p className="admin-eyebrow">Demande express</p><h3 id={`fuel-adjustment-title-${clientAccountId ?? 'day'}`}>Ajuster le carburant</h3><p>{fuelEditor.calculation.clientDisplayName} · {fuelEditor.calculation.pickupLabel}</p></div><button className="admin-icon-button" type="button" aria-label="Fermer" disabled={Boolean(fuelBusyId)} onClick={() => setFuelEditor(undefined)}><X aria-hidden="true" /></button></header>
+            <div className="admin-fuel-dialog__body">
+              <label>
+                <span>Livreur bénéficiaire</span>
+                {fuelEditor.line ? (
+                  <div className="admin-fuel-dialog__courier-fixed"><UsersRound aria-hidden="true" /><strong>{fuelEditor.line.courierName}</strong></div>
+                ) : (
+                  <CourierCombobox
+                    couriers={couriers}
+                    value={fuelDraft.courierId}
+                    ariaLabel="Rechercher le livreur bénéficiaire"
+                    placeholder="Rechercher un livreur"
+                    onChange={(courierId) => setFuelDraft({ ...fuelDraft, courierId })}
+                  />
+                )}
+              </label>
+              <div className="admin-form-grid">
+                <label><span>Distance réelle <small>facultatif si montant saisi</small></span><div className="admin-input-unit"><input type="number" min="0" step="0.1" value={fuelDraft.distanceKm} onChange={(event) => setFuelDraft({ ...fuelDraft, distanceKm: event.target.value })} /><b>km</b></div></label>
+                <label><span>Montant final <small>facultatif si distance saisie</small></span><div className="admin-input-unit"><input type="number" min="0" step="1" value={fuelDraft.amountAriary} onChange={(event) => setFuelDraft({ ...fuelDraft, amountAriary: event.target.value })} /><b>Ar</b></div></label>
+              </div>
+              <label><span>Motif obligatoire</span><textarea rows={3} maxLength={1000} value={fuelDraft.reason} placeholder="Ex. détour réel, colis annulé après le départ…" onChange={(event) => setFuelDraft({ ...fuelDraft, reason: event.target.value })} /></label>
+            </div>
+            <footer><button className="admin-button admin-button--ghost" type="button" disabled={Boolean(fuelBusyId)} onClick={() => setFuelEditor(undefined)}>Annuler</button><button className="admin-button" type="button" disabled={Boolean(fuelBusyId)} onClick={() => void saveFuelAdjustment()}>{fuelBusyId ? <LoaderCircle className="admin-spin" aria-hidden="true" /> : <Fuel aria-hidden="true" />}{fuelBusyId ? 'Enregistrement…' : 'Enregistrer le carburant'}</button></footer>
+          </section>
+        </div>
+      )}
     </section>
   )
 }

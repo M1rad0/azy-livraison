@@ -30,8 +30,7 @@ public record DailyReport(
     public DailyReport {
         Objects.requireNonNull(reportId, "reportId");
         Objects.requireNonNull(serviceDate, "serviceDate");
-        Objects.requireNonNull(dispatchPlanId, "dispatchPlanId");
-        requirePositive(sourcePlanCount, "sourcePlanCount");
+        requireNonNegative(sourcePlanCount, "sourcePlanCount");
         Objects.requireNonNull(generatedAt, "generatedAt");
         Objects.requireNonNull(closure, "closure");
         Objects.requireNonNull(totals, "totals");

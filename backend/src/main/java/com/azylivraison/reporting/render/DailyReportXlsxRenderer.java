@@ -189,7 +189,7 @@ public final class DailyReportXlsxRenderer {
                 value(report.hubLabel()));
         rowIndex = keyValue(sheet, styles, rowIndex,
                 report.sourcePlanCount() > 1 ? "Plan de référence" : "Plan",
-                report.dispatchPlanId().toString());
+                report.dispatchPlanId() == null ? "Journée express sans plan" : report.dispatchPlanId().toString());
         if (report.sourcePlanCount() > 1) {
             rowIndex = keyValue(sheet, styles, rowIndex, "Historique consolidé",
                     report.sourcePlanCount() + " plans de dispatch");

@@ -244,7 +244,7 @@ describe('ClientReportsPanel', () => {
     render(<ClientReportsPanel accessToken="client-token" />)
 
     expect(await screen.findByRole('heading', { name: 'Rapports disponibles' })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Liste de vos rapports journaliers clôturés' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Liste de vos rapports clients finalisés' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Boutique Soa' })).not.toBeInTheDocument()
     expect(getClientReport).not.toHaveBeenCalled()
 
@@ -275,7 +275,7 @@ describe('ClientReportsPanel', () => {
     render(<ClientReportsPanel accessToken="client-token" />)
 
     expect(await screen.findByRole('heading', { name: 'Rapports disponibles' })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Liste de vos rapports journaliers clôturés' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Liste de vos rapports clients finalisés' })).toBeInTheDocument()
     expect(screen.getByText(/suivi des règlements est momentanément indisponible/i)).toBeInTheDocument()
     expect(screen.getByLabelText('Règlement')).toBeDisabled()
     expect(getClientReport).not.toHaveBeenCalled()
@@ -288,7 +288,7 @@ describe('ClientReportsPanel', () => {
     render(<ClientReportsPanel accessToken="client-token" />)
 
     expect(await screen.findByRole('heading', { name: 'Rapports disponibles' })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Liste de vos rapports journaliers clôturés' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Liste de vos rapports clients finalisés' })).toBeInTheDocument()
     expect(screen.getByLabelText('Règlement')).toBeDisabled()
     expect(screen.getByRole('option', { name: 'Chargement du suivi…' })).toBeInTheDocument()
     expect(screen.getByText('Chargement…', { selector: '.client-report-list-table__status' })).toBeInTheDocument()

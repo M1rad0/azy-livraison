@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quoteDeliveryPrice } from '../api/client'
+import { endOfOneHourWindow } from '../deliveryWindows'
 import { ClientPackageDialog, emptyClientPackage } from './ClientPackageDialog'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -33,6 +34,7 @@ describe('ClientPackageDialog', () => {
       distanceFromCenterMeters: 1_000,
       pricingZoneMaxDistanceMeters: 5_000,
       pricingPolicyVersion: 1,
+      distanceMode: 'ROAD_DISTANCE',
     })
     const onSave = vi.fn()
     render(<ClientPackageDialog
@@ -46,13 +48,22 @@ describe('ClientPackageDialog', () => {
     fireEvent.change(screen.getByLabelText('Nom du client destinataire'), { target: { value: 'Miora' } })
     fireEvent.change(screen.getByLabelText('Contact client'), { target: { value: '034 00 000 00' } })
     fireEvent.change(screen.getByLabelText(/Libellé \/ repère de livraison/), { target: { value: 'Bureau Ankorondrano' } })
+    fireEvent.change(screen.getByLabelText('Début du créneau'), { target: { value: '18:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Choisir une adresse OSM' }))
 
     expect(screen.getByLabelText(/Libellé \/ repère de livraison/)).toHaveValue('Bureau Ankorondrano')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le colis' })).toBeEnabled())
+    expect(quoteDeliveryPrice).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: -18.8792, longitude: 47.5176 }),
+      'client-token',
+      expect.any(AbortSignal),
+      expect.objectContaining({ requestKind: 'NORMAL', desiredDeliveryTime: '18:30' }),
+    )
+    expect(screen.getByText('1,0 km · distance routière')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le colis' }))
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      desiredDeliveryTime: '18:30',
       destination: expect.objectContaining({
         label: 'Bureau Ankorondrano',
         destinationQuery: 'Lot II M 42, rue très longue retournée par OSM, Antananarivo',
@@ -60,7 +71,7 @@ describe('ClientPackageDialog', () => {
     }))
   })
 
-  it('ne propose pas d’heure souhaitée pour une demande normale', () => {
+  it('propose aussi un créneau d’une heure pour une demande normale', () => {
     render(<ClientPackageDialog
       accessToken="client-token"
       initialValue={emptyClientPackage('package-normal')}
@@ -70,10 +81,15 @@ describe('ClientPackageDialog', () => {
       onClose={vi.fn()}
     />)
 
-    expect(screen.queryByLabelText(/Heure souhaitée/)).not.toBeInTheDocument()
+    const start = screen.getByLabelText('Début du créneau')
+    const end = screen.getByLabelText('Fin du créneau')
+    fireEvent.change(start, { target: { value: '14:00' } })
+
+    expect(end).toHaveValue('15:00')
+    expect(end).toHaveAttribute('readonly')
   })
 
-  it('réserve l’heure souhaitée aux demandes expresses et impose une heure future', () => {
+  it('impose un début futur pour le créneau express', () => {
     render(<ClientPackageDialog
       accessToken="client-token"
       initialValue={emptyClientPackage('package-express')}
@@ -83,9 +99,15 @@ describe('ClientPackageDialog', () => {
       onClose={vi.fn()}
     />)
 
-    const desiredTime = screen.getByLabelText(/Heure souhaitée/)
+    const desiredTime = screen.getByLabelText('Début du créneau')
     expect(desiredTime).toHaveAttribute('type', 'time')
     expect(desiredTime).toHaveAttribute('min', expect.stringMatching(/^\d{2}:\d{2}$/))
-    expect(screen.getByText(/postérieure à maintenant/)).toBeInTheDocument()
+    expect(screen.getByText(/postérieur à maintenant|Aucun nouveau créneau/)).toBeInTheDocument()
+  })
+
+  it('calcule la fin du créneau y compris à minuit', () => {
+    expect(endOfOneHourWindow('08:00')).toBe('09:00')
+    expect(endOfOneHourWindow('18:30')).toBe('19:30')
+    expect(endOfOneHourWindow('23:00')).toBe('00:00')
   })
 })

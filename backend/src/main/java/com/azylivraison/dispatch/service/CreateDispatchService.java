@@ -331,6 +331,7 @@ public class CreateDispatchService {
                     source.contact(),
                     source.amountToCollectAriary(),
                     source.mobileMoneyPaid(),
+                    source.desiredDeliveryTime(),
                     source.pricingSnapshot(),
                     source.effectiveWeightKg(),
                     source.destination()));
@@ -497,7 +498,7 @@ public class CreateDispatchService {
                                 source.effectiveWeightKg(),
                                 source.contact(),
                                 source.destination(),
-                                null))
+                                deliveryWindow(serviceDate, source.desiredDeliveryTime())))
                         .toList();
                 groups.add(new DeliveryGroup(
                         request.getKey().toString(),
@@ -539,6 +540,16 @@ public class CreateDispatchService {
                         Duration.ofMinutes(settings.earlyToleranceMinutes()),
                         Duration.ofMinutes(settings.lateToleranceMinutes())),
                 Duration.ofSeconds(settings.optimizationTimeLimitSeconds()));
+    }
+
+    private com.azylivraison.planning.domain.DeliveryTimeWindow deliveryWindow(
+            LocalDate serviceDate,
+            java.time.LocalTime desiredDeliveryTime) {
+        if (desiredDeliveryTime == null) return null;
+        var start = serviceDate.atTime(desiredDeliveryTime)
+                .atZone(ANTANANARIVO)
+                .toOffsetDateTime();
+        return new com.azylivraison.planning.domain.DeliveryTimeWindow(start, start.plusHours(1));
     }
 
     private void validateOptimizationTimeLimit(int timeLimitSeconds) {

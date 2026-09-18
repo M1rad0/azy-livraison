@@ -10,6 +10,7 @@ import {
   type DeliveryRequestKind,
 } from '../../api/admin'
 import type { Location } from '../../api/csvImports'
+import type { PricingDistanceMode } from '../../api/pricing'
 import { LocationPicker } from '../LocationPicker'
 import { asConfirmedLocation, asPickerLocation, errorMessage } from './adminHelpers'
 import { CourierCombobox, type CourierComboboxOption } from './CourierCombobox'
@@ -26,6 +27,7 @@ export function AdminPricingZonesPanel({ accessToken }: { accessToken: string })
   const [kind, setKind] = useState<DeliveryRequestKind>('NORMAL')
   const [policy, setPolicy] = useState<AdvancedPricingPolicy>()
   const [center, setCenter] = useState<Location>({})
+  const [distanceMode, setDistanceMode] = useState<PricingDistanceMode>('AIR_DISTANCE')
   const [defaultWeight, setDefaultWeight] = useState('1')
   const [zones, setZones] = useState<ZoneDraft[]>([])
   const [weights, setWeights] = useState<WeightDraft[]>([])
@@ -35,7 +37,7 @@ export function AdminPricingZonesPanel({ accessToken }: { accessToken: string })
   const [message, setMessage] = useState<string>()
 
   const hydrate = useCallback((loaded: AdvancedPricingPolicy) => {
-    setPolicy(loaded); setCenter(asPickerLocation(loaded.center)); setDefaultWeight(String(loaded.defaultWeightKg))
+    setPolicy(loaded); setCenter(asPickerLocation(loaded.center)); setDistanceMode(loaded.distanceMode ?? 'AIR_DISTANCE'); setDefaultWeight(String(loaded.defaultWeightKg))
     setZones(loaded.zones.map((zone) => ({ id: zone.id, key: zone.id, name: zone.name, maxDistanceKm: String(zone.maxDistanceMeters / 1000), fee: String(zone.deliveryFeeAriary) })))
     setWeights(loaded.weightTiers.map((tier) => ({ id: tier.id, key: tier.id, maxWeightKg: String(tier.maxWeightKg), surcharge: String(tier.surchargeAriary) })))
     setSlots(loaded.timeSlots.map((slot) => ({ id: slot.id, key: slot.id, label: slot.label, startTime: slot.startTime.slice(0, 5), endTime: slot.endTime.slice(0, 5), surcharge: String(slot.surchargeAriary) })))
@@ -84,7 +86,7 @@ export function AdminPricingZonesPanel({ accessToken }: { accessToken: string })
     try {
       const saved = await saveAdvancedPricingPolicy({
         ...(clientId ? { clientAccountId: clientId } : {}), requestKind: kind,
-        version: inherited ? undefined : policy.version, center: confirmedCenter,
+        version: inherited ? undefined : policy.version, distanceMode, center: confirmedCenter,
         defaultWeightKg: Number(defaultWeight), zones: normalizedZones,
         weightTiers: normalizedWeights, timeSlots: normalizedSlots,
       }, accessToken)
@@ -113,7 +115,7 @@ export function AdminPricingZonesPanel({ accessToken }: { accessToken: string })
       </div>
 
       <div className="admin-pricing-form">
-        <section className="admin-settings-card admin-pricing-center"><header><span><MapPinned /></span><div><strong>Point central et poids par défaut</strong><small>Ces valeurs appartiennent uniquement à cette grille.</small></div></header><LocationPicker accessToken={accessToken} value={center} title="Centre tarifaire" description="Point depuis lequel les distances sont calculées." onChange={(location) => setCenter({ ...location, label: location.label || location.destinationQuery })} /><label className="admin-inline-field"><span>Poids utilisé si le client ne le renseigne pas</span><div className="admin-input-unit"><input type="number" min="0.001" step="0.1" value={defaultWeight} onChange={(event) => setDefaultWeight(event.target.value)} /><b>kg</b></div></label></section>
+        <section className="admin-settings-card admin-pricing-center"><header><span><MapPinned /></span><div><strong>Point central et poids par défaut</strong><small>Ces valeurs appartiennent uniquement à cette grille.</small></div></header><div className="admin-pricing-distance-setting"><div><strong>Mode de calcul des distances</strong><small>Le mode routier suit le profil AZY privilégiant les axes principaux.</small></div><div className="admin-segmented admin-pricing-distance-mode" role="radiogroup" aria-label="Mode de calcul des distances"><button type="button" role="radio" aria-checked={distanceMode === 'AIR_DISTANCE'} className={distanceMode === 'AIR_DISTANCE' ? 'is-active' : undefined} onClick={() => setDistanceMode('AIR_DISTANCE')}>À vol d’oiseau</button><button type="button" role="radio" aria-checked={distanceMode === 'ROAD_DISTANCE'} className={distanceMode === 'ROAD_DISTANCE' ? 'is-active' : undefined} onClick={() => setDistanceMode('ROAD_DISTANCE')}>Par la route</button></div></div><LocationPicker accessToken={accessToken} value={center} title="Centre tarifaire" description="Point depuis lequel les distances sont calculées." onChange={(location) => setCenter({ ...location, label: location.label || location.destinationQuery })} /><label className="admin-inline-field"><span>Poids utilisé si le client ne le renseigne pas</span><div className="admin-input-unit"><input type="number" min="0.001" step="0.1" value={defaultWeight} onChange={(event) => setDefaultWeight(event.target.value)} /><b>kg</b></div></label></section>
 
         <PricingCollection title="Zones de distance" icon={<BadgeDollarSign />} addLabel="Ajouter une zone" onAdd={() => setZones([...zones, { key: key(), name: `Zone ${zones.length + 1}`, maxDistanceKm: String(maximumCoverage + 5), fee: '0' }])}>
           {zones.map((zone, index) => <div className="admin-pricing-rule" key={zone.key}><label><span>Nom</span><input value={zone.name} onChange={(event) => setZones(zones.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></label><label><span>Rayon max.</span><div className="admin-input-unit"><input type="number" value={zone.maxDistanceKm} onChange={(event) => setZones(zones.map((item, i) => i === index ? { ...item, maxDistanceKm: event.target.value } : item))} /><b>km</b></div></label><label><span>Tarif</span><div className="admin-input-unit"><input type="number" value={zone.fee} onChange={(event) => setZones(zones.map((item, i) => i === index ? { ...item, fee: event.target.value } : item))} /><b>Ar</b></div></label><button className="admin-icon-button" type="button" disabled={zones.length === 1} onClick={() => setZones(zones.filter((_, i) => i !== index))}><Trash2 /></button></div>)}

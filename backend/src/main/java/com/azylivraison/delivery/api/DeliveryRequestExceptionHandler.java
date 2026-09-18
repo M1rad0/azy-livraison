@@ -7,10 +7,13 @@ import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
 import com.azylivraison.delivery.service.DeliveryRequestNotFoundException;
 import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
+import com.azylivraison.delivery.service.InvalidDeliveryRequestException;
 import com.azylivraison.delivery.service.ExpressDeliveryForbiddenException;
 import com.azylivraison.pricing.service.DestinationOutsidePricingZonesException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
 import com.azylivraison.pricing.api.PublicPricingController;
+import com.azylivraison.routing.service.RoutingNotFoundException;
+import com.azylivraison.routing.service.RoutingUnavailableException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -73,6 +76,22 @@ public class DeliveryRequestExceptionHandler {
                 List.of()));
     }
 
+    @ExceptionHandler(RoutingNotFoundException.class)
+    ResponseEntity<DeliveryApiErrorResponse> pricingRouteNotFound(RoutingNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(new DeliveryApiErrorResponse(
+                "ROUTE_NOT_FOUND",
+                exception.getMessage(),
+                List.of()));
+    }
+
+    @ExceptionHandler(RoutingUnavailableException.class)
+    ResponseEntity<DeliveryApiErrorResponse> pricingRoutingUnavailable(RoutingUnavailableException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new DeliveryApiErrorResponse(
+                "ROUTING_UNAVAILABLE",
+                exception.getMessage(),
+                List.of()));
+    }
+
     @ExceptionHandler(DeliveryRequestNotFoundException.class)
     ResponseEntity<DeliveryApiErrorResponse> notFound(DeliveryRequestNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new DeliveryApiErrorResponse(
@@ -85,6 +104,15 @@ public class DeliveryRequestExceptionHandler {
     ResponseEntity<DeliveryApiErrorResponse> invalidFilter(InvalidDeliveryRequestFilterException exception) {
         return ResponseEntity.badRequest().body(new DeliveryApiErrorResponse(
                 "DELIVERY_REQUEST_FILTER_INVALID",
+                exception.getMessage(),
+                List.of()));
+    }
+
+    @ExceptionHandler(InvalidDeliveryRequestException.class)
+    ResponseEntity<DeliveryApiErrorResponse> invalidDeliveryRequest(
+            InvalidDeliveryRequestException exception) {
+        return ResponseEntity.badRequest().body(new DeliveryApiErrorResponse(
+                "DELIVERY_REQUEST_INVALID",
                 exception.getMessage(),
                 List.of()));
     }

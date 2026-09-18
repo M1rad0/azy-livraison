@@ -20,6 +20,9 @@ public record CourierProfile(
         BigDecimal averageSpeedKmh,
         Integer commissionNumerator,
         Integer commissionDenominator,
+        Boolean fuelReimbursementEnabled,
+        BigDecimal fuelEfficiencyKmPerLiter,
+        Long fuelPricePerLiterAriary,
         LocalTime defaultDepartureTime,
         ConfirmedLocation departureLocation,
         long version,
@@ -30,6 +33,7 @@ public record CourierProfile(
         return new CourierProfile(
                 id, accountId, name, contact, phoneNumber, payoutDestination, newActive, vehicleType,
                 maxWeightKg, averageSpeedKmh, commissionNumerator, commissionDenominator,
+                fuelReimbursementEnabled, fuelEfficiencyKmPerLiter, fuelPricePerLiterAriary,
                 defaultDepartureTime, departureLocation,
                 version, createdAt, updatedAt);
     }

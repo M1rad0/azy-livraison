@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.delivery.domain.PackageWeightSource;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -75,6 +77,7 @@ public class DailyWorkflowRepository {
                        p.destination_latitude, p.destination_longitude,
                        p.contact, p.amount_to_collect_ariary, p.mobile_money_paid,
                        p.pricing_zone_id, p.pricing_zone_name, p.delivery_fee_ariary,
+                       p.distance_from_center_meters, p.pricing_distance_mode,
                        COALESCE(p.final_delivery_fee_ariary, p.delivery_fee_ariary) AS final_delivery_fee_ariary,
                        p.delivery_fee_override_reason, p.delivery_fee_overridden_at,
                        p.delivery_fee_version,
@@ -363,6 +366,20 @@ public class DailyWorkflowRepository {
         return count == null ? 0 : count;
     }
 
+    public int undispatchedNormalPackageCount(LocalDate serviceDate) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM delivery_package package
+                JOIN delivery_request request ON request.id = package.delivery_request_id
+                WHERE request.requested_date = ?
+                  AND request.request_kind = 'NORMAL'
+                  AND package.cancelled_before_processing_at IS NULL
+                  AND (package.final_outcome IS NULL OR package.final_outcome <> 'CANCELLED')
+                  AND (package.status <> 'DISPATCHED' OR package.dispatch_plan_id IS NULL)
+                """, Integer.class, Date.valueOf(serviceDate));
+        return count == null ? 0 : count;
+    }
+
     public int uncarriedPostponedDayPackageCount(LocalDate serviceDate) {
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
@@ -403,10 +420,14 @@ public class DailyWorkflowRepository {
         jdbcTemplate.update("""
                 UPDATE delivery_operation_day
                 SET status = 'CLOSED', closure_revision = ?,
+                    admissions_closed_at = COALESCE(admissions_closed_at, ?),
                     closed_at = ?, closed_by_account_id = ?,
                     version = version + 1, updated_at = ?
-                WHERE service_date = ? AND status = 'DISPATCHED' AND version = ?
-                """, nextRevision, timestamp(now), actorAccountId, timestamp(now),
+                WHERE service_date = ?
+                  AND ((status = 'DISPATCHED' AND dispatch_plan_id IS NOT NULL)
+                       OR (status = 'OPEN' AND dispatch_plan_id IS NULL))
+                  AND version = ?
+                """, nextRevision, timestamp(now), timestamp(now), actorAccountId, timestamp(now),
                 Date.valueOf(day.serviceDate()), day.version());
         snapshotClients(day.serviceDate(), nextRevision, now);
         insertDayEvent(day.serviceDate(), "DAY_CLOSED", actorAccountId,
@@ -421,7 +442,9 @@ public class DailyWorkflowRepository {
             Instant now) {
         jdbcTemplate.update("""
                 UPDATE delivery_operation_day
-                SET status = 'DISPATCHED',
+                SET status = CASE WHEN dispatch_plan_id IS NULL THEN 'OPEN' ELSE 'DISPATCHED' END,
+                    admissions_closed_at = CASE
+                        WHEN dispatch_plan_id IS NULL THEN NULL ELSE admissions_closed_at END,
                     reopened_at = ?, reopened_by_account_id = ?, reopen_reason = ?,
                     version = version + 1, updated_at = ?
                 WHERE service_date = ? AND status = 'CLOSED' AND version = ?
@@ -479,9 +502,11 @@ public class DailyWorkflowRepository {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
+                    desired_delivery_time,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
-                    distance_from_center_meters, pricing_zone_max_distance_meters,
-                    pricing_policy_version,
+                    distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
+                    pricing_policy_version, pricing_policy_id,
+                    base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                     effective_weight_kg, weight_source,
                     status, unassigned_reason,
                     final_outcome, actual_collected_ariary, outcome_note,
@@ -490,7 +515,7 @@ public class DailyWorkflowRepository {
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
                 ) VALUES (
-                    ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     'PENDING', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                     ?, NULL, ?, 0, ?, ?
                 )
@@ -500,9 +525,15 @@ public class DailyWorkflowRepository {
                 source.destination().label(), source.destination().query(),
                 source.destination().latitude(), source.destination().longitude(),
                 source.contact(), source.amountToCollectAriary(), source.mobileMoneyPaid(),
+                source.desiredDeliveryTime(),
                 source.pricingZoneId(), source.pricingZoneName(), source.deliveryFeeAriary(),
-                source.distanceFromCenterMeters(), source.pricingZoneMaxDistanceMeters(),
-                source.pricingPolicyVersion(), source.effectiveWeightKg(), source.weightSource().name(),
+                source.distanceFromCenterMeters(),
+                source.pricingDistanceMode() == null ? null : source.pricingDistanceMode().name(),
+                source.pricingZoneMaxDistanceMeters(),
+                source.pricingPolicyVersion(), source.pricingPolicyId(),
+                source.baseDeliveryFeeAriary(), source.weightSurchargeAriary(),
+                source.timeSurchargeAriary(),
+                source.effectiveWeightKg(), source.weightSource().name(),
                 source.packageId(), timestamp(source.priorityAt()), timestamp(now), timestamp(now));
         jdbcTemplate.update("""
                 INSERT INTO delivery_event (
@@ -613,6 +644,8 @@ public class DailyWorkflowRepository {
                 resultSet.getObject("pricing_zone_id", UUID.class),
                 resultSet.getString("pricing_zone_name"),
                 nullableLong(resultSet, "delivery_fee_ariary"),
+                nullableLong(resultSet, "distance_from_center_meters"),
+                pricingDistanceMode(resultSet),
                 nullableLong(resultSet, "final_delivery_fee_ariary"),
                 resultSet.getString("delivery_fee_override_reason"),
                 instant(resultSet, "delivery_fee_overridden_at"),
@@ -657,6 +690,7 @@ public class DailyWorkflowRepository {
                 resultSet.getString("contact"),
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
+                resultSet.getObject("desired_delivery_time", LocalTime.class),
                 resultSet.getObject("pricing_zone_id", UUID.class),
                 resultSet.getString("pricing_zone_name"),
                 nullableLong(resultSet, "delivery_fee_ariary"),
@@ -667,8 +701,13 @@ public class DailyWorkflowRepository {
                 instant(resultSet, "delivery_fee_overridden_at"),
                 resultSet.getLong("delivery_fee_version"),
                 nullableLong(resultSet, "distance_from_center_meters"),
+                pricingDistanceMode(resultSet),
                 nullableLong(resultSet, "pricing_zone_max_distance_meters"),
                 nullableLong(resultSet, "pricing_policy_version"),
+                resultSet.getObject("pricing_policy_id", Short.class),
+                nullableLong(resultSet, "base_delivery_fee_ariary"),
+                nullableLong(resultSet, "weight_surcharge_ariary"),
+                nullableLong(resultSet, "time_surcharge_ariary"),
                 resultSet.getBigDecimal("effective_weight_kg"),
                 PackageWeightSource.valueOf(resultSet.getString("weight_source")),
                 DeliveryPackageStatus.valueOf(resultSet.getString("status")),
@@ -695,6 +734,11 @@ public class DailyWorkflowRepository {
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private PricingDistanceMode pricingDistanceMode(ResultSet resultSet) throws SQLException {
+        String value = resultSet.getString("pricing_distance_mode");
+        return value == null ? null : PricingDistanceMode.valueOf(value);
     }
 
     private Long coalesce(Long preferred, Long fallback) {
@@ -752,6 +796,7 @@ public class DailyWorkflowRepository {
             String contact,
             long amountToCollectAriary,
             boolean mobileMoneyPaid,
+            LocalTime desiredDeliveryTime,
             UUID pricingZoneId,
             String pricingZoneName,
             Long deliveryFeeAriary,
@@ -760,8 +805,13 @@ public class DailyWorkflowRepository {
             Instant deliveryFeeOverriddenAt,
             long deliveryFeeVersion,
             Long distanceFromCenterMeters,
+            PricingDistanceMode pricingDistanceMode,
             Long pricingZoneMaxDistanceMeters,
             Long pricingPolicyVersion,
+            Short pricingPolicyId,
+            Long baseDeliveryFeeAriary,
+            Long weightSurchargeAriary,
+            Long timeSurchargeAriary,
             BigDecimal effectiveWeightKg,
             PackageWeightSource weightSource,
             DeliveryPackageStatus technicalStatus,

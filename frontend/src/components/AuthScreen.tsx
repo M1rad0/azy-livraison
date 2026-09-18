@@ -64,7 +64,6 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           </p>
         </div>
         <span className="login-intro__caption">Pensé à Antananarivo · Pour les réalités du terrain</span>
-        <button className="login-pricing-link" type="button" onClick={() => setPricingOpen(true)}><Calculator />Calculer un tarif<ArrowRight /></button>
       </section>
 
       <section className="login-panel" aria-labelledby="form-title">
@@ -77,6 +76,11 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 ? 'Quelques informations suffisent pour enregistrer votre première demande.'
                 : 'Connectez-vous pour accéder à vos livraisons.'}
             </p>
+            <button className="login-pricing-cta" type="button" onClick={() => setPricingOpen(true)}>
+                <span aria-hidden="true"><Calculator /></span>
+                <span><strong>Calculer un tarif</strong><small>Choisissez une destination et obtenez immédiatement sa zone et son prix.</small></span>
+                <ArrowRight aria-hidden="true" />
+            </button>
           </div>
 
           {registering && (

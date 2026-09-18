@@ -145,7 +145,7 @@ public final class DailyReportPdfRenderer {
         writer.line(report.sourcePlanCount() > 1 ? "Point de ralliement de référence" : "Point de ralliement",
                 text(report.hubLabel()));
         writer.line(report.sourcePlanCount() > 1 ? "Plan de référence" : "Plan",
-                report.dispatchPlanId().toString());
+                report.dispatchPlanId() == null ? "Journée express sans plan" : report.dispatchPlanId().toString());
         if (report.sourcePlanCount() > 1) {
             writer.line("Historique consolidé", report.sourcePlanCount() + " plans de dispatch");
         }

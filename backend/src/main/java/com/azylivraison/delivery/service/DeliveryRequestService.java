@@ -30,6 +30,7 @@ import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
 import com.azylivraison.pricing.domain.AdvancedPricingQuote;
 import com.azylivraison.pricing.service.AdvancedPricingService;
 import com.azylivraison.pricing.service.PricingConfigurationException;
+import com.azylivraison.dailyworkflow.service.ClientClosureService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,12 +42,15 @@ public class DeliveryRequestService {
 
     private final DeliveryRequestRepository repository;
     private final AdvancedPricingService pricingService;
+    private final ClientClosureService clientClosures;
 
     public DeliveryRequestService(
             DeliveryRequestRepository repository,
-            AdvancedPricingService pricingService) {
+            AdvancedPricingService pricingService,
+            ClientClosureService clientClosures) {
         this.repository = repository;
         this.pricingService = pricingService;
+        this.clientClosures = clientClosures;
     }
 
     @Transactional
@@ -68,9 +72,19 @@ public class DeliveryRequestService {
             UUID ownerAccountId, UUID actorAccountId, CreateDeliveryRequest input) {
         OperationalSettingsSnapshot settings = repository.lockOperationalSettings();
         boolean express = input.requestKind() == DeliveryRequestKind.EXPRESS;
+        LocalDate today = LocalDate.now(ACTIVITY_ZONE);
+        if (!express && input.requestedDate() == null) {
+            throw new InvalidDeliveryRequestException(
+                    "Indiquez la date souhaitée pour cette demande.");
+        }
+        if (!express && input.requestedDate().isBefore(today)) {
+            throw new InvalidDeliveryRequestException(
+                    "La date de livraison ne peut pas être passée.");
+        }
         LocalDate requestedDate = express
-                ? LocalDate.now(ACTIVITY_ZONE)
+                ? today
                 : input.requestedDate();
+        clientClosures.assertClientOpenForMutation(requestedDate, ownerAccountId);
         validateDesiredDeliveryTimes(input.packages(), express);
         if (!express && repository.isDateClosedForAdmissions(requestedDate)) {
             throw new DeliveryDateClosedException(requestedDate);
@@ -249,10 +263,6 @@ public class DeliveryRequestService {
         LocalTime currentTime = LocalTime.now(ACTIVITY_ZONE);
         for (CreateDeliveryPackageRequest deliveryPackage : packages) {
             LocalTime desiredTime = deliveryPackage.desiredDeliveryTime();
-            if (!express && desiredTime != null) {
-                throw new PricingConfigurationException(
-                        "L'heure de livraison souhaitée est réservée aux demandes expresses.");
-            }
             if (express && desiredTime != null && !desiredTime.isAfter(currentTime)) {
                 throw new PricingConfigurationException(
                         "L'heure de livraison souhaitée d'une demande express doit être ultérieure à l'heure actuelle.");

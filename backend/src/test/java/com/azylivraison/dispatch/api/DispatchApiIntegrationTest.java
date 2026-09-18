@@ -52,6 +52,8 @@ import com.azylivraison.routing.domain.RoutingWaypoint;
 import com.azylivraison.routing.provider.RoutingProvider;
 import com.azylivraison.routing.provider.RoutingRouteData;
 
+import org.mockito.ArgumentCaptor;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -137,15 +139,19 @@ class DispatchApiIntegrationTest {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
+                    desired_delivery_time,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
-                    distance_from_center_meters, pricing_zone_max_distance_meters,
-                    pricing_policy_version,
+                    distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
+                    pricing_policy_version, pricing_policy_id,
+                    base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                     effective_weight_kg, weight_source, priority_at
                 ) VALUES (?, ?, 1, 'Rakoto', TRUE,
                           'Ampasapito', 'Ampasapito, Antananarivo', -18.8990, 47.5440,
                           '034 11 222 33', 45000, FALSE,
+                          '23:30:00',
                           '71000000-0000-0000-0000-000000000001', 'Centre-ville', 3000,
-                          2448, 2500, 0,
+                          2448, 'AIR_DISTANCE', 2500, 7, 1,
+                          2000, 400, 600,
                           2.5, 'PROVIDED', CURRENT_TIMESTAMP)
                 """, PACKAGE_ID, REQUEST_ID);
         when(optimizationFacade.optimize(any(DeliveryPlan.class), any(ViaHubRunPolicy.class)))
@@ -178,6 +184,15 @@ class DispatchApiIntegrationTest {
                 .andExpect(jsonPath("$.packages[0].pricingZoneName").value("Centre-ville"))
                 .andExpect(jsonPath("$.packages[0].deliveryFeeAriary").value(3000))
                 .andExpect(jsonPath("$.packages[0].distanceFromCenterMeters").value(2448))
+                .andExpect(jsonPath("$.packages[0].pricingDistanceMode").value("AIR_DISTANCE"))
+                .andExpect(jsonPath("$.packages[0].pricingPolicyVersion").value(7))
+                .andExpect(jsonPath("$.packages[0].pricingPolicyId").value(1))
+                .andExpect(jsonPath("$.packages[0].baseDeliveryFeeAriary").value(2000))
+                .andExpect(jsonPath("$.packages[0].weightSurchargeAriary").value(400))
+                .andExpect(jsonPath("$.packages[0].timeSurchargeAriary").value(600))
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryTime").value(org.hamcrest.Matchers.startsWith("23:30")))
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryEndTime").value(org.hamcrest.Matchers.startsWith("00:30")))
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryEndsNextDay").value(true))
                 .andReturn();
 
         String id = objectMapper.readTree(first.getResponse().getContentAsString())
@@ -202,7 +217,14 @@ class DispatchApiIntegrationTest {
                 .andExpect(jsonPath("$[0].id").value(id))
                 .andExpect(jsonPath("$[0].strategy").value("VIA_HUB"));
 
-        verify(optimizationFacade, times(1)).optimize(any(DeliveryPlan.class), any(ViaHubRunPolicy.class));
+        ArgumentCaptor<DeliveryPlan> planCaptor = ArgumentCaptor.forClass(DeliveryPlan.class);
+        verify(optimizationFacade, times(1)).optimize(planCaptor.capture(), any(ViaHubRunPolicy.class));
+        var deliveryWindow = planCaptor.getValue().clients().getFirst().deliveryGroups().getFirst()
+                .packages().getFirst().deliveryWindow();
+        org.assertj.core.api.Assertions.assertThat(deliveryWindow.startAt())
+                .isEqualTo(OffsetDateTime.of(2026, 8, 24, 23, 30, 0, 0, ZoneOffset.ofHours(3)));
+        org.assertj.core.api.Assertions.assertThat(deliveryWindow.endAt())
+                .isEqualTo(OffsetDateTime.of(2026, 8, 25, 0, 30, 0, 0, ZoneOffset.ofHours(3)));
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM delivery_package WHERE id = ?", String.class, PACKAGE_ID))
                 .isEqualTo("DISPATCHED");
@@ -215,6 +237,18 @@ class DispatchApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT delivery_fee_ariary FROM dispatch_package_outcome WHERE dispatch_plan_id = ?",
                 Long.class, UUID.fromString(id))).isEqualTo(3000L);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT pricing_policy_id FROM dispatch_package_outcome WHERE dispatch_plan_id = ?",
+                Short.class, UUID.fromString(id))).isEqualTo((short) 1);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT base_delivery_fee_ariary FROM dispatch_package_outcome WHERE dispatch_plan_id = ?",
+                Long.class, UUID.fromString(id))).isEqualTo(2000L);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT weight_surcharge_ariary FROM dispatch_package_outcome WHERE dispatch_plan_id = ?",
+                Long.class, UUID.fromString(id))).isEqualTo(400L);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT time_surcharge_ariary FROM dispatch_package_outcome WHERE dispatch_plan_id = ?",
+                Long.class, UUID.fromString(id))).isEqualTo(600L);
     }
 
     @Test

@@ -10,6 +10,7 @@ import java.util.UUID;
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
 import com.azylivraison.pricing.domain.PricingCenter;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 import com.azylivraison.pricing.domain.PricingTimeSlot;
 import com.azylivraison.pricing.domain.PricingWeightTier;
 import com.azylivraison.pricing.domain.PricingZone;
@@ -64,10 +65,12 @@ public class AdvancedPricingPolicyRepository {
         int updated = jdbcTemplate.update("""
                 UPDATE delivery_pricing_policy
                 SET center_label = ?, center_query = ?, center_latitude = ?, center_longitude = ?,
-                    default_weight_kg = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
+                    distance_mode = ?, default_weight_kg = ?,
+                    version = version + 1, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND version = ? AND active = TRUE
                 """, policy.center().label(), policy.center().query(), policy.center().latitude(),
-                policy.center().longitude(), policy.defaultWeightKg(), policy.id(), expectedVersion);
+                policy.center().longitude(), policy.distanceMode().name(), policy.defaultWeightKg(),
+                policy.id(), expectedVersion);
         if (updated == 0) return false;
         replaceChildren(policy);
         return true;
@@ -85,13 +88,13 @@ public class AdvancedPricingPolicyRepository {
         jdbcTemplate.update("""
                 INSERT INTO delivery_pricing_policy (
                     id, center_label, center_query, center_latitude, center_longitude,
-                    client_account_id, request_kind, default_weight_kg, active, version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE, 0)
+                    client_account_id, request_kind, distance_mode, default_weight_kg, active, version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 0)
                 """, id, policy.center().label(), policy.center().query(), policy.center().latitude(),
                 policy.center().longitude(), policy.clientAccountId(), policy.requestKind().name(),
-                policy.defaultWeightKg());
+                policy.distanceMode().name(), policy.defaultWeightKg());
         AdvancedPricingPolicy stored = new AdvancedPricingPolicy(id, policy.clientAccountId(),
-                policy.requestKind(), policy.center(), policy.defaultWeightKg(), policy.zones(),
+                policy.requestKind(), policy.distanceMode(), policy.center(), policy.defaultWeightKg(), policy.zones(),
                 policy.weightTiers(), policy.timeSlots(), 0, policy.createdAt(), policy.updatedAt());
         replaceChildren(stored);
         return id;
@@ -117,6 +120,7 @@ public class AdvancedPricingPolicyRepository {
         return new AdvancedPricingPolicy(
                 id, rs.getObject("client_account_id", UUID.class),
                 DeliveryRequestKind.valueOf(rs.getString("request_kind")),
+                PricingDistanceMode.valueOf(rs.getString("distance_mode")),
                 new PricingCenter(rs.getString("center_label"), rs.getString("center_query"),
                         rs.getDouble("center_latitude"), rs.getDouble("center_longitude")),
                 rs.getBigDecimal("default_weight_kg"), findZones(id), findWeights(id), findSlots(id),

@@ -341,6 +341,10 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Bienvenue' })).toBeInTheDocument()
     expect(screen.getByLabelText('Identifiant')).toBeInTheDocument()
     expect(screen.getByLabelText('Mot de passe')).toHaveAttribute('type', 'password')
+    const pricingButton = screen.getByRole('button', { name: /Calculer un tarif/ })
+    expect(pricingButton).toBeVisible()
+    fireEvent.click(pricingButton)
+    expect(screen.getByRole('dialog', { name: 'Calculer un tarif' })).toBeInTheDocument()
   })
 
   it('registers a client and opens the client dashboard', async () => {
@@ -351,6 +355,7 @@ describe('App', () => {
 
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Créer un compte' }))
+    expect(screen.getByRole('button', { name: /Calculer un tarif/ })).toBeVisible()
     fireEvent.change(screen.getByLabelText('Nom affiché'), { target: { value: 'Soa Rakoto' } })
     fireEvent.change(screen.getByLabelText('Téléphone'), { target: { value: '+261341234567' } })
     fireEvent.change(screen.getByLabelText('Identifiant'), { target: { value: 'soa.client' } })

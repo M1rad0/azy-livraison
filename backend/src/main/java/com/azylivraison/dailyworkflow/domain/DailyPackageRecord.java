@@ -8,6 +8,7 @@ import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 public record DailyPackageRecord(
         UUID packageId,
@@ -28,6 +29,8 @@ public record DailyPackageRecord(
         UUID pricingZoneId,
         String pricingZoneName,
         Long deliveryFeeAriary,
+        Long distanceFromCenterMeters,
+        PricingDistanceMode pricingDistanceMode,
         Long finalDeliveryFeeAriary,
         String deliveryFeeOverrideReason,
         Instant deliveryFeeOverriddenAt,

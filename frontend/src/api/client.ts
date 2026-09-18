@@ -1,4 +1,5 @@
 import type { ClientFinance } from './admin'
+import type { PricingDistanceMode } from './pricing'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -133,12 +134,15 @@ export interface DeliveryPackageRecord {
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
   desiredDeliveryTime?: string | null
+  desiredDeliveryEndTime?: string | null
+  desiredDeliveryEndsNextDay?: boolean
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
   calculatedDeliveryFeeAriary?: number | null
   finalDeliveryFeeAriary?: number | null
   distanceFromCenterMeters?: number | null
+  pricingDistanceMode?: PricingDistanceMode | null
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
   pricingPolicyId?: number | null
@@ -169,11 +173,14 @@ export interface DeliveryPricingQuote {
   distanceFromCenterMeters: number
   pricingZoneMaxDistanceMeters: number
   pricingPolicyVersion: number
+  distanceMode: PricingDistanceMode
   requestKind?: DeliveryRequestKind
   baseDeliveryFeeAriary?: number
   effectiveWeightKg?: number
   weightSurchargeAriary?: number
   desiredDeliveryTime?: string | null
+  desiredDeliveryEndTime?: string | null
+  desiredDeliveryEndsNextDay?: boolean
   timeSlotLabel?: string | null
   timeSurchargeAriary?: number
 }
@@ -184,6 +191,7 @@ export interface DeliveryPricingPolicy {
   requestKind: DeliveryRequestKind
   clientSpecific: boolean
   version: number
+  distanceMode: PricingDistanceMode
   center: ClientLocation
   defaultWeightKg: number
   zones: Array<{ id: string; name: string; maxDistanceMeters: number; deliveryFeeAriary: number }>

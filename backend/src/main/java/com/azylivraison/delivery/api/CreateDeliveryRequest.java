@@ -7,16 +7,12 @@ import com.azylivraison.delivery.domain.DeliveryRequestKind;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import jakarta.validation.constraints.FutureOrPresent;
 
 public record CreateDeliveryRequest(
-        @NotNull
-        @FutureOrPresent(message = "La date de livraison ne peut pas être passée.")
         LocalDate requestedDate,
         DeliveryRequestKind requestKind,
-        @NotNull @Valid ConfirmedLocationRequest pickup,
+        @jakarta.validation.constraints.NotNull @Valid ConfirmedLocationRequest pickup,
         Boolean saveAsDefaultPickup,
         @NotEmpty @Size(max = 500) List<@Valid CreateDeliveryPackageRequest> packages) {
 

@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.pricing.domain.PricingCenter;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 import com.azylivraison.pricing.domain.PricingTimeSlot;
 import com.azylivraison.pricing.domain.PricingWeightTier;
 import com.azylivraison.pricing.domain.PricingZone;
@@ -21,12 +22,17 @@ import jakarta.validation.constraints.Size;
 public record AdvancedPricingPolicyRequest(
         UUID clientAccountId,
         @NotNull DeliveryRequestKind requestKind,
+        PricingDistanceMode distanceMode,
         Long version,
         @NotNull @Valid PricingCenterRequest center,
         @NotNull @Positive BigDecimal defaultWeightKg,
         @NotEmpty @Size(max = 50) List<@Valid Zone> zones,
         @Size(max = 50) List<@Valid WeightTier> weightTiers,
         @Size(max = 50) List<@Valid TimeSlot> timeSlots) {
+
+    public AdvancedPricingPolicyRequest {
+        if (distanceMode == null) distanceMode = PricingDistanceMode.AIR_DISTANCE;
+    }
 
     public PricingCenter centerDomain() { return center.toDomain(); }
     public List<PricingZone> zoneDomains() {

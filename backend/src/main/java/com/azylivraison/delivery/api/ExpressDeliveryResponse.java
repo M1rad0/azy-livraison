@@ -11,7 +11,10 @@ public record ExpressDeliveryResponse(
         BigDecimal totalWeightKg,
         BigDecimal selectedCapacityKg,
         boolean capacityWarning,
-        Instant confirmedAt) {
+        Instant confirmedAt,
+        boolean returnToPickup,
+        boolean returnToPickupOverridden,
+        ExpressFuelResponse fuelCalculation) {
 
     public ExpressDeliveryResponse {
         couriers = List.copyOf(couriers);

@@ -20,6 +20,8 @@ public record OperationalSettingsResponse(
         RoutingPreset routingPreset,
         int defaultCourierCommissionNumerator,
         int defaultCourierCommissionDenominator,
+        long defaultFuelPricePerLiterAriary,
+        boolean defaultExpressReturnToPickup,
         long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -38,6 +40,8 @@ public record OperationalSettingsResponse(
                 settings.routingPreset(),
                 settings.defaultCourierCommissionNumerator(),
                 settings.defaultCourierCommissionDenominator(),
+                settings.defaultFuelPricePerLiterAriary(),
+                settings.defaultExpressReturnToPickup(),
                 settings.version(),
                 settings.createdAt(),
                 settings.updatedAt());

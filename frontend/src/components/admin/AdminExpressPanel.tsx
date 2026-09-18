@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Ban, Bike, Check, Clock3, LoaderCircle, PackageCheck, RefreshCw, Search, Send, TriangleAlert, Zap } from 'lucide-react'
+import { Ban, Bike, Check, Clock3, Fuel, LoaderCircle, PackageCheck, RefreshCw, Search, Send, TriangleAlert, Undo2, Zap } from 'lucide-react'
 import {
   cancelExpressDelivery,
   confirmExpressDelivery,
@@ -7,6 +7,7 @@ import {
   type Courier,
   type ExpressDelivery,
 } from '../../api/admin'
+import { formatOneHourWindow } from '../../deliveryWindows'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { errorMessage, formatAriary } from './adminHelpers'
 
@@ -22,6 +23,7 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string>()
   const [selected, setSelected] = useState<Record<string, string[]>>({})
+  const [returnToPickup, setReturnToPickup] = useState<Record<string, boolean>>({})
   const [courierQuery, setCourierQuery] = useState<Record<string, string>>({})
   const [cancelTarget, setCancelTarget] = useState<ExpressDelivery>()
   const [message, setMessage] = useState<string>()
@@ -46,7 +48,13 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
     if (!ids.length) { setMessage('Sélectionnez au moins un livreur.'); return }
     setBusyId(delivery.request.id)
     try {
-      const updated = await confirmExpressDelivery(delivery.request.id, ids, delivery.request.version, accessToken)
+      const updated = await confirmExpressDelivery(
+        delivery.request.id,
+        ids,
+        delivery.request.version,
+        returnToPickup[delivery.request.id] ?? delivery.returnToPickup,
+        accessToken,
+      )
       setDeliveries((current) => current.map((item) => item.request.id === updated.request.id ? updated : item))
       setMessage('La demande express est confirmée. Les colis apparaissent maintenant dans le compte rendu du jour.')
     } catch (error) { setMessage(errorMessage(error)) }
@@ -84,16 +92,17 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
             return (
               <article key={request.id} className={`admin-express-card is-${request.expressStatus?.toLowerCase()}`}>
                 <header><span className="admin-express-card__icon"><Zap /></span><div><small>{new Date(request.createdAt).toLocaleString('fr-MG')}</small><h3>{request.ownerDisplayName}</h3><p>{request.pickup.label} · {request.packages.length} colis · {delivery.totalWeightKg.toLocaleString('fr-MG')} kg</p></div><span className="admin-express-status">{statusLabel[request.expressStatus ?? 'PENDING']}</span></header>
-                <div className="admin-express-packages">{request.packages.map((item) => <span key={item.id}><strong>{item.recipientName}</strong><small>{item.destination.label} · {formatAriary(item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0)}</small></span>)}</div>
+                <div className="admin-express-packages">{request.packages.map((item) => <span key={item.id}><strong>{item.recipientName}</strong><small>{item.destination.label} · {formatAriary(item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0)}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay) ? ` · créneau ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay)}` : ''}</small></span>)}</div>
                 {request.expressStatus === 'PENDING' && (
                   <div className="admin-express-assignment">
                     <div className="admin-express-assignment__heading"><div><strong>Livreurs mobilisés</strong><small>Le livreur réellement intervenu sera renseigné au compte rendu.</small></div><label><Search /><input placeholder="Rechercher…" value={courierQuery[request.id] ?? ''} onChange={(event) => setCourierQuery({ ...courierQuery, [request.id]: event.target.value })} /></label></div>
                     <div className="admin-express-couriers">{candidates.map((courier) => <label key={courier.id} className={selectedIds.includes(courier.id) ? 'is-selected' : undefined}><input type="checkbox" checked={selectedIds.includes(courier.id)} onChange={(event) => setSelected({ ...selected, [request.id]: event.target.checked ? [...selectedIds, courier.id] : selectedIds.filter((id) => id !== courier.id) })} /><Bike /><span><strong>{courier.name}</strong><small>{courier.vehicleType === 'MOTO' ? 'Moto' : 'Vélo'} · {courier.effectiveMaxWeightKg} kg</small></span>{selectedIds.includes(courier.id) && <Check />}</label>)}</div>
+                    <label className="admin-switch admin-express-return"><input type="checkbox" checked={returnToPickup[request.id] ?? delivery.returnToPickup} onChange={(event) => setReturnToPickup({ ...returnToPickup, [request.id]: event.target.checked })} /><span><i /><span><strong><Undo2 aria-hidden="true" />Retour au retrait</strong><small>Inclure le retour après la dernière livraison dans le calcul du carburant</small></span></span></label>
                     {warning && <p className="admin-callout admin-callout--warning"><TriangleAlert />Poids total supérieur aux {selectedCapacity.toLocaleString('fr-MG')} kg supportés par la sélection. La confirmation reste possible.</p>}
                     <div className="admin-express-actions"><button className="admin-button admin-button--danger-ghost" type="button" onClick={() => setCancelTarget(delivery)}><Ban />Annuler</button><button className="admin-button" type="button" disabled={busyId === request.id || !selectedIds.length} onClick={() => void confirm(delivery)}><Send />Confirmer et envoyer</button></div>
                   </div>
                 )}
-                {request.expressStatus !== 'PENDING' && <footer><PackageCheck /><span><strong>{delivery.couriers.map((courier) => courier.name).join(', ')}</strong><small>{request.expressStatus === 'COMPLETED' ? 'Tous les colis ont un résultat final.' : 'Compte rendu en attente.'}</small></span><Clock3 /><small>{delivery.confirmedAt ? new Date(delivery.confirmedAt).toLocaleTimeString('fr-MG', { hour: '2-digit', minute: '2-digit' }) : ''}</small></footer>}
+                {request.expressStatus !== 'PENDING' && <footer><PackageCheck /><span><strong>{delivery.couriers.map((courier) => courier.name).join(', ')}</strong><small>{request.expressStatus === 'COMPLETED' ? 'Tous les colis ont un résultat final.' : 'Compte rendu en attente.'}</small></span><Fuel /><small>{delivery.returnToPickup ? 'Retour au retrait inclus' : 'Sans retour au retrait'}</small><Clock3 /><small>{delivery.confirmedAt ? new Date(delivery.confirmedAt).toLocaleTimeString('fr-MG', { hour: '2-digit', minute: '2-digit' }) : ''}</small></footer>}
               </article>
             )
           })}

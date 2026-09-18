@@ -22,6 +22,7 @@ import com.azylivraison.optimization.domain.ViaHubOptimizationResult;
 import com.azylivraison.planning.domain.Location;
 import com.azylivraison.planning.domain.VehicleType;
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
+import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -487,13 +488,15 @@ public class DispatchPlanRepository {
                     unassigned_reason, unassigned_message,
                     recipient_name, faritra, contact,
                     amount_to_collect_ariary, mobile_money_paid,
+                    desired_delivery_time,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
-                    distance_from_center_meters, pricing_zone_max_distance_meters,
-                    pricing_policy_version,
+                    distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
+                    pricing_policy_version, pricing_policy_id,
+                    base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                     effective_weight_kg,
                     destination_label, destination_query,
                     destination_latitude, destination_longitude
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, outcomes, outcomes.size(), (statement, outcome) -> {
             statement.setObject(1, dispatchPlanId);
             statement.setObject(2, outcome.packageId());
@@ -512,17 +515,24 @@ public class DispatchPlanRepository {
             statement.setString(14, outcome.contact());
             statement.setLong(15, outcome.amountToCollectAriary());
             statement.setBoolean(16, outcome.mobileMoneyPaid());
-            statement.setObject(17, outcome.pricingSnapshot().pricingZoneId());
-            statement.setString(18, outcome.pricingSnapshot().pricingZoneName());
-            statement.setObject(19, outcome.pricingSnapshot().deliveryFeeAriary());
-            statement.setObject(20, outcome.pricingSnapshot().distanceFromCenterMeters());
-            statement.setObject(21, outcome.pricingSnapshot().pricingZoneMaxDistanceMeters());
-            statement.setObject(22, outcome.pricingSnapshot().pricingPolicyVersion());
-            statement.setBigDecimal(23, outcome.effectiveWeightKg());
-            statement.setString(24, outcome.destination().label());
-            statement.setString(25, outcome.destination().destinationQuery());
-            statement.setDouble(26, outcome.destination().latitude());
-            statement.setDouble(27, outcome.destination().longitude());
+            statement.setObject(17, outcome.desiredDeliveryTime());
+            statement.setObject(18, outcome.pricingSnapshot().pricingZoneId());
+            statement.setString(19, outcome.pricingSnapshot().pricingZoneName());
+            statement.setObject(20, outcome.pricingSnapshot().deliveryFeeAriary());
+            statement.setObject(21, outcome.pricingSnapshot().distanceFromCenterMeters());
+            statement.setString(22, outcome.pricingSnapshot().distanceMode() == null ? null
+                    : outcome.pricingSnapshot().distanceMode().name());
+            statement.setObject(23, outcome.pricingSnapshot().pricingZoneMaxDistanceMeters());
+            statement.setObject(24, outcome.pricingSnapshot().pricingPolicyVersion());
+            statement.setObject(25, outcome.pricingSnapshot().pricingPolicyId());
+            statement.setObject(26, outcome.pricingSnapshot().baseDeliveryFeeAriary());
+            statement.setObject(27, outcome.pricingSnapshot().weightSurchargeAriary());
+            statement.setObject(28, outcome.pricingSnapshot().timeSurchargeAriary());
+            statement.setBigDecimal(29, outcome.effectiveWeightKg());
+            statement.setString(30, outcome.destination().label());
+            statement.setString(31, outcome.destination().destinationQuery());
+            statement.setDouble(32, outcome.destination().latitude());
+            statement.setDouble(33, outcome.destination().longitude());
         });
     }
 
@@ -565,9 +575,11 @@ public class DispatchPlanRepository {
                        unassigned_reason, unassigned_message,
                        recipient_name, faritra, contact,
                        amount_to_collect_ariary, mobile_money_paid,
+                       desired_delivery_time,
                        pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
-                       distance_from_center_meters, pricing_zone_max_distance_meters,
-                       pricing_policy_version,
+                       distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
+                       pricing_policy_version, pricing_policy_id,
+                       base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                        effective_weight_kg,
                        destination_label, destination_query,
                        destination_latitude, destination_longitude
@@ -590,13 +602,19 @@ public class DispatchPlanRepository {
                 resultSet.getString("contact"),
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
+                resultSet.getObject("desired_delivery_time", java.time.LocalTime.class),
                 new DeliveryPricingSnapshot(
                         resultSet.getObject("pricing_zone_id", UUID.class),
                         resultSet.getString("pricing_zone_name"),
                         nullableLong(resultSet, "delivery_fee_ariary"),
                         nullableLong(resultSet, "distance_from_center_meters"),
+                        pricingDistanceMode(resultSet),
                         nullableLong(resultSet, "pricing_zone_max_distance_meters"),
-                        nullableLong(resultSet, "pricing_policy_version")),
+                        nullableLong(resultSet, "pricing_policy_version"),
+                        resultSet.getObject("pricing_policy_id", Short.class),
+                        nullableLong(resultSet, "base_delivery_fee_ariary"),
+                        nullableLong(resultSet, "weight_surcharge_ariary"),
+                        nullableLong(resultSet, "time_surcharge_ariary")),
                 resultSet.getBigDecimal("effective_weight_kg"),
                 new Location(
                         resultSet.getString("destination_label"),
@@ -954,6 +972,11 @@ public class DispatchPlanRepository {
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private PricingDistanceMode pricingDistanceMode(ResultSet resultSet) throws SQLException {
+        String value = resultSet.getString("pricing_distance_mode");
+        return value == null ? null : PricingDistanceMode.valueOf(value);
     }
 
     private Instant instant(ResultSet resultSet, String column) throws SQLException {

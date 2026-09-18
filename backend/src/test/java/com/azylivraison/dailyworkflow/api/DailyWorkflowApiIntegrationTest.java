@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -137,6 +138,10 @@ class DailyWorkflowApiIntegrationTest {
         UUID returnId = packageId(created, 2);
         UUID cancelledId = packageId(created, 3);
 
+        jdbcTemplate.update(
+                "UPDATE delivery_package SET desired_delivery_time = '18:30:00' WHERE id = ?",
+                postponedId);
+
         mockMvc.perform(post("/api/admin/delivery-packages/{id}/cancel", cancelledId)
                         .with(admin())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -154,6 +159,10 @@ class DailyWorkflowApiIntegrationTest {
                 .isEqualTo(ACTUAL_COURIER_ID.toString());
         assertThat(packageNode(delivered, deliveredId).get("actualCourierName").asText())
                 .isEqualTo("Livreur réel");
+        assertThat(packageNode(delivered, deliveredId).get("pricingDistanceMode").asText())
+                .isEqualTo("AIR_DISTANCE");
+        assertThat(packageNode(delivered, deliveredId).get("distanceFromCenterMeters").asLong())
+                .isPositive();
 
         jdbcTemplate.update(
                 "UPDATE courier_profile SET name = 'Livreur réel renommé' WHERE id = ?",
@@ -191,6 +200,30 @@ class DailyWorkflowApiIntegrationTest {
                 "SELECT carried_forward_from_package_id FROM delivery_package WHERE id = ?",
                 UUID.class,
                 nextPackageId)).isEqualTo(postponedId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT pricing_distance_mode FROM delivery_package WHERE id = ?",
+                String.class,
+                nextPackageId)).isEqualTo("AIR_DISTANCE");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT desired_delivery_time FROM delivery_package WHERE id = ?",
+                LocalTime.class,
+                nextPackageId)).isEqualTo(LocalTime.of(18, 30));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT pricing_policy_id FROM delivery_package WHERE id = ?",
+                Short.class,
+                nextPackageId)).isEqualTo((short) 1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT base_delivery_fee_ariary FROM delivery_package WHERE id = ?",
+                Long.class,
+                nextPackageId)).isPositive();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT weight_surcharge_ariary FROM delivery_package WHERE id = ?",
+                Long.class,
+                nextPackageId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT time_surcharge_ariary FROM delivery_package WHERE id = ?",
+                Long.class,
+                nextPackageId)).isZero();
 
         mockMvc.perform(put("/api/admin/delivery-days/{date}/packages/{id}/outcome",
                         SERVICE_DATE, postponedId)
@@ -218,13 +251,21 @@ class DailyWorkflowApiIntegrationTest {
         assertThat(chargedFees).isPositive();
 
         long dayVersion = day.get("version").asLong();
+        long versionAfterClientClosure = closeClient(CLIENT_ID, dayVersion);
+
+        mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE)
+                        .with(client(CLIENT_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clientDisplayName").value("Client workflow"))
+                .andExpect(jsonPath("$.totals.packageCount").value(3));
+
         MvcResult closed = mockMvc.perform(post("/api/admin/delivery-days/{date}/close", SERVICE_DATE)
                         .with(admin())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":" + dayVersion + "}"))
+                        .content("{\"version\":" + versionAfterClientClosure + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"))
-                .andExpect(jsonPath("$.closureRevision").value(1))
+                .andExpect(jsonPath("$.closureRevision").value(2))
                 .andReturn();
 
         long returnVersion = packageNode(closed, returnId).get("version").asLong();
@@ -362,6 +403,24 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void refusesToCloseAnOpenDayWhileANormalPackageStillNeedsDispatching() throws Exception {
+        createRequest(CLIENT_ID, SERVICE_DATE, 1);
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day (
+                    service_date, status, admissions_closed_at, dispatch_plan_id
+                ) VALUES (?, 'OPEN', NULL, NULL)
+                """, SERVICE_DATE);
+
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/close", SERVICE_DATE)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Générez le plan normal avant la clôture : 1 colis est encore en attente."));
+    }
+
+    @Test
     void keepsCalculatedFeeAndLetsAdminOverrideOrRestoreTheFinalFee() throws Exception {
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
         UUID packageId = packageId(created, 0);
@@ -417,10 +476,11 @@ class DailyWorkflowApiIntegrationTest {
                 .isEqualTo(announcedFee);
 
         long dayVersion = day.get("version").asLong();
+        long versionAfterClientClosure = closeClient(CLIENT_ID, dayVersion);
         mockMvc.perform(post("/api/admin/delivery-days/{date}/close", SERVICE_DATE)
                         .with(admin())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":" + dayVersion + "}"))
+                        .content("{\"version\":" + versionAfterClientClosure + "}"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
@@ -442,6 +502,7 @@ class DailyWorkflowApiIntegrationTest {
     void refusesCalculatedModeWhenThePackageHasNoAutomaticFee() throws Exception {
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
         UUID packageId = packageId(created, 0);
+        installPlan(SERVICE_DATE, List.of(packageId));
         jdbcTemplate.update("""
                 UPDATE delivery_package
                 SET pricing_zone_id = NULL,
@@ -449,6 +510,7 @@ class DailyWorkflowApiIntegrationTest {
                     delivery_fee_ariary = NULL,
                     final_delivery_fee_ariary = NULL,
                     distance_from_center_meters = NULL,
+                    pricing_distance_mode = NULL,
                     pricing_zone_max_distance_meters = NULL,
                     pricing_policy_version = NULL
                 WHERE id = ?
@@ -457,7 +519,7 @@ class DailyWorkflowApiIntegrationTest {
         mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
                         .with(admin())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"mode\":\"CALCULATED\",\"version\":0}"))
+                        .content("{\"mode\":\"CALCULATED\",\"version\":1}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message").value(
                         "Aucun tarif calculé n'est disponible pour ce colis. Indiquez un tarif manuel."));
@@ -477,6 +539,20 @@ class DailyWorkflowApiIntegrationTest {
                                 + ",\"version\":" + version + "}"))
                 .andExpect(status().isOk())
                 .andReturn();
+    }
+
+    private long closeClient(UUID clientAccountId, long dayVersion) throws Exception {
+        MvcResult result = mockMvc.perform(post(
+                        "/api/admin/delivery-days/{date}/clients/{clientId}/close",
+                        SERVICE_DATE, clientAccountId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":" + dayVersion + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allClientsClosed").value(true))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("dayVersion").asLong();
     }
 
     private JsonNode createRequest(UUID ownerId, LocalDate date, int packageCount) throws Exception {

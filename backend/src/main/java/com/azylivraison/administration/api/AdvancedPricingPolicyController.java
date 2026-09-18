@@ -36,7 +36,7 @@ public class AdvancedPricingPolicyController {
     @PutMapping
     public AdvancedPricingPolicyResponse save(@Valid @RequestBody AdvancedPricingPolicyRequest request) {
         return AdvancedPricingPolicyResponse.from(service.save(request.clientAccountId(), request.requestKind(),
-                request.centerDomain(), request.defaultWeightKg(), request.zoneDomains(),
+                request.distanceMode(), request.centerDomain(), request.defaultWeightKg(), request.zoneDomains(),
                 request.weightDomains(), request.timeDomains(), request.version()));
     }
 

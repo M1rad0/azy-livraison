@@ -88,6 +88,14 @@ public class AdminFinanceController {
         return CourierCompensationResponse.from(service.previewCompensations(serviceDate));
     }
 
+    @GetMapping("/delivery-days/{serviceDate}/clients/{clientAccountId}/courier-compensations")
+    public CourierCompensationResponse previewClientCompensations(
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
+            @PathVariable UUID clientAccountId) {
+        return CourierCompensationResponse.from(
+                service.previewCompensations(serviceDate, clientAccountId));
+    }
+
     @PostMapping("/delivery-days/{serviceDate}/courier-compensations/finalize")
     public CourierCompensationResponse finalizeCompensations(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
@@ -98,6 +106,19 @@ public class AdminFinanceController {
                 : request.overrides().stream().map(CompensationOverrideRequest::toDomain).toList();
         return CourierCompensationResponse.from(service.finalizeCompensations(
                 serviceDate, request.closureRevision(), overrides, accountId(jwt)));
+    }
+
+    @PostMapping("/delivery-days/{serviceDate}/clients/{clientAccountId}/courier-compensations/finalize")
+    public CourierCompensationResponse finalizeClientCompensations(
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
+            @PathVariable UUID clientAccountId,
+            @Valid @RequestBody FinalizeCompensationsRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        List<CompensationOverride> overrides = request.overrides() == null
+                ? List.of()
+                : request.overrides().stream().map(CompensationOverrideRequest::toDomain).toList();
+        return CourierCompensationResponse.from(service.finalizeCompensations(
+                serviceDate, clientAccountId, request.closureRevision(), overrides, accountId(jwt)));
     }
 
     @GetMapping("/couriers/{courierId}")

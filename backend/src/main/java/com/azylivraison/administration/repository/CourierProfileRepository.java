@@ -24,6 +24,9 @@ public class CourierProfileRepository {
                    active, vehicle_type,
                    max_weight_kg_override, average_speed_kmh_override,
                    commission_numerator_override, commission_denominator_override,
+                   fuel_reimbursement_enabled_override,
+                   fuel_efficiency_km_per_liter_override,
+                   fuel_price_per_liter_ariary_override,
                    default_departure_time,
                    departure_location_label, departure_location_query,
                    departure_latitude, departure_longitude,
@@ -59,10 +62,13 @@ public class CourierProfileRepository {
                     active, vehicle_type,
                     max_weight_kg_override, average_speed_kmh_override,
                     commission_numerator_override, commission_denominator_override,
+                    fuel_reimbursement_enabled_override,
+                    fuel_efficiency_km_per_liter_override,
+                    fuel_price_per_liter_ariary_override,
                     default_departure_time,
                     departure_location_label, departure_location_query,
                     departure_latitude, departure_longitude, version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 courier.id(),
                 courier.accountId(),
@@ -78,6 +84,9 @@ public class CourierProfileRepository {
                 courier.averageSpeedKmh(),
                 courier.commissionNumerator(),
                 courier.commissionDenominator(),
+                courier.fuelReimbursementEnabled(),
+                courier.fuelEfficiencyKmPerLiter(),
+                courier.fuelPricePerLiterAriary(),
                 Time.valueOf(courier.defaultDepartureTime()),
                 courier.departureLocation().label(),
                 courier.departureLocation().destinationQuery(),
@@ -101,6 +110,9 @@ public class CourierProfileRepository {
                     average_speed_kmh_override = ?,
                     commission_numerator_override = ?,
                     commission_denominator_override = ?,
+                    fuel_reimbursement_enabled_override = ?,
+                    fuel_efficiency_km_per_liter_override = ?,
+                    fuel_price_per_liter_ariary_override = ?,
                     default_departure_time = ?,
                     departure_location_label = ?,
                     departure_location_query = ?,
@@ -123,6 +135,9 @@ public class CourierProfileRepository {
                 courier.averageSpeedKmh(),
                 courier.commissionNumerator(),
                 courier.commissionDenominator(),
+                courier.fuelReimbursementEnabled(),
+                courier.fuelEfficiencyKmPerLiter(),
+                courier.fuelPricePerLiterAriary(),
                 Time.valueOf(courier.defaultDepartureTime()),
                 courier.departureLocation().label(),
                 courier.departureLocation().destinationQuery(),
@@ -156,6 +171,9 @@ public class CourierProfileRepository {
                 resultSet.getBigDecimal("average_speed_kmh_override"),
                 nullableInteger(resultSet, "commission_numerator_override"),
                 nullableInteger(resultSet, "commission_denominator_override"),
+                nullableBoolean(resultSet, "fuel_reimbursement_enabled_override"),
+                resultSet.getBigDecimal("fuel_efficiency_km_per_liter_override"),
+                nullableLong(resultSet, "fuel_price_per_liter_ariary_override"),
                 resultSet.getTime("default_departure_time").toLocalTime(),
                 new ConfirmedLocation(
                         resultSet.getString("departure_location_label"),
@@ -180,6 +198,16 @@ public class CourierProfileRepository {
 
     private Integer nullableInteger(ResultSet resultSet, String column) throws SQLException {
         int value = resultSet.getInt(column);
+        return resultSet.wasNull() ? null : value;
+    }
+
+    private Long nullableLong(ResultSet resultSet, String column) throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
+    }
+
+    private Boolean nullableBoolean(ResultSet resultSet, String column) throws SQLException {
+        boolean value = resultSet.getBoolean(column);
         return resultSet.wasNull() ? null : value;
     }
 }

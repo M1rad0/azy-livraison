@@ -122,6 +122,7 @@ describe('ClientPortal', () => {
       distanceFromCenterMeters: 1_200,
       pricingZoneMaxDistanceMeters: 4_000,
       pricingPolicyVersion: 1,
+      distanceMode: 'AIR_DISTANCE',
     })
   })
 

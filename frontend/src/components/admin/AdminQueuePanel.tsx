@@ -15,6 +15,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import type { DeliveryPackage, DeliveryRequest } from '../../api/admin'
+import { formatOneHourWindow } from '../../deliveryWindows'
 import { ConfirmDialog } from '../ConfirmDialog'
 import {
   antananarivoToday,
@@ -211,6 +212,11 @@ export function AdminQueuePanel({
                   </div>
                   {request.packages.filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome).map((deliveryPackage) => {
                     const cancellable = deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome
+                    const deliveryWindow = formatOneHourWindow(
+                      deliveryPackage.desiredDeliveryTime,
+                      deliveryPackage.desiredDeliveryEndTime,
+                      deliveryPackage.desiredDeliveryEndsNextDay,
+                    )
                     return (
                       <div className="admin-package-row" role="row" key={deliveryPackage.id}>
                         <span role="cell">
@@ -223,7 +229,7 @@ export function AdminQueuePanel({
                           ><Ban aria-hidden="true" /></button>
                         </span>
                         <span role="cell"><strong>{deliveryPackage.recipientName}</strong>{deliveryPackage.faritra && <small>Faritra</small>}</span>
-                        <span role="cell"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}<small>{deliveryPackage.pricingZoneName ? `Zone ${deliveryPackage.pricingZoneName}` : 'Tarif non disponible'}</small></span></span>
+                        <span role="cell"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}<small>{deliveryPackage.pricingZoneName ? `Zone ${deliveryPackage.pricingZoneName}` : 'Tarif non disponible'}{deliveryWindow ? ` · créneau ${deliveryWindow}` : ''}</small></span></span>
                         <span role="cell">{deliveryPackage.contact || '—'}</span>
                         <span role="cell"><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong><small>{deliveryPackage.deliveryFeeAriary != null ? `dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : 'Tarif indisponible'}</small></span>
                         <span role="cell">

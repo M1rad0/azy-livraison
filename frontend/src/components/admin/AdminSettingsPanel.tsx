@@ -3,6 +3,7 @@ import {
   BadgePercent,
   Bike,
   Clock3,
+  Fuel,
   Gauge,
   MapPinned,
   PackageOpen,
@@ -42,6 +43,8 @@ interface SettingsDraft {
   optimizationTimeLimitSeconds: string
   defaultCourierCommissionNumerator: string
   defaultCourierCommissionDenominator: string
+  defaultFuelPricePerLiterAriary: string
+  defaultExpressReturnToPickup: boolean
   defaultHub: Location
 }
 
@@ -57,6 +60,8 @@ function makeDraft(settings: OperationalSettings): SettingsDraft {
     optimizationTimeLimitSeconds: String(settings.optimizationTimeLimitSeconds),
     defaultCourierCommissionNumerator: String(settings.defaultCourierCommissionNumerator),
     defaultCourierCommissionDenominator: String(settings.defaultCourierCommissionDenominator),
+    defaultFuelPricePerLiterAriary: String(settings.defaultFuelPricePerLiterAriary),
+    defaultExpressReturnToPickup: settings.defaultExpressReturnToPickup,
     defaultHub: asPickerLocation(settings.defaultHub),
   }
 }
@@ -142,6 +147,8 @@ export function AdminSettingsPanel({
         optimizationTimeLimitSeconds: readPositive(currentDraft.optimizationTimeLimitSeconds, 'Le temps de calcul', 1200),
         defaultCourierCommissionNumerator: readPositiveInteger(currentDraft.defaultCourierCommissionNumerator, 'Le numérateur de la part livreur'),
         defaultCourierCommissionDenominator: readPositiveInteger(currentDraft.defaultCourierCommissionDenominator, 'Le dénominateur de la part livreur'),
+        defaultFuelPricePerLiterAriary: readPositiveInteger(currentDraft.defaultFuelPricePerLiterAriary, 'Le prix du litre'),
+        defaultExpressReturnToPickup: currentDraft.defaultExpressReturnToPickup,
         defaultHub,
       }
       if (input.defaultCourierCommissionNumerator > input.defaultCourierCommissionDenominator) {
@@ -212,6 +219,15 @@ export function AdminSettingsPanel({
             <label><span>Temps maximal de calcul</span><div className="admin-input-unit"><input required type="number" min="1" max="1200" step="1" value={draft.optimizationTimeLimitSeconds} onChange={(event) => { setDraft({ ...draft, optimizationTimeLimitSeconds: event.target.value }); setSaved(false) }} /><b>sec</b></div></label>
           </div>
           <div className="admin-locked-setting"><MapPinned aria-hidden="true" /><div><small>Profil routier actif</small><strong>Routes principales · Madagascar</strong></div><span>Fixe</span></div>
+        </section>
+
+        <section className="admin-settings-card admin-settings-card--fuel">
+          <header><span><Fuel aria-hidden="true" /></span><div><strong>Carburant des livraisons express</strong><small>Valeurs utilisées pour estimer le remboursement des trajets express</small></div></header>
+          <div className="admin-form-grid">
+            <label><span>Prix remboursé par litre</span><div className="admin-input-unit"><input required type="number" min="1" step="1" value={draft.defaultFuelPricePerLiterAriary} onChange={(event) => { setDraft({ ...draft, defaultFuelPricePerLiterAriary: event.target.value }); setSaved(false) }} /><b>Ar/L</b></div></label>
+            <label className="admin-switch"><input type="checkbox" checked={draft.defaultExpressReturnToPickup} onChange={(event) => { setDraft({ ...draft, defaultExpressReturnToPickup: event.target.checked }); setSaved(false) }} /><span><i /><span><strong>Retour au retrait inclus</strong><small>Chaque tournée express revient au point de récupération par défaut</small></span></span></label>
+          </div>
+          <p className="admin-settings-hint"><Fuel aria-hidden="true" />Une moto utilise 40 km/L par défaut. Le prix et la consommation peuvent être personnalisés sur chaque profil livreur.</p>
         </section>
 
         <section className="admin-settings-card">

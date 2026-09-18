@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  BadgeCheck,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
@@ -8,6 +9,7 @@ import {
   FileSpreadsheet,
   FileText,
   LoaderCircle,
+  LockKeyhole,
   MapPin,
   PackageCheck,
   PackageX,
@@ -21,15 +23,20 @@ import {
 } from 'lucide-react'
 import {
   carryForwardDeliveryPackage,
+  closeDeliveryClient,
   closeDeliveryDay,
   downloadClientDailyReport,
   downloadGeneralDailyReport,
+  getClientClosures,
   getDeliveryDay,
   markReturnCompleted,
+  reopenDeliveryClient,
   reopenDeliveryDay,
   updateDeliveryPackageFee,
   updateDeliveryPackageOutcome,
   type Courier,
+  type ClientClosureItem,
+  type ClientClosureOverview,
   type DailyOperation,
   type DailyOperationPackage,
   type DeliveryPackageOutcome,
@@ -155,6 +162,7 @@ export function AdminDailyOperationsPanel({
   onChanged: () => void
 }) {
   const [day, setDay] = useState<DailyOperation>()
+  const [clientClosures, setClientClosures] = useState<ClientClosureOverview>()
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<string>()
   const [error, setError] = useState<string>()
@@ -163,8 +171,12 @@ export function AdminDailyOperationsPanel({
   const [editingFeePackage, setEditingFeePackage] = useState<DailyOperationPackage>()
   const [carryPackage, setCarryPackage] = useState<DailyOperationPackage>()
   const [closing, setClosing] = useState(false)
+  const [closingClient, setClosingClient] = useState<ClientClosureItem>()
   const [reopening, setReopening] = useState(false)
+  const [reopeningClient, setReopeningClient] = useState<ClientClosureItem>()
   const [reopenReason, setReopenReason] = useState('')
+  const [clientReopenReason, setClientReopenReason] = useState('')
+  const [compensationClientId, setCompensationClientId] = useState<string>()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<OutcomeFilter>('ALL')
 
@@ -172,7 +184,29 @@ export function AdminDailyOperationsPanel({
     setLoading(true)
     setError(undefined)
     try {
-      setDay(await getDeliveryDay(date, accessToken, signal))
+      const [dayResult, closureResult] = await Promise.allSettled([
+        getDeliveryDay(date, accessToken, signal),
+        getClientClosures(date, accessToken, signal),
+      ])
+      if (dayResult.status === 'rejected') throw dayResult.reason
+      const loadedDay = dayResult.value
+      setDay(loadedDay)
+      if (closureResult.status === 'fulfilled') {
+        setClientClosures(closureResult.value)
+      } else if (!loadedDay.dispatchPlanId && loadedDay.packages.length === 0) {
+        setClientClosures({
+          serviceDate: loadedDay.serviceDate,
+          dayStatus: loadedDay.status,
+          dayVersion: loadedDay.version,
+          currentClosureRevision: loadedDay.closureRevision,
+          clientCount: 0,
+          closedClientCount: 0,
+          allClientsClosed: false,
+          clients: [],
+        })
+      } else {
+        throw closureResult.reason
+      }
     } catch (loadError) {
       if ((loadError as { name?: string }).name !== 'AbortError') setError(errorMessage(loadError))
     } finally {
@@ -181,6 +215,9 @@ export function AdminDailyOperationsPanel({
   }, [accessToken, date])
 
   useEffect(() => {
+    setDay(undefined)
+    setClientClosures(undefined)
+    setCompensationClientId(undefined)
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
@@ -202,9 +239,49 @@ export function AdminDailyOperationsPanel({
       ].some((value) => value.toLocaleLowerCase('fr').includes(normalized))
     }) ?? []
   }, [day, filter, query])
+  const clientClosureById = useMemo(() => new Map(
+    (clientClosures?.clients ?? []).map((client) => [client.clientAccountId, client]),
+  ), [clientClosures])
   const unscheduledPostponements = day?.packages.filter((deliveryPackage) => (
     deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId
   )).length ?? 0
+  const isExpressOnlyDayWithoutPlan = Boolean(
+    day
+    && !day.dispatchPlanId
+    && day.packages.length > 0
+    && day.packages.every((deliveryPackage) => deliveryPackage.requestKind === 'EXPRESS'),
+  )
+  const canCloseDay = Boolean(
+    day
+    && (day.status === 'DISPATCHED' || (day.status === 'OPEN' && isExpressOnlyDayWithoutPlan))
+    && day.counts.awaitingOutcome === 0
+    && unscheduledPostponements === 0
+    && clientClosures?.allClientsClosed === true,
+  )
+
+  const applyClientClosures = useCallback((overview: ClientClosureOverview) => {
+    setClientClosures(overview)
+    setDay((current) => current && current.serviceDate === overview.serviceDate ? {
+      ...current,
+      status: overview.dayStatus,
+      version: overview.dayVersion,
+      closureRevision: overview.currentClosureRevision,
+    } : current)
+  }, [])
+
+  const refreshClientClosures = useCallback(async () => {
+    const overview = await getClientClosures(date, accessToken)
+    applyClientClosures(overview)
+    return overview
+  }, [accessToken, applyClientClosures, date])
+
+  const refreshClientClosuresSafely = useCallback(async () => {
+    try {
+      await refreshClientClosures()
+    } catch (refreshError) {
+      setError(errorMessage(refreshError))
+    }
+  }, [refreshClientClosures])
 
   async function saveOutcome(input: PackageOutcomeInput) {
     if (!editingPackage) return
@@ -217,6 +294,7 @@ export function AdminDailyOperationsPanel({
       }, accessToken)
       setDay(updated)
       setEditingPackage(undefined)
+      await refreshClientClosuresSafely()
       onChanged()
     } catch (saveError) {
       setDialogError(errorMessage(saveError))
@@ -249,6 +327,7 @@ export function AdminDailyOperationsPanel({
     setError(undefined)
     try {
       setDay(await markReturnCompleted(date, deliveryPackage.packageId, deliveryPackage.version, accessToken))
+      await refreshClientClosuresSafely()
       onChanged()
     } catch (returnError) {
       setError(errorMessage(returnError))
@@ -279,11 +358,11 @@ export function AdminDailyOperationsPanel({
   }
 
   async function closeDay() {
-    if (!day) return
+    if (!day || !clientClosures?.allClientsClosed) return
     setBusyAction('close')
     setError(undefined)
     try {
-      setDay(await closeDeliveryDay(date, day.version, accessToken))
+      setDay(await closeDeliveryDay(date, clientClosures.dayVersion, accessToken))
       setClosing(false)
       onChanged()
     } catch (closeError) {
@@ -302,9 +381,58 @@ export function AdminDailyOperationsPanel({
     setBusyAction('reopen')
     setDialogError(undefined)
     try {
-      setDay(await reopenDeliveryDay(date, day.version, reopenReason.trim(), accessToken))
+      await reopenDeliveryDay(date, day.version, reopenReason.trim(), accessToken)
       setReopening(false)
       setReopenReason('')
+      await load()
+      onChanged()
+    } catch (reopenError) {
+      setDialogError(errorMessage(reopenError))
+    } finally {
+      setBusyAction(undefined)
+    }
+  }
+
+  async function closeClient() {
+    if (!closingClient || !clientClosures) return
+    setBusyAction(`close-client:${closingClient.clientAccountId}`)
+    setDialogError(undefined)
+    try {
+      applyClientClosures(await closeDeliveryClient(
+        date,
+        closingClient.clientAccountId,
+        clientClosures.dayVersion,
+        accessToken,
+      ))
+      setClosingClient(undefined)
+      onChanged()
+    } catch (closeError) {
+      setDialogError(errorMessage(closeError))
+    } finally {
+      setBusyAction(undefined)
+    }
+  }
+
+  async function reopenClient() {
+    if (!reopeningClient || reopeningClient.version == null || !clientReopenReason.trim()) {
+      setDialogError('Indiquez la raison de la réouverture.')
+      return
+    }
+    setBusyAction(`reopen-client:${reopeningClient.clientAccountId}`)
+    setDialogError(undefined)
+    try {
+      applyClientClosures(await reopenDeliveryClient(
+        date,
+        reopeningClient.clientAccountId,
+        reopeningClient.version,
+        clientReopenReason.trim(),
+        accessToken,
+      ))
+      setReopeningClient(undefined)
+      setClientReopenReason('')
+      setCompensationClientId((current) => (
+        current === reopeningClient.clientAccountId ? undefined : current
+      ))
       onChanged()
     } catch (reopenError) {
       setDialogError(errorMessage(reopenError))
@@ -342,18 +470,18 @@ export function AdminDailyOperationsPanel({
 
       {loading && !day ? (
         <div className="admin-empty"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement de la journée…</strong></div>
-      ) : day && !day.dispatchPlanId ? (
+      ) : day && !day.dispatchPlanId && day.packages.length === 0 ? (
         <div className="admin-day-empty">
           <span><Clock3 aria-hidden="true" /></span>
-          <h3>Aucun plan enregistré pour le {formatDate(date)}</h3>
-          <p>Le compte rendu apparaîtra dès que le plan automatique de cette journée aura été généré.</p>
+          <h3>Aucune activité enregistrée pour le {formatDate(date)}</h3>
+          <p>Les colis du dispatch et les demandes express confirmées apparaîtront ici automatiquement.</p>
           <button className="admin-button" type="button" onClick={onOpenDispatch}>Préparer le dispatch</button>
         </div>
       ) : day ? (
         <>
           <div className="admin-day-statusbar">
             <div>
-              <span className={`admin-day-status is-${day.status.toLowerCase()}`}><i />{DAY_STATUS[day.status]}</span>
+              <span className={`admin-day-status is-${day.status.toLowerCase()}`}><i />{day.status === 'OPEN' && isExpressOnlyDayWithoutPlan ? 'Express en cours' : DAY_STATUS[day.status]}</span>
               <strong>{formatDate(day.serviceDate)}</strong>
               {day.status === 'CLOSED' && day.closedAt && <small>Clôturée le {formatDateTime(day.closedAt)} · version {day.closureRevision}</small>}
               {day.status !== 'CLOSED' && day.reopenedAt && <small>Réouverte le {formatDateTime(day.reopenedAt)}{day.reopenReason ? ` · ${day.reopenReason}` : ''}</small>}
@@ -383,9 +511,11 @@ export function AdminDailyOperationsPanel({
             </header>
 
             <div className="admin-day-package-list">
-              {visiblePackages.map((deliveryPackage) => (
-                <article className="admin-day-package" key={deliveryPackage.packageId}>
-                  <div className="admin-day-package__identity"><span>{deliveryPackage.sequenceNumber}</span><div><small>{deliveryPackage.ownerDisplayName}</small><strong>{deliveryPackage.recipientName}</strong><em>{deliveryPackage.contact}</em></div></div>
+              {visiblePackages.map((deliveryPackage) => {
+                const clientClosed = clientClosureById.get(deliveryPackage.ownerAccountId)?.closed === true
+                return (
+                <article className={`admin-day-package${clientClosed ? ' is-client-closed' : ''}`} key={deliveryPackage.packageId}>
+                  <div className="admin-day-package__identity"><span>{deliveryPackage.sequenceNumber}</span><div><small>{deliveryPackage.ownerDisplayName}{clientClosed ? ' · compte clôturé' : ''}</small><strong>{deliveryPackage.recipientName}</strong><em>{deliveryPackage.contact}</em></div></div>
                   <div>
                     <small>Livraison</small>
                     <strong><MapPin aria-hidden="true" />{locationLabel(deliveryPackage.destination)}</strong>
@@ -413,62 +543,106 @@ export function AdminDailyOperationsPanel({
                   </div>
                   <div className="admin-day-package__actions">
                     {day.status !== 'CLOSED' && deliveryPackage.finalOutcome !== 'CANCELLED' && (
-                      <button className="admin-button admin-button--ghost admin-button--small" type="button" onClick={() => { setDialogError(undefined); setEditingFeePackage(deliveryPackage) }}><CircleDollarSign aria-hidden="true" />Tarif</button>
+                      <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={clientClosed} title={clientClosed ? 'Le compte de ce client est clôturé.' : undefined} onClick={() => { setDialogError(undefined); setEditingFeePackage(deliveryPackage) }}><CircleDollarSign aria-hidden="true" />Tarif</button>
                     )}
-                    {day.status === 'DISPATCHED'
+                    {(day.status === 'DISPATCHED' || (day.status === 'OPEN' && deliveryPackage.requestKind === 'EXPRESS'))
                       && deliveryPackage.technicalStatus === 'DISPATCHED'
                       && deliveryPackage.finalOutcome !== 'CANCELLED'
                       && !(deliveryPackage.finalOutcome === 'POSTPONED' && deliveryPackage.carriedForwardToPackageId) && (
-                      <button className="admin-button admin-button--small" type="button" onClick={() => { setDialogError(undefined); setEditingPackage(deliveryPackage) }}>{deliveryPackage.finalOutcome ? 'Modifier' : 'Renseigner'}</button>
+                      <button className="admin-button admin-button--small" type="button" disabled={clientClosed} title={clientClosed ? 'Le compte de ce client est clôturé.' : undefined} onClick={() => { setDialogError(undefined); setEditingPackage(deliveryPackage) }}>{deliveryPackage.finalOutcome ? 'Modifier' : 'Renseigner'}</button>
                     )}
                     {deliveryPackage.finalOutcome === 'RETURN_TO_SENDER' && !deliveryPackage.returnCompletedAt && (
                       <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={busyAction === `return:${deliveryPackage.packageId}`} onClick={() => void confirmReturn(deliveryPackage)}><PackageCheck aria-hidden="true" />Retour effectué</button>
                     )}
                     {deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId && (
-                      <button className="admin-button admin-button--ghost admin-button--small" type="button" onClick={() => { setDialogError(undefined); setCarryPackage(deliveryPackage) }}><Undo2 aria-hidden="true" />Programmer demain</button>
+                      <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={clientClosed} title={clientClosed ? 'Le compte de ce client est clôturé.' : undefined} onClick={() => { setDialogError(undefined); setCarryPackage(deliveryPackage) }}><Undo2 aria-hidden="true" />Programmer demain</button>
                     )}
                   </div>
                   {deliveryPackage.outcomeNote && <p className="admin-day-package__note">{deliveryPackage.outcomeNote}</p>}
                 </article>
-              ))}
+                )
+              })}
               {visiblePackages.length === 0 && <div className="admin-empty"><Search aria-hidden="true" /><strong>Aucun colis pour ce filtre</strong></div>}
             </div>
           </section>
 
-          <section className="admin-day-close-card">
-            <div><p className="admin-eyebrow">Clôture</p><h3>{day.status === 'CLOSED' ? 'Cette journée est clôturée' : day.counts.awaitingOutcome > 0 ? `${day.counts.awaitingOutcome} colis restent à finaliser` : unscheduledPostponements > 0 ? `${unscheduledPostponements} colis reporté${unscheduledPostponements > 1 ? 's restent' : ' reste'} à programmer` : 'Tous les colis ont un état final'}</h3><p>{day.status === 'CLOSED' ? 'Les rapports financiers sont disponibles. Rouvrez uniquement pour corriger une erreur.' : unscheduledPostponements > 0 ? 'Programmez chaque colis reporté pour le lendemain et confirmez son nouveau point de retrait avant de clôturer.' : 'La clôture verrouille le compte rendu et rend les rapports disponibles.'}</p></div>
-            {day.status === 'CLOSED' ? <button className="admin-button admin-button--ghost" type="button" onClick={() => { setDialogError(undefined); setReopening(true) }}><RotateCcw aria-hidden="true" />Rouvrir la journée</button> : <button className="admin-button" type="button" disabled={day.status !== 'DISPATCHED' || day.counts.awaitingOutcome > 0 || unscheduledPostponements > 0} onClick={() => setClosing(true)}><PackageCheck aria-hidden="true" />Clôturer la journée</button>}
+          <section className="admin-client-closures" aria-labelledby="client-closures-title">
+            <header>
+              <div><p className="admin-eyebrow">Clôture progressive</p><h3 id="client-closures-title">Comptes clients</h3><p>Clôturez chaque client dès que ses colis sont prêts. Son rapport et les rémunérations associées deviennent alors disponibles sans attendre les autres.</p></div>
+              {clientClosures && <span className={`admin-client-closures__progress${clientClosures.allClientsClosed ? ' is-complete' : ''}`}><BadgeCheck aria-hidden="true" />{clientClosures.closedClientCount}/{clientClosures.clientCount} clôturé{clientClosures.closedClientCount > 1 ? 's' : ''}</span>}
+            </header>
+
+            {clientClosures ? (
+              <div className="admin-client-closure-list">
+                {clientClosures.clients.map((client) => {
+                  const actionBusy = busyAction === `close-client:${client.clientAccountId}` || busyAction === `reopen-client:${client.clientAccountId}`
+                  const compensationOpen = compensationClientId === client.clientAccountId
+                  return (
+                    <article className={`admin-client-closure is-${client.closed ? 'closed' : client.readyToClose ? 'ready' : 'blocked'}`} key={client.clientAccountId}>
+                      <div className="admin-client-closure__summary">
+                        <div className="admin-client-closure__identity"><span>{client.closed ? <LockKeyhole aria-hidden="true" /> : <UsersRound aria-hidden="true" />}</span><div><strong>{client.clientDisplayName}</strong><small>{client.packageCount} colis · {client.clientPhone || 'Sans contact'}{client.closedAt ? ` · clôturé le ${formatDateTime(client.closedAt)}` : ''}</small></div></div>
+                        <span className="admin-client-closure__status">{client.closed ? <><LockKeyhole aria-hidden="true" />Clôturé</> : client.readyToClose ? <><CheckCircle2 aria-hidden="true" />Prêt à clôturer</> : <><TriangleAlert aria-hidden="true" />Bloqué</>}</span>
+                        <div className="admin-client-closure__money"><small>Récupéré</small><strong>{formatAriary(client.recoveredAriary)}</strong></div>
+                        <div className="admin-client-closure__money"><small>Frais</small><strong>{formatAriary(client.deliveryFeesAriary)}</strong></div>
+                        <div className="admin-client-closure__money"><small>À reverser</small><strong>{formatAriary(client.amountToRemitAriary)}</strong></div>
+                      </div>
+
+                      {!client.closed && client.blockers.length > 0 && (
+                        <ul className="admin-client-closure__blockers" aria-label={`Points bloquants pour ${client.clientDisplayName}`}>
+                          {client.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+                        </ul>
+                      )}
+
+                      <div className="admin-client-closure__actions">
+                        {client.closed ? (
+                          <>
+                            <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport PDF de ${client.clientDisplayName}`} disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'pdf')}><FileText aria-hidden="true" />PDF</button>
+                            <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport Excel de ${client.clientDisplayName}`} disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button>
+                            <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-expanded={compensationOpen} onClick={() => setCompensationClientId(compensationOpen ? undefined : client.clientAccountId)}>{client.courierCompensationFinalized ? <BadgeCheck aria-hidden="true" /> : <CircleDollarSign aria-hidden="true" />}{client.courierCompensationFinalized ? 'Rémunérations validées' : 'Rémunérations livreurs'}</button>
+                            {day.status !== 'CLOSED' && client.version != null && <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={actionBusy} onClick={() => { setDialogError(undefined); setClientReopenReason(''); setReopeningClient(client) }}><RotateCcw aria-hidden="true" />Rouvrir ce client</button>}
+                          </>
+                        ) : (
+                          <button className="admin-button admin-button--small" type="button" aria-label={`Clôturer le compte de ${client.clientDisplayName}`} disabled={!client.readyToClose || day.status === 'CLOSED' || actionBusy} onClick={() => { setDialogError(undefined); setClosingClient(client) }}>{actionBusy ? <LoaderCircle className="admin-spin" aria-hidden="true" /> : <PackageCheck aria-hidden="true" />}Clôturer ce client</button>
+                        )}
+                      </div>
+
+                      {client.closed && compensationOpen && (
+                        <div className="admin-client-closure__compensation">
+                          <AdminCourierCompensationPanel
+                            accessToken={accessToken}
+                            serviceDate={date}
+                            couriers={couriers}
+                            clientAccountId={client.clientAccountId}
+                            clientDisplayName={client.clientDisplayName}
+                            refreshKey={day.packages.filter((item) => item.ownerAccountId === client.clientAccountId).reduce((total, item) => total + item.version, client.closureRevision ?? 0)}
+                            onFinalized={() => void refreshClientClosuresSafely()}
+                          />
+                        </div>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="admin-empty"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Vérification des comptes clients…</strong></div>
+            )}
+
+            <footer className="admin-day-close-card">
+              <div><p className="admin-eyebrow">Clôture générale</p><h3>{day.status === 'CLOSED' ? 'Cette journée est définitivement clôturée' : clientClosures?.allClientsClosed ? 'Tous les clients sont clôturés' : `${clientClosures?.closedClientCount ?? 0}/${clientClosures?.clientCount ?? day.clients.length} clients clôturés`}</h3><p>{day.status === 'CLOSED' ? 'Le rapport général est disponible. Rouvrez la journée uniquement pour corriger une erreur.' : clientClosures?.allClientsClosed ? 'Vous pouvez maintenant figer la journée et générer le rapport général.' : 'La clôture générale sera disponible une fois tous les comptes clients clôturés.'}</p></div>
+              {day.status === 'CLOSED' ? <button className="admin-button admin-button--ghost" type="button" onClick={() => { setDialogError(undefined); setReopening(true) }}><RotateCcw aria-hidden="true" />Rouvrir la journée</button> : <button className="admin-button" type="button" disabled={!canCloseDay || busyAction === 'close'} onClick={() => setClosing(true)}><PackageCheck aria-hidden="true" />Clôturer la journée</button>}
+            </footer>
           </section>
 
-          {day.status === 'CLOSED' && (
-            <AdminCourierCompensationPanel
-              accessToken={accessToken}
-              serviceDate={date}
-              refreshKey={day.packages.reduce((total, item) => total + item.version, 0)}
-            />
-          )}
-
-          <section className={`admin-reports${day.status !== 'CLOSED' ? ' is-locked' : ''}`}>
-            <header><div><p className="admin-eyebrow">Documents financiers</p><h3>Rapports de la journée</h3><p>{day.status === 'CLOSED' ? 'Téléchargez le rapport général ou les documents propres à chaque compte client.' : 'Les téléchargements seront disponibles après la clôture.'}</p></div></header>
+          <section className="admin-reports">
+            <header><div><p className="admin-eyebrow">Documents financiers</p><h3>Rapport général de la journée</h3><p>{day.status === 'CLOSED' ? 'Le document consolidé est prêt. Les rapports clients restent également accessibles depuis chaque compte clôturé.' : 'Les rapports clients sont disponibles au fil des clôtures ci-dessus. Le document général attend la clôture de toute la journée.'}</p></div></header>
             <div className="admin-report-totals">
               <article><small>Total récupéré</small><strong>{formatAriary(day.totals.recoveredAriary)}</strong></article>
               <article><small>Frais de livraison</small><strong>{formatAriary(day.totals.deliveryFeesAriary)}</strong></article>
               <article><small>Total à reverser</small><strong>{formatAriary(day.totals.amountToRemitAriary)}</strong></article>
             </div>
-            <div className="admin-general-report">
+            <div className={`admin-general-report${day.status !== 'CLOSED' ? ' is-locked' : ''}`}>
               <div><FileText aria-hidden="true" /><span><strong>Rapport général</strong><small>Clients, livreurs, colis et totaux de la journée</small></span></div>
               <div><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'pdf')}><Download aria-hidden="true" />PDF</button><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button></div>
-            </div>
-            <div className="admin-client-reports">
-              {day.clients.map((client) => (
-                <article key={client.accountId}>
-                  <div><span><UsersRound aria-hidden="true" /></span><div><strong>{client.displayName}</strong><small>{client.finalizedCount}/{client.packageCount} colis · {client.phone || 'Sans contact'}</small></div></div>
-                  <div className="admin-client-report__money"><small>Récupéré</small><strong>{formatAriary(client.totals.recoveredAriary)}</strong></div>
-                  <div className="admin-client-report__money"><small>Frais</small><strong>{formatAriary(client.totals.deliveryFeesAriary)}</strong></div>
-                  <div className="admin-client-report__money"><small>À reverser</small><strong>{formatAriary(client.totals.amountToRemitAriary)}</strong></div>
-                  <div className="admin-client-report__actions"><button type="button" aria-label={`Télécharger le rapport PDF de ${client.displayName}`} disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.accountId, 'pdf')}><FileText aria-hidden="true" />PDF</button><button type="button" aria-label={`Télécharger le rapport Excel de ${client.displayName}`} disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.accountId, 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button></div>
-                </article>
-              ))}
             </div>
           </section>
         </>
@@ -477,7 +651,9 @@ export function AdminDailyOperationsPanel({
       {editingPackage && <AdminPackageOutcomeDialog deliveryPackage={editingPackage} couriers={couriers} busy={busyAction === `outcome:${editingPackage.packageId}`} error={dialogError} onClose={() => setEditingPackage(undefined)} onSave={(input) => void saveOutcome(input)} />}
       {editingFeePackage && <AdminDeliveryFeeDialog deliveryPackage={editingFeePackage} busy={busyAction === `fee:${editingFeePackage.packageId}`} error={dialogError} onClose={() => setEditingFeePackage(undefined)} onSave={(input) => void saveDeliveryFee(input)} />}
       {carryPackage && <CarryForwardDialog accessToken={accessToken} deliveryPackage={carryPackage} busy={busyAction === `carry:${carryPackage.packageId}`} error={dialogError} onClose={() => setCarryPackage(undefined)} onConfirm={(pickup) => void carryForward(pickup)} />}
-      {closing && <ConfirmDialog title="Clôturer cette journée ?" confirmLabel="Clôturer et activer les rapports" busy={busyAction === 'close'} onClose={() => setClosing(false)} onConfirm={() => void closeDay()}><p>Les {day?.counts.total ?? 0} colis ont un état final. Le compte rendu sera verrouillé et les rapports financiers deviendront téléchargeables.</p></ConfirmDialog>}
+      {closingClient && <ConfirmDialog title={`Clôturer ${closingClient.clientDisplayName} ?`} confirmLabel="Clôturer ce client" busy={busyAction === `close-client:${closingClient.clientAccountId}`} onClose={() => { setClosingClient(undefined); setDialogError(undefined) }} onConfirm={() => void closeClient()}><p>Les {closingClient.packageCount} colis de ce client seront figés. Ses rapports financiers et la validation des rémunérations livreurs deviendront immédiatement disponibles.</p>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
+      {reopeningClient && <ConfirmDialog title={`Rouvrir ${reopeningClient.clientDisplayName} ?`} confirmLabel="Rouvrir ce client" busy={busyAction === `reopen-client:${reopeningClient.clientAccountId}`} danger onClose={() => { setReopeningClient(undefined); setClientReopenReason(''); setDialogError(undefined) }} onConfirm={() => void reopenClient()}><p>Les rapports et rémunérations liés à cette clôture ne seront plus définitifs pendant la correction.</p><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={clientReopenReason} placeholder="Ex. Corriger l’état final d’un colis" onChange={(event) => setClientReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
+      {closing && <ConfirmDialog title="Clôturer cette journée ?" confirmLabel="Clôturer et activer le rapport général" busy={busyAction === 'close'} onClose={() => setClosing(false)} onConfirm={() => void closeDay()}><p>Les {clientClosures?.clientCount ?? day?.clients.length ?? 0} comptes clients sont clôturés. La journée sera figée et le rapport général deviendra téléchargeable.</p></ConfirmDialog>}
       {reopening && <ConfirmDialog title="Rouvrir cette journée ?" confirmLabel="Rouvrir la journée" busy={busyAction === 'reopen'} danger onClose={() => { setReopening(false); setDialogError(undefined) }} onConfirm={() => void reopenDay()}><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={reopenReason} placeholder="Ex. Corriger le montant récupéré d’un colis" onChange={(event) => setReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
     </section>
   )

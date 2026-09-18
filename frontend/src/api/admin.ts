@@ -4,6 +4,7 @@ import type {
   OptimizationResult,
   StrategyMetrics,
 } from './optimization'
+import type { PricingDistanceMode } from './pricing'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -16,6 +17,13 @@ export type OperationDayStatus = 'OPEN' | 'DISPATCHING' | 'DISPATCHED' | 'CLOSED
 export type ReportFormat = 'pdf' | 'xlsx'
 export type DeliveryRequestKind = 'NORMAL' | 'EXPRESS'
 export type ExpressDeliveryStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED'
+export type ExpressFuelStatus =
+  | 'WAITING_FOR_OUTCOMES'
+  | 'CALCULATED'
+  | 'ROUTING_FAILED'
+  | 'CONFIGURATION_MISSING'
+  | 'MANUAL_INCOMPLETE'
+  | 'MANUAL'
 
 export interface ConfirmedLocation {
   label?: string
@@ -44,6 +52,8 @@ export interface DeliveryPackage {
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
   desiredDeliveryTime?: string | null
+  desiredDeliveryEndTime?: string | null
+  desiredDeliveryEndsNextDay?: boolean
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
@@ -56,6 +66,7 @@ export interface DeliveryPackage {
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
   pricingPolicyId?: number | null
+  pricingDistanceMode?: PricingDistanceMode | null
   baseDeliveryFeeAriary?: number | null
   weightSurchargeAriary?: number | null
   timeSurchargeAriary?: number | null
@@ -133,6 +144,9 @@ export interface ExpressDelivery {
   selectedCapacityKg: number
   capacityWarning: boolean
   confirmedAt?: string | null
+  returnToPickup: boolean
+  returnToPickupOverridden: boolean
+  fuelCalculation?: ExpressFuelCalculation | null
 }
 
 export interface Courier {
@@ -152,6 +166,12 @@ export interface Courier {
   commissionDenominator?: number | null
   effectiveCommissionNumerator: number
   effectiveCommissionDenominator: number
+  fuelReimbursementEnabled?: boolean | null
+  fuelEfficiencyKmPerLiter?: number | null
+  fuelPricePerLiterAriary?: number | null
+  effectiveFuelReimbursementEnabled: boolean
+  effectiveFuelEfficiencyKmPerLiter?: number | null
+  effectiveFuelPricePerLiterAriary: number
   defaultDepartureTime: string
   departureLocation: ConfirmedLocation
   version: number
@@ -177,6 +197,9 @@ export interface CourierInput {
   averageSpeedKmh?: number
   commissionNumerator?: number | null
   commissionDenominator?: number | null
+  fuelReimbursementEnabled?: boolean | null
+  fuelEfficiencyKmPerLiter?: number | null
+  fuelPricePerLiterAriary?: number | null
   defaultDepartureTime: string
   departureLocation: ConfirmedLocation
   version?: number
@@ -204,6 +227,8 @@ export interface OperationalSettings {
   routingPreset: 'MAIN_ROADS'
   defaultCourierCommissionNumerator: number
   defaultCourierCommissionDenominator: number
+  defaultFuelPricePerLiterAriary: number
+  defaultExpressReturnToPickup: boolean
   version: number
   createdAt: string
   updatedAt: string
@@ -218,6 +243,7 @@ export interface DeliveryPricingZone {
 
 export interface DeliveryPricingPolicy {
   version: number
+  distanceMode: PricingDistanceMode
   center: ConfirmedLocation
   zones: DeliveryPricingZone[]
   createdAt: string
@@ -226,6 +252,7 @@ export interface DeliveryPricingPolicy {
 
 export interface DeliveryPricingPolicyInput {
   version: number
+  distanceMode: PricingDistanceMode
   center: ConfirmedLocation
   zones: Array<{
     id?: string
@@ -241,6 +268,7 @@ export interface AdvancedPricingPolicy {
   requestKind: DeliveryRequestKind
   clientSpecific: boolean
   version: number
+  distanceMode: PricingDistanceMode
   center: ConfirmedLocation
   defaultWeightKg: number
   zones: DeliveryPricingZone[]
@@ -252,6 +280,7 @@ export interface AdvancedPricingPolicyInput {
   clientAccountId?: string | null
   requestKind: DeliveryRequestKind
   version?: number | null
+  distanceMode: PricingDistanceMode
   center: ConfirmedLocation
   defaultWeightKg: number
   zones: Array<{ id?: string; name: string; maxDistanceMeters: number; deliveryFeeAriary: number }>
@@ -305,6 +334,9 @@ export interface DispatchPackageOutcome {
   contact: string
   amountToCollectAriary: number
   mobileMoneyPaid: boolean
+  desiredDeliveryTime?: string | null
+  desiredDeliveryEndTime?: string | null
+  desiredDeliveryEndsNextDay?: boolean
   effectiveWeightKg: number
   pricingZoneId?: string | null
   pricingZoneName?: string | null
@@ -312,6 +344,11 @@ export interface DispatchPackageOutcome {
   distanceFromCenterMeters?: number | null
   pricingZoneMaxDistanceMeters?: number | null
   pricingPolicyVersion?: number | null
+  pricingPolicyId?: number | null
+  pricingDistanceMode?: PricingDistanceMode | null
+  baseDeliveryFeeAriary?: number | null
+  weightSurchargeAriary?: number | null
+  timeSurchargeAriary?: number | null
   destination: ConfirmedLocation
   cashToCollectAriary?: number
 }
@@ -474,6 +511,36 @@ export interface DailyOperation {
   packages: DailyOperationPackage[]
 }
 
+export interface ClientClosureItem {
+  clientAccountId: string
+  clientDisplayName: string
+  clientPhone?: string | null
+  readyToClose: boolean
+  blockers: string[]
+  packageCount: number
+  recoveredAriary: number
+  deliveryFeesAriary: number
+  amountToRemitAriary: number
+  closed: boolean
+  closureRevision?: number | null
+  reportId?: string | null
+  closedAt?: string | null
+  closedByAccountId?: string | null
+  courierCompensationFinalized: boolean
+  version?: number | null
+}
+
+export interface ClientClosureOverview {
+  serviceDate: string
+  dayStatus: OperationDayStatus
+  dayVersion: number
+  currentClosureRevision: number
+  clientCount: number
+  closedClientCount: number
+  allClientsClosed: boolean
+  clients: ClientClosureItem[]
+}
+
 export interface CarryForwardResult {
   deliveryRequestId: string
   packageId: string
@@ -577,6 +644,63 @@ export interface CompensationLine {
   destinationLabel?: string | null
 }
 
+export interface ExpressFuelLine {
+  requestId?: string
+  clientDisplayName?: string | null
+  pickupLabel?: string | null
+  courierId: string
+  courierName: string
+  packageIds: string[]
+  repositionDistanceMeters?: number | null
+  automaticDistanceMeters?: number | null
+  finalDistanceMeters: number
+  fuelReimbursementEnabled: boolean
+  fuelEfficiencyKmPerLiter?: number | null
+  fuelPricePerLiterAriary: number
+  suggestedFuelAriary: number
+  finalFuelAriary: number
+  overrideReason?: string | null
+  manual: boolean
+  returnToPickup?: boolean
+}
+
+export interface ExpressFuelCalculation {
+  requestId: string
+  clientDisplayName?: string | null
+  pickupLabel?: string | null
+  status: ExpressFuelStatus
+  returnToPickup: boolean
+  version: number
+  failureReason?: string | null
+  totalDistanceMeters: number
+  totalSuggestedFuelAriary: number
+  totalFinalFuelAriary: number
+  lines: ExpressFuelLine[]
+}
+
+export interface FuelCompensationLine {
+  requestId: string
+  clientDisplayName?: string | null
+  pickupLabel?: string | null
+  status: ExpressFuelStatus
+  failureReason?: string | null
+  courierId?: string | null
+  courierName?: string | null
+  courierContact?: string | null
+  packageIds: string[]
+  returnToPickup: boolean
+  repositionDistanceMeters?: number | null
+  automaticDistanceMeters?: number | null
+  finalDistanceMeters: number
+  fuelReimbursementEnabled: boolean
+  fuelEfficiencyKmPerLiter?: number | null
+  fuelPricePerLiterAriary: number
+  suggestedAmountAriary: number
+  finalAmountAriary: number
+  overrideReason?: string | null
+  manual: boolean
+}
+
 export interface CourierCompensation {
   serviceDate: string
   closureRevision: number
@@ -585,8 +709,15 @@ export interface CourierCompensation {
   finalizedByAccountId?: string | null
   totalSuggestedAriary: number
   totalFinalAriary: number
+  totalSuggestedCommissionAriary: number
+  totalFinalCommissionAriary: number
+  totalSuggestedFuelAriary: number
+  totalFinalFuelAriary: number
   pendingReturnCount: number
+  unresolvedFuelCalculationCount: number
   lines: CompensationLine[]
+  fuelLines: FuelCompensationLine[]
+  fuelCalculations: ExpressFuelCalculation[]
 }
 
 export interface CourierEarning {
@@ -601,6 +732,26 @@ export interface CourierEarning {
   suggestedAmountAriary: number
   finalAmountAriary: number
   overrideReason?: string | null
+  createdAt: string
+}
+
+export interface CourierFuelEarning {
+  id: string
+  serviceDate: string
+  closureRevision: number
+  requestId: string
+  returnToPickup: boolean
+  packageIds: string[]
+  repositionDistanceMeters?: number | null
+  automaticDistanceMeters?: number | null
+  finalDistanceMeters: number
+  fuelReimbursementEnabled: boolean
+  fuelEfficiencyKmPerLiter?: number | null
+  fuelPricePerLiterAriary: number
+  suggestedAmountAriary: number
+  finalAmountAriary: number
+  overrideReason?: string | null
+  manual: boolean
   createdAt: string
 }
 
@@ -632,17 +783,22 @@ export interface CourierDeliveryHistory {
   returnCompletedAt?: string | null
   deliveryFeeAriary: number
   earnedAmountAriary?: number | null
+  fuelEarnedAmountAriary?: number | null
+  totalEarnedAmountAriary?: number | null
 }
 
 export interface CourierFinance {
   courierId: string
   courierName: string
+  totalCommissionEarnedAriary: number
+  totalFuelEarnedAriary: number
   totalEarnedAriary: number
   totalPaidAriary: number
   remainingToPayAriary: number
   advanceCreditAriary: number
   deliveries: CourierDeliveryHistory[]
   earnings: CourierEarning[]
+  fuelEarnings: CourierFuelEarning[]
   payments: CourierPayment[]
 }
 
@@ -816,10 +972,14 @@ export function quoteAdminDeliveryPrice(
     distanceFromCenterMeters: number
     pricingZoneMaxDistanceMeters: number
     pricingPolicyVersion: number
+    distanceMode: PricingDistanceMode
     baseDeliveryFeeAriary?: number
     weightSurchargeAriary?: number
     timeSurchargeAriary?: number
     timeSlotLabel?: string | null
+    desiredDeliveryTime?: string | null
+    desiredDeliveryEndTime?: string | null
+    desiredDeliveryEndsNextDay?: boolean
   }>(`clients/${encodeURIComponent(clientAccountId)}/delivery-pricing/quote`, accessToken, {
     ...jsonRequest('POST', { destination, requestKind, ...options }),
     signal,
@@ -830,10 +990,16 @@ export function listExpressDeliveries(accessToken: string, signal?: AbortSignal)
   return adminRequest<ExpressDelivery[]>('express-deliveries', accessToken, { signal })
 }
 
-export function confirmExpressDelivery(id: string, courierIds: string[], version: number, accessToken: string) {
+export function confirmExpressDelivery(
+  id: string,
+  courierIds: string[],
+  version: number,
+  returnToPickup: boolean,
+  accessToken: string,
+) {
   return adminRequest<ExpressDelivery>(
     `express-deliveries/${encodeURIComponent(id)}/confirm`, accessToken,
-    jsonRequest('POST', { courierIds, version }),
+    jsonRequest('POST', { courierIds, version, returnToPickup }),
   )
 }
 
@@ -841,6 +1007,36 @@ export function cancelExpressDelivery(id: string, version: number, accessToken: 
   return adminRequest<void>(
     `express-deliveries/${encodeURIComponent(id)}/cancel`, accessToken,
     jsonRequest('POST', { version }),
+  )
+}
+
+export function getExpressFuelCalculation(id: string, accessToken: string, signal?: AbortSignal) {
+  return adminRequest<ExpressFuelCalculation>(
+    `express-deliveries/${encodeURIComponent(id)}/fuel`, accessToken, { signal },
+  )
+}
+
+export function recalculateExpressFuel(id: string, version: number, accessToken: string) {
+  return adminRequest<ExpressFuelCalculation>(
+    `express-deliveries/${encodeURIComponent(id)}/fuel/recalculate`, accessToken,
+    jsonRequest('POST', { version }),
+  )
+}
+
+export function updateExpressFuel(
+  id: string,
+  version: number,
+  lines: Array<{
+    courierId: string
+    finalDistanceMeters?: number | null
+    finalFuelAmountAriary?: number | null
+    reason: string
+  }>,
+  accessToken: string,
+) {
+  return adminRequest<ExpressFuelCalculation>(
+    `express-deliveries/${encodeURIComponent(id)}/fuel`, accessToken,
+    jsonRequest('PUT', { version, lines }),
   )
 }
 
@@ -967,6 +1163,41 @@ export function cancelAdminDeliveryPackage(packageId: string, version: number, a
 
 export function getDeliveryDay(serviceDate: string, accessToken: string, signal?: AbortSignal) {
   return adminRequest<DailyOperation>(`delivery-days/${encodeURIComponent(serviceDate)}`, accessToken, { signal })
+}
+
+export function getClientClosures(serviceDate: string, accessToken: string, signal?: AbortSignal) {
+  return adminRequest<ClientClosureOverview>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/client-closures`,
+    accessToken,
+    { signal },
+  )
+}
+
+export function closeDeliveryClient(
+  serviceDate: string,
+  clientAccountId: string,
+  dayVersion: number,
+  accessToken: string,
+) {
+  return adminRequest<ClientClosureOverview>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/clients/${encodeURIComponent(clientAccountId)}/close`,
+    accessToken,
+    jsonRequest('POST', { version: dayVersion }),
+  )
+}
+
+export function reopenDeliveryClient(
+  serviceDate: string,
+  clientAccountId: string,
+  closureVersion: number,
+  reason: string,
+  accessToken: string,
+) {
+  return adminRequest<ClientClosureOverview>(
+    `delivery-days/${encodeURIComponent(serviceDate)}/clients/${encodeURIComponent(clientAccountId)}/reopen`,
+    accessToken,
+    jsonRequest('POST', { version: closureVersion, reason }),
+  )
 }
 
 export function updateDeliveryPackageOutcome(
@@ -1132,9 +1363,15 @@ export function downloadAdminClientPaymentProof(paymentId: string, accessToken: 
   )
 }
 
-export function getCourierCompensations(serviceDate: string, accessToken: string, signal?: AbortSignal) {
+export function getCourierCompensations(
+  serviceDate: string,
+  accessToken: string,
+  signal?: AbortSignal,
+  clientAccountId?: string,
+) {
+  const clientScope = clientAccountId ? `/clients/${encodeURIComponent(clientAccountId)}` : ''
   return adminRequest<CourierCompensation>(
-    `finance/delivery-days/${encodeURIComponent(serviceDate)}/courier-compensations`,
+    `finance/delivery-days/${encodeURIComponent(serviceDate)}${clientScope}/courier-compensations`,
     accessToken,
     { signal },
   )
@@ -1145,9 +1382,11 @@ export function finalizeCourierCompensations(
   closureRevision: number,
   overrides: Array<{ packageId: string; finalAmountAriary: number; reason?: string | null }>,
   accessToken: string,
+  clientAccountId?: string,
 ) {
+  const clientScope = clientAccountId ? `/clients/${encodeURIComponent(clientAccountId)}` : ''
   return adminRequest<CourierCompensation>(
-    `finance/delivery-days/${encodeURIComponent(serviceDate)}/courier-compensations/finalize`,
+    `finance/delivery-days/${encodeURIComponent(serviceDate)}${clientScope}/courier-compensations/finalize`,
     accessToken,
     jsonRequest('POST', { closureRevision, overrides }),
   )
