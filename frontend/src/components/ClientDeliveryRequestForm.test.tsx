@@ -84,6 +84,12 @@ describe('ClientDeliveryRequestForm', () => {
 
     await waitFor(() => expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({
       requestKind: 'NORMAL',
+      pickup: {
+        label: 'Boutique Analakely',
+        query: 'Analakely, Antananarivo',
+        latitude: -18.9089,
+        longitude: 47.5212,
+      },
       packages: [expect.objectContaining({ desiredDeliveryTime: '14:30' })],
     })))
   })

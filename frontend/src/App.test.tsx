@@ -343,41 +343,12 @@ describe('App', () => {
     expect(screen.getByLabelText('Mot de passe')).toHaveAttribute('type', 'password')
     const pricingButton = screen.getByRole('button', { name: /Calculer un tarif/ })
     expect(pricingButton).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Créer un compte/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Première livraison avec AZY/)).not.toBeInTheDocument()
+    const loginButton = screen.getByRole('button', { name: 'Se connecter' })
+    expect(loginButton.compareDocumentPosition(pricingButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(pricingButton)
     expect(screen.getByRole('dialog', { name: 'Calculer un tarif' })).toBeInTheDocument()
-  })
-
-  it('registers a client and opens the client dashboard', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ code: 'INVALID_REFRESH_TOKEN' }, 401))
-      .mockResolvedValueOnce(jsonResponse(clientSession, 201))
-    vi.stubGlobal('fetch', fetchMock)
-
-    render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Créer un compte' }))
-    expect(screen.getByRole('button', { name: /Calculer un tarif/ })).toBeVisible()
-    fireEvent.change(screen.getByLabelText('Nom affiché'), { target: { value: 'Soa Rakoto' } })
-    fireEvent.change(screen.getByLabelText('Téléphone'), { target: { value: '+261341234567' } })
-    fireEvent.change(screen.getByLabelText('Identifiant'), { target: { value: 'soa.client' } })
-    fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'secret-password' } })
-    fireEvent.change(screen.getByLabelText('Confirmer le mot de passe'), { target: { value: 'secret-password' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Créer mon compte' }))
-
-    expect(await screen.findByRole('heading', { name: /Bonjour,? Soa/ })).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      '/api/auth/register',
-      expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-        body: JSON.stringify({
-          username: 'soa.client',
-          password: 'secret-password',
-          displayName: 'Soa Rakoto',
-          phone: '+261341234567',
-        }),
-      }),
-    )
   })
 
   it('logs in and opens the dashboard matching the account role', async () => {

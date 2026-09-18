@@ -122,6 +122,12 @@ export interface AdminClient {
   username: string
   displayName: string
   phone: string
+  defaultPickup: {
+    label: string
+    destinationQuery?: string
+    latitude: number
+    longitude: number
+  } | null
   enabled: boolean
   expressDeliveryEnabled: boolean
   version: number
