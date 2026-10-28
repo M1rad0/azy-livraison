@@ -55,7 +55,14 @@ export function PublicPricingCalculator({ onClose }: { onClose: () => void }) {
             <button className={kind === 'NORMAL' ? 'is-active' : undefined} type="button" role="tab" aria-selected={kind === 'NORMAL'} onClick={() => setKind('NORMAL')}><BadgeDollarSign /><span><strong>Normale</strong><small>Livraison planifiée</small></span></button>
             <button className={kind === 'EXPRESS' ? 'is-active' : undefined} type="button" role="tab" aria-selected={kind === 'EXPRESS'} onClick={() => setKind('EXPRESS')}><Zap /><span><strong>Express</strong><small>Traitement immédiat</small></span></button>
           </div>
-          <LocationPicker accessToken="" value={destination} title="Destination" description="Recherchez le quartier ou placez précisément le point sur la carte." onChange={setDestination} />
+          <LocationPicker
+            accessToken=""
+            value={destination}
+            title="Destination"
+            description="Recherchez le quartier ou placez précisément le point sur la carte."
+            searchOptions={{ purpose: 'DESTINATION', requestKind: kind }}
+            onChange={setDestination}
+          />
           {loading && <div className="client-pricing-preview is-loading"><LoaderCircle className="spin" /><strong>Calcul du tarif…</strong></div>}
           {quote && !loading && <div className="public-pricing-result"><div><span>Zone {quote.pricingZoneName}</span><small>{formatPricingDistanceSummary(quote.distanceFromCenterMeters, quote.distanceMode)}</small></div><strong>{quote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar</strong></div>}
           {error && <p className="client-alert client-alert--error">{error}</p>}

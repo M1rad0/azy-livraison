@@ -3,13 +3,24 @@ import { createPortal } from 'react-dom'
 import { Check, LoaderCircle, MapPin, MapPinned, Search, X } from 'lucide-react'
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import type { Location } from '../api/csvImports'
-import { searchAddress, type GeocodingCandidate } from '../api/geocoding'
+import { searchAddress, type GeocodingCandidate, type GeocodingSearchOptions } from '../api/geocoding'
 
 const TILE_URL = import.meta.env.VITE_MAP_TILE_URL
   ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_ATTRIBUTION = import.meta.env.VITE_MAP_TILE_ATTRIBUTION
   ?? '&copy; OpenStreetMap contributors'
 const ANTANANARIVO: [number, number] = [-18.895, 47.525]
+
+function conciseLocationName(value?: string) {
+  if (!value) return ''
+
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(', ')
+}
 
 function hasCoordinates(location: Location) {
   return Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
@@ -51,6 +62,7 @@ function LocationPickerDialog({
   value,
   title,
   description,
+  searchOptions,
   onConfirm,
   onClose,
 }: {
@@ -58,11 +70,12 @@ function LocationPickerDialog({
   value: Location
   title: string
   description: string
+  searchOptions?: GeocodingSearchOptions
   onConfirm: (location: Location) => void
   onClose: () => void
 }) {
   const titleId = useId()
-  const [query, setQuery] = useState(value.destinationQuery ?? '')
+  const [query, setQuery] = useState(conciseLocationName(value.destinationQuery))
   const [selection, setSelection] = useState<Location>(value)
   const [candidates, setCandidates] = useState<GeocodingCandidate[]>([])
   const [busy, setBusy] = useState(false)
@@ -93,10 +106,14 @@ function LocationPickerDialog({
     setMessage(undefined)
     setCandidates([])
     try {
-      const result = await searchAddress(searchedQuery, accessToken, controller.signal)
+      const result = await searchAddress(searchedQuery, accessToken, controller.signal, searchOptions)
       if (controller.signal.aborted) return
       setCandidates(result.candidates)
-      if (result.candidates.length === 0) setMessage('Aucun lieu trouvé à Madagascar.')
+      if (result.candidates.length === 0) {
+        setMessage(searchOptions?.purpose === 'DESTINATION'
+          ? 'Aucun lieu trouvé dans la zone desservie.'
+          : 'Aucun lieu trouvé à Madagascar.')
+      }
     } catch (error) {
       if (controller.signal.aborted) return
       setMessage(error instanceof Error ? error.message : 'Recherche impossible.')
@@ -118,12 +135,13 @@ function LocationPickerDialog({
   }
 
   function selectCandidate(candidate: GeocodingCandidate) {
-    setQuery(candidate.displayName)
+    const conciseName = conciseLocationName(candidate.displayName)
+    setQuery(conciseName)
     setCandidates([])
     setMessage(undefined)
     setSelection({
       ...selection,
-      label: selection.label || candidate.displayName,
+      label: selection.label || conciseName,
       destinationQuery: candidate.displayName,
       latitude: candidate.latitude,
       longitude: candidate.longitude,
@@ -133,9 +151,14 @@ function LocationPickerDialog({
   function selectMapPoint(latitude: number, longitude: number) {
     setCandidates([])
     setMessage('Point placé manuellement sur la carte.')
+    const searchedQuery = query.trim()
+    const destinationQuery = selection.destinationQuery
+      && searchedQuery === conciseLocationName(selection.destinationQuery)
+      ? selection.destinationQuery
+      : searchedQuery || selection.destinationQuery || 'Point sélectionné sur la carte'
     setSelection({
       ...selection,
-      destinationQuery: query.trim() || selection.destinationQuery || 'Point sélectionné sur la carte',
+      destinationQuery,
       latitude,
       longitude,
     })
@@ -192,7 +215,7 @@ function LocationPickerDialog({
                 {candidates.map((candidate) => (
                   <li key={candidate.id}>
                     <button type="button" onClick={() => selectCandidate(candidate)}>
-                      <strong>{candidate.displayName}</strong>
+                      <strong>{conciseLocationName(candidate.displayName)}</strong>
                       <small>{candidate.latitude.toFixed(6)}, {candidate.longitude.toFixed(6)}</small>
                     </button>
                   </li>
@@ -203,7 +226,7 @@ function LocationPickerDialog({
               <MapPin aria-hidden="true" />
               <div>
                 <small>{hasCoordinates(selection) ? 'Position confirmée' : 'Aucun point sélectionné'}</small>
-                <strong>{selection.destinationQuery || 'Recherchez un lieu ou cliquez sur la carte'}</strong>
+                <strong>{conciseLocationName(selection.destinationQuery) || 'Recherchez un lieu ou cliquez sur la carte'}</strong>
                 {hasCoordinates(selection) && <span>{selection.latitude?.toFixed(6)}, {selection.longitude?.toFixed(6)}</span>}
               </div>
             </div>
@@ -228,7 +251,7 @@ function LocationPickerDialog({
               <MapClickHandler onPick={selectMapPoint} />
               {hasCoordinates(selection) && (
                 <CircleMarker center={[selection.latitude as number, selection.longitude as number]} radius={10} pathOptions={{ color: '#fff', fillColor: '#f45b0b', fillOpacity: 1, weight: 4 }}>
-                  <Popup>{selection.destinationQuery || 'Point sélectionné'}</Popup>
+                  <Popup>{conciseLocationName(selection.destinationQuery) || 'Point sélectionné'}</Popup>
                 </CircleMarker>
               )}
             </MapContainer>
@@ -236,7 +259,7 @@ function LocationPickerDialog({
             <div className={`location-modal__map-actions${hasCoordinates(selection) ? ' is-confirmed' : ''}`}>
               <div>
                 <small>{hasCoordinates(selection) ? 'Point prêt à être utilisé' : 'Touchez la carte pour placer le point'}</small>
-                <strong>{selection.destinationQuery || 'Aucun lieu sélectionné'}</strong>
+                <strong>{conciseLocationName(selection.destinationQuery) || 'Aucun lieu sélectionné'}</strong>
               </div>
               <div>
                 <button className="button button--secondary" type="button" onClick={() => setMobilePanel('search')}>
@@ -268,18 +291,23 @@ export function LocationPicker({
   value,
   title,
   description,
+  searchOptions,
   onChange,
 }: {
   accessToken: string
   value: Location
   title: string
   description: string
+  searchOptions?: GeocodingSearchOptions
   onChange: (location: Location) => void
 }) {
   const [open, setOpen] = useState(false)
   const confirmed = hasCoordinates(value)
-  const locationQuery = value.destinationQuery?.trim()
-  const locationName = value.label?.trim()
+  const locationQuery = conciseLocationName(value.destinationQuery)
+  const rawLocationName = value.label?.trim()
+  const locationName = rawLocationName && rawLocationName === value.destinationQuery?.trim()
+    ? conciseLocationName(rawLocationName)
+    : rawLocationName
   const distinctLocationName = locationName && locationQuery && locationName !== locationQuery
     ? locationName
     : undefined
@@ -304,6 +332,7 @@ export function LocationPicker({
           value={value}
           title={title}
           description={description}
+          searchOptions={searchOptions}
           onConfirm={onChange}
           onClose={() => setOpen(false)}
         />

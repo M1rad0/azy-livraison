@@ -29,6 +29,12 @@ export interface GeocodingSearchResponse {
   candidates: GeocodingCandidate[]
 }
 
+export interface GeocodingSearchOptions {
+  purpose: 'DESTINATION'
+  requestKind: 'NORMAL' | 'EXPRESS'
+  clientAccountId?: string
+}
+
 interface GeocodingErrorResponse {
   code?: string
   message?: string
@@ -38,8 +44,14 @@ export async function searchAddress(
   query: string,
   accessToken: string,
   signal?: AbortSignal,
+  options?: GeocodingSearchOptions,
 ): Promise<GeocodingSearchResponse> {
   const parameters = new URLSearchParams({ q: query })
+  if (options) {
+    parameters.set('purpose', options.purpose)
+    parameters.set('requestKind', options.requestKind)
+    if (options.clientAccountId) parameters.set('clientAccountId', options.clientAccountId)
+  }
   const response = await fetch(`${API_BASE_URL}/geocoding/search?${parameters}`, {
     headers: {
       Accept: 'application/json',

@@ -470,11 +470,11 @@ describe('App', () => {
     selectWorkspaceTab('Livraisons')
     fireEvent.click(screen.getByRole('button', { name: 'Choisir sur la carte' }))
     fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Analakely, Antananarivo/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer ce lieu' }))
 
     expect(screen.getByText('Coordonnées : -18.908900, 47.521200')).toBeInTheDocument()
-    expect(screen.getByText('Analakely, Antananarivo, Madagascar')).toBeInTheDocument()
+    expect(screen.getByText('Analakely, Antananarivo')).toBeInTheDocument()
   })
 
   it('does not duplicate a location search while the first request is pending', async () => {
@@ -510,12 +510,12 @@ describe('App', () => {
         longitude: 47.5212,
       }],
     }))
-    expect(await screen.findByRole('button', { name: /Analakely, Antananarivo, Madagascar/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Analakely, Antananarivo/ })).toBeInTheDocument()
   })
 
   it('searches and selects a destination from a package card', async () => {
     const fetchMock = authenticatedFetch((input) => {
-      if (input === '/api/geocoding/search?q=Ankorondrano%2C+Antananarivo') {
+      if (input.startsWith('/api/geocoding/search?q=Ankorondrano%2C+Antananarivo')) {
         return jsonResponse({
           query: 'Ankorondrano, Antananarivo',
           provider: 'NOMINATIM',
@@ -543,11 +543,11 @@ describe('App', () => {
     const destinationInput = screen.getByLabelText('Rechercher un lieu à Madagascar')
     fireEvent.change(destinationInput, { target: { value: 'Ankorondrano, Antananarivo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Ankorondrano, Antananarivo, Madagascar/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Ankorondrano, Antananarivo/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer ce lieu' }))
 
     expect(screen.getByText('Coordonnées : -18.879200, 47.520700')).toBeInTheDocument()
-    expect(screen.getByText('Ankorondrano, Antananarivo, Madagascar')).toBeInTheDocument()
+    expect(screen.getByText('Ankorondrano, Antananarivo')).toBeInTheDocument()
   })
 
   it('previews the road route on a map before validation', async () => {

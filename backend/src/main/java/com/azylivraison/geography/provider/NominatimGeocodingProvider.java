@@ -9,8 +9,8 @@ import com.azylivraison.geography.domain.GeocodingBoundingBox;
 import com.azylivraison.geography.domain.GeocodingCandidate;
 import com.azylivraison.geography.service.GeocodingUnavailableException;
 
-import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -39,17 +39,29 @@ public class NominatimGeocodingProvider implements GeocodingProvider {
     }
 
     @Override
-    public List<GeocodingCandidate> search(String query) {
+    public List<GeocodingCandidate> search(String query, GeocodingSearchOptions options) {
         try {
             String payload = restClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/search")
-                            .queryParam("q", query)
-                            .queryParam("format", "jsonv2")
-                            .queryParam("addressdetails", 1)
-                            .queryParam("countrycodes", properties.countryCode())
-                            .queryParam("limit", properties.resultLimit())
-                            .build())
+                    .uri(uriBuilder -> {
+                        var builder = uriBuilder
+                                .path("/search")
+                                .queryParam("q", query)
+                                .queryParam("format", "jsonv2")
+                                .queryParam("countrycodes", properties.countryCode())
+                                .queryParam("accept-language", properties.acceptLanguage())
+                                .queryParam("limit", options.bounded()
+                                        ? Math.min(40, properties.resultLimit() * 4)
+                                        : properties.resultLimit());
+                        if (options.bounded()) {
+                            SearchViewBox viewBox = viewBox(options);
+                            builder.queryParam("viewbox", String.format(
+                                            Locale.ROOT,
+                                            "%.7f,%.7f,%.7f,%.7f",
+                                            viewBox.west(), viewBox.north(), viewBox.east(), viewBox.south()))
+                                    .queryParam("bounded", 1);
+                        }
+                        return builder.build();
+                    })
                     .retrieve()
                     .body(String.class);
             return parse(payload == null ? "[]" : payload);
@@ -57,6 +69,22 @@ public class NominatimGeocodingProvider implements GeocodingProvider {
             throw new GeocodingUnavailableException(
                     "Le service de géocodage est momentanément indisponible.", exception);
         }
+    }
+
+    private SearchViewBox viewBox(GeocodingSearchOptions options) {
+        double latitude = options.centerLatitude();
+        double longitude = options.centerLongitude();
+        double latitudeDelta = options.maximumDistanceMeters() / 111_320.0;
+        double longitudeScale = Math.max(0.01, Math.cos(Math.toRadians(latitude)));
+        double longitudeDelta = options.maximumDistanceMeters() / (111_320.0 * longitudeScale);
+        return new SearchViewBox(
+                Math.max(-180, longitude - longitudeDelta),
+                Math.min(90, latitude + latitudeDelta),
+                Math.min(180, longitude + longitudeDelta),
+                Math.max(-90, latitude - latitudeDelta));
+    }
+
+    private record SearchViewBox(double west, double north, double east, double south) {
     }
 
     private List<GeocodingCandidate> parse(String payload) {
