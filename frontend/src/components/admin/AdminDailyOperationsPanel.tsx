@@ -243,7 +243,9 @@ export function AdminDailyOperationsPanel({
     (clientClosures?.clients ?? []).map((client) => [client.clientAccountId, client]),
   ), [clientClosures])
   const unscheduledPostponements = day?.packages.filter((deliveryPackage) => (
-    deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId
+    deliveryPackage.requestKind !== 'EXPRESS'
+    && deliveryPackage.finalOutcome === 'POSTPONED'
+    && !deliveryPackage.carriedForwardToPackageId
   )).length ?? 0
   const isExpressOnlyDayWithoutPlan = Boolean(
     day
@@ -540,6 +542,7 @@ export function AdminDailyOperationsPanel({
                     <span className={`admin-outcome-chip is-${(deliveryPackage.finalOutcome ?? 'awaiting').toLowerCase()}`}>{deliveryPackage.finalOutcome ? OUTCOME_LABELS[deliveryPackage.finalOutcome] : 'À finaliser'}</span>
                     {deliveryPackage.finalOutcome === 'RETURN_TO_SENDER' && <em>{deliveryPackage.returnCompletedAt ? 'Remis à l’expéditeur' : 'Retour en attente'}</em>}
                     {deliveryPackage.carriedForwardToPackageId && <em>Programmé pour demain</em>}
+                    {deliveryPackage.requestKind === 'EXPRESS' && deliveryPackage.finalOutcome === 'POSTPONED' && <em>À recréer manuellement si nécessaire</em>}
                   </div>
                   <div className="admin-day-package__actions">
                     {day.status !== 'CLOSED' && deliveryPackage.finalOutcome !== 'CANCELLED' && (
@@ -554,7 +557,7 @@ export function AdminDailyOperationsPanel({
                     {deliveryPackage.finalOutcome === 'RETURN_TO_SENDER' && !deliveryPackage.returnCompletedAt && (
                       <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={busyAction === `return:${deliveryPackage.packageId}`} onClick={() => void confirmReturn(deliveryPackage)}><PackageCheck aria-hidden="true" />Retour effectué</button>
                     )}
-                    {deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId && (
+                    {deliveryPackage.requestKind !== 'EXPRESS' && deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId && (
                       <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={clientClosed} title={clientClosed ? 'Le compte de ce client est clôturé.' : undefined} onClick={() => { setDialogError(undefined); setCarryPackage(deliveryPackage) }}><Undo2 aria-hidden="true" />Programmer demain</button>
                     )}
                   </div>

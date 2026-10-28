@@ -5,9 +5,14 @@ services:
     shm_size: 1gb
     environment:
       PBF_PATH: /nominatim/data/madagascar-latest.osm.pbf
-      IMPORT_STYLE: full
+      # Conserver "full" par defaut : les commerces et points de repere nommes
+      # sont importants a Madagascar, meme lorsqu'ils n'ont pas d'adresse.
+      IMPORT_STYLE: ${NOMINATIM_IMPORT_STYLE:-full}
       IMPORT_WIKIPEDIA: "false"
       UPDATE_MODE: none
+      # Les mises a jour sont faites par reimport explicite du PBF. Supprimer
+      # les tables de mise a jour libere de l'espace pour les index de recherche.
+      FREEZE: ${NOMINATIM_FREEZE:-true}
       THREADS: ${NOMINATIM_IMPORT_THREADS:-2}
       GUNICORN_WORKERS: ${NOMINATIM_WORKERS:-2}
       WARMUP_ON_STARTUP: ${NOMINATIM_WARMUP_ON_STARTUP:-true}
@@ -73,3 +78,6 @@ services:
 
 volumes:
   nominatim-data:
+    # Un nom configurable permet de reimporter dans un nouveau volume sans
+    # detruire l'index actuellement utilisable.
+    name: ${NOMINATIM_DATA_VOLUME:-azy-livraison_nominatim-data}

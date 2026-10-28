@@ -63,6 +63,7 @@ export function ClientPackageDialog({
   initialValue,
   packageNumber,
   requestKind = 'NORMAL',
+  geocodingClientAccountId,
   quotePrice,
   onSave,
   onClose,
@@ -71,6 +72,7 @@ export function ClientPackageDialog({
   initialValue: ClientPackageDraft
   packageNumber: number
   requestKind?: DeliveryRequestKind
+  geocodingClientAccountId?: string
   quotePrice?: (
     destination: Parameters<typeof quoteDeliveryPrice>[0],
     signal: AbortSignal,
@@ -263,6 +265,11 @@ export function ClientPackageDialog({
               value={value.destination}
               title="Lieu de livraison"
               description="Recherchez une adresse, un quartier ou un point de repère à Madagascar."
+              searchOptions={{
+                purpose: 'DESTINATION',
+                requestKind,
+                ...(geocodingClientAccountId ? { clientAccountId: geocodingClientAccountId } : {}),
+              }}
               onChange={(destination) => setValue({
                 ...value,
                 pricingQuote: undefined,

@@ -146,6 +146,7 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
         accessToken={accessToken}
         defaultPickup={deliveryClient.defaultPickup}
         requestKind={deliveryKind}
+        clientAccountId={deliveryClient.accountId}
         createRequest={async (input) => await createAdminDeliveryRequest(
           deliveryClient.accountId,
           { ...input, requestKind: deliveryKind },

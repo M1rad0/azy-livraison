@@ -8,5 +8,9 @@ public interface GeocodingProvider {
 
     String name();
 
-    List<GeocodingCandidate> search(String query);
+    default List<GeocodingCandidate> search(String query) {
+        return search(query, GeocodingSearchOptions.unrestricted());
+    }
+
+    List<GeocodingCandidate> search(String query, GeocodingSearchOptions options);
 }

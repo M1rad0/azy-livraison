@@ -85,6 +85,7 @@ export function ClientDeliveryRequestForm({
   onCreated,
   onCancel,
   requestKind = 'NORMAL',
+  clientAccountId,
   createRequest,
   quotePrice,
 }: {
@@ -93,6 +94,7 @@ export function ClientDeliveryRequestForm({
   onCreated: (request: DeliveryRequestRecord, savedDefaultPickup: boolean) => void
   onCancel: () => void
   requestKind?: DeliveryRequestKind
+  clientAccountId?: string
   createRequest?: (input: Parameters<typeof createDeliveryRequest>[0]) => Promise<DeliveryRequestRecord>
   quotePrice?: ComponentProps<typeof ClientPackageDialog>['quotePrice']
 }) {
@@ -345,6 +347,7 @@ export function ClientDeliveryRequestForm({
           initialValue={dialogValue}
           packageNumber={editingIndex + 1}
           requestKind={requestKind}
+          geocodingClientAccountId={clientAccountId}
           quotePrice={quotePrice}
           onSave={savePackage}
           onClose={() => setEditingIndex(null)}

@@ -776,6 +776,33 @@ docker compose -f compose.yaml -f compose.geography.yaml --profile geography up 
 
 `NOMINATIM_WARMUP_ON_STARTUP=true` préchauffe l'index avant que le service soit déclaré prêt. Cela allonge le démarrage de Nominatim, mais évite que les premières recherches interactives expirent pendant le chargement des index. Le backend attend jusqu'à `GEOCODING_READ_TIMEOUT=30s` pour absorber les recherches locales plus lentes qui ne sont pas encore dans son cache.
 
+L'index conserve par défaut `NOMINATIM_IMPORT_STYLE=full`. Ce choix préserve les
+commerces et points de repère nommés, importants pour retrouver un lieu à
+Madagascar même lorsqu'il n'a pas d'adresse formelle. Le style `address` reste
+configurable pour une installation qui accepte explicitement de perdre ces POI.
+
+`NOMINATIM_FREEZE=true` supprime en fin d'import les tables réservées aux mises à
+jour dynamiques : le stockage est plus léger et davantage de l'index utile peut
+rester en cache. La contrepartie est qu'une nouvelle donnée OSM doit être appliquée
+par un nouvel import complet, ce qui correspond au mode de maintenance manuel
+actuel.
+
+Ces options ne transforment pas un volume déjà importé. Pour reconstruire
+l'index sans effacer l'ancien, arrêter Nominatim, choisir dans `.env` un nouveau nom
+de volume, puis recréer uniquement ce service :
+
+```powershell
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography stop nominatim
+# Dans .env : NOMINATIM_DATA_VOLUME=azy-livraison_nominatim-frozen-v1
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography up --detach --force-recreate nominatim
+docker compose -f compose.yaml -f compose.geography.yaml --profile geography logs --follow nominatim
+```
+
+L'ancien volume `azy-livraison_nominatim-data` reste intact. Si le nouvel import
+échoue, remettre son nom dans `NOMINATIM_DATA_VOLUME` et recréer le service permet
+de revenir à l'index précédent. Ne supprimer un ancien volume qu'après validation
+des recherches principales (`Analakely`, `Ankorondrano`, `Alasora`, etc.).
+
 La recherche applicative est disponible dans l'interface et via `GET /api/geocoding/search?q=Analakely`. Elle est limitée à `mg`, renvoie plusieurs candidats à confirmer et met les réponses en cache dans PostgreSQL pendant 30 jours par défaut.
 
 ### Routage local avec OSRM

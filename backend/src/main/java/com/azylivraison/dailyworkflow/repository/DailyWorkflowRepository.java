@@ -384,10 +384,12 @@ public class DailyWorkflowRepository {
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM delivery_package source
+                JOIN delivery_request request ON request.id = source.delivery_request_id
                 JOIN dispatch_plan plan ON plan.id = source.dispatch_plan_id
                 WHERE plan.service_date = ?
                   AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
                   AND plan.lifecycle_status = 'ACTIVE'
+                  AND request.request_kind = 'NORMAL'
                   AND source.final_outcome = 'POSTPONED'
                   AND NOT EXISTS (
                       SELECT 1
