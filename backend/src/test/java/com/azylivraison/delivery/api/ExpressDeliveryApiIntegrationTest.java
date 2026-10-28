@@ -127,6 +127,89 @@ class ExpressDeliveryApiIntegrationTest {
     }
 
     @Test
+    void recordsAnExpressPostponementAsFinalWithoutCreatingTheNextRequest() throws Exception {
+        jdbcTemplate.update(
+                "UPDATE client_profile SET express_delivery_enabled = TRUE WHERE account_id = ?", CLIENT_ID);
+        MvcResult creation = mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(expressRequestJson()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        var created = objectMapper.readTree(creation.getResponse().getContentAsString());
+        String requestId = created.get("id").asText();
+        String packageId = created.get("packages").get(0).get("id").asText();
+        LocalDate serviceDate = LocalDate.parse(created.get("requestedDate").asText());
+
+        mockMvc.perform(post("/api/admin/express-deliveries/{id}/confirm", requestId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"courierIds":["%s"],"version":0}
+                                """.formatted(COURIER_ID)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/admin/delivery-days/{date}/packages/{id}/outcome",
+                        serviceDate, packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"outcome":"POSTPONED","note":"Report manuel à organiser","version":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.packages[0].finalOutcome").value("POSTPONED"))
+                .andExpect(jsonPath("$.packages[0].carriedForwardToPackageId").doesNotExist())
+                .andExpect(jsonPath("$.packages[0].version").value(2));
+
+        Integer successorsBeforeManualAction = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_package
+                WHERE carried_forward_from_package_id = ?
+                """, Integer.class, UUID.fromString(packageId));
+        org.assertj.core.api.Assertions.assertThat(successorsBeforeManualAction).isZero();
+
+        String expressStatus = jdbcTemplate.queryForObject(
+                "SELECT express_status FROM delivery_request WHERE id = ?",
+                String.class,
+                UUID.fromString(requestId));
+        org.assertj.core.api.Assertions.assertThat(expressStatus).isEqualTo("COMPLETED");
+
+        mockMvc.perform(post(
+                        "/api/admin/delivery-days/{date}/packages/{id}/carry-forward",
+                        serviceDate, packageId)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "version":2,
+                                  "pickup":{
+                                    "label":"Nouveau retrait",
+                                    "query":"Analakely, Antananarivo",
+                                    "latitude":-18.9089,
+                                    "longitude":47.5212
+                                  }
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Une livraison express reportée doit être recréée manuellement."));
+
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/clients/{clientId}/close",
+                        serviceDate, CLIENT_ID)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allClientsClosed").value(true));
+
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/close", serviceDate)
+                        .with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
+    @Test
     void processesAndClosesAnExpressOnlyDayWithoutCreatingANormalDispatch() throws Exception {
         jdbcTemplate.update(
                 "UPDATE client_profile SET express_delivery_enabled = TRUE WHERE account_id = ?", CLIENT_ID);

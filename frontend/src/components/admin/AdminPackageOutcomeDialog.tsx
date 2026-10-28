@@ -118,7 +118,7 @@ export function AdminPackageOutcomeDialog({
 
           <fieldset className="admin-outcome-choices">
             <legend>État final du colis</legend>
-            {choices.filter((choice) => deliveryPackage.requestKind !== 'EXPRESS' || choice.value !== 'POSTPONED').map(({ value, label, detail, icon: Icon }) => (
+            {choices.map(({ value, label, detail, icon: Icon }) => (
               <label className={outcome === value ? 'is-selected' : undefined} key={value}>
                 <input type="radio" name="outcome" value={value} checked={outcome === value} onChange={() => choose(value)} />
                 <span><Icon aria-hidden="true" /></span>

@@ -129,7 +129,8 @@ public class ClientClosureRepository {
                                 AND package.return_completed_at IS NULL THEN 1 ELSE 0 END), 0)
                            AS incomplete_return_count,
                        COALESCE(SUM(CASE
-                           WHEN package.final_outcome = 'POSTPONED'
+                           WHEN request.request_kind = 'NORMAL'
+                                AND package.final_outcome = 'POSTPONED'
                                 AND NOT EXISTS (
                                     SELECT 1 FROM delivery_package successor
                                     WHERE successor.carried_forward_from_package_id = package.id

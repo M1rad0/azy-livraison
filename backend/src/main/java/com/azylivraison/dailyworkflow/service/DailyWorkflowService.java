@@ -136,11 +136,6 @@ public class DailyWorkflowService {
         if (deliveryPackage.technicalStatus() != DeliveryPackageStatus.DISPATCHED) {
             throw new DailyWorkflowConflictException("Ce colis ne fait pas partie du plan dispatché.");
         }
-        if (deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS
-                && outcome == DeliveryPackageOutcome.POSTPONED) {
-            throw new DailyWorkflowInputException(
-                    "Une livraison express ne peut pas être reportée au lendemain.");
-        }
         if (outcome != DeliveryPackageOutcome.POSTPONED
                 && repository.hasCarriedForwardSuccessor(packageId)) {
             throw new DailyWorkflowConflictException(
@@ -241,6 +236,10 @@ public class DailyWorkflowService {
         PackageForUpdate source = requirePackage(packageId);
         requirePackageInDay(sourceDay, source);
         requireVersion(expectedVersion, source.version(), "Le colis a été modifié entre-temps.");
+        if (source.requestKind() == DeliveryRequestKind.EXPRESS) {
+            throw new DailyWorkflowConflictException(
+                    "Une livraison express reportée doit être recréée manuellement.");
+        }
         if (source.finalOutcome() != DeliveryPackageOutcome.POSTPONED) {
             throw new DailyWorkflowConflictException("Seul un colis reporté peut être programmé au lendemain.");
         }

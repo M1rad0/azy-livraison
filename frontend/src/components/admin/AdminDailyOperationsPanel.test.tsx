@@ -101,7 +101,11 @@ function expressOnlyDayFixture(deliveryPackage: DailyOperationPackage): DailyOpe
 
 function closureFixture(day: DailyOperation, closed = day.status === 'CLOSED'): ClientClosureOverview {
   const ready = day.counts.awaitingOutcome === 0
-    && day.packages.every((item) => item.finalOutcome !== 'POSTPONED' || Boolean(item.carriedForwardToPackageId))
+    && day.packages.every((item) => (
+      item.requestKind === 'EXPRESS'
+      || item.finalOutcome !== 'POSTPONED'
+      || Boolean(item.carriedForwardToPackageId)
+    ))
   return {
     serviceDate: day.serviceDate,
     dayStatus: day.status,
@@ -287,6 +291,9 @@ describe('AdminDailyOperationsPanel', () => {
     expect(screen.getByRole('button', { name: 'Renseigner' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Clôturer la journée' })).toBeDisabled()
     expect(screen.queryByText(/Aucun plan enregistré/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renseigner' }))
+    expect(screen.getByRole('radio', { name: /Reporté/ })).toBeEnabled()
   })
 
   it('demande de clôturer le client avant une journée express finalisée sans dispatch normal', async () => {
@@ -311,6 +318,29 @@ describe('AdminDailyOperationsPanel', () => {
     expect(await screen.findByText('Prêt à clôturer')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clôturer le compte de Boutique Soa' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Clôturer la journée' })).toBeDisabled()
+  })
+
+  it('considère un express reporté comme final sans créer automatiquement la demande suivante', async () => {
+    const postponedExpress = {
+      ...packageFixture,
+      deliveryRequestId: 'express-1',
+      requestKind: 'EXPRESS' as const,
+      dispatchPlanId: null,
+      finalOutcome: 'POSTPONED' as const,
+      finalState: true,
+      actualCollectedAriary: null,
+      recoveredAriary: 0,
+      chargedDeliveryFeeAriary: 0,
+      amountToRemitAriary: 0,
+    }
+    vi.stubGlobal('fetch', dayFetch(expressOnlyDayFixture(postponedExpress)))
+
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+
+    expect(await screen.findByText('À recréer manuellement si nécessaire')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Programmer demain' })).not.toBeInTheDocument()
+    expect(screen.getByText('Prêt à clôturer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clôturer le compte de Boutique Soa' })).toBeEnabled()
   })
 
   it('déverrouille immédiatement les documents et rémunérations du client clôturé', async () => {
