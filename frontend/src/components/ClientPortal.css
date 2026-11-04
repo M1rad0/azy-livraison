@@ -1031,7 +1031,40 @@
 .client-package-import input[type="file"] {
   max-width: 100%;
   overflow: hidden;
-  padding: 0.65rem;
+  padding: 0.4rem 0.55rem;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+}
+
+.client-package-import input[type="file"]::file-selector-button {
+  min-height: 2.75rem;
+  margin-inline-end: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  color: var(--forest);
+  background: var(--navy-soft);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.client-package-import input[type="file"]:not(:disabled):hover::file-selector-button {
+  color: #fff;
+  background: var(--forest);
+  border-color: var(--forest);
+}
+
+.client-package-import input[type="file"]:disabled,
+.client-package-import input[type="file"]:disabled::file-selector-button {
+  cursor: not-allowed;
+}
+
+.client-package-import input[type="file"]:disabled {
+  opacity: 0.65;
 }
 
 .client-package-row--needs-review {
