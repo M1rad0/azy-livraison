@@ -19,12 +19,14 @@ import {
 } from '../api/client'
 import type { Location } from '../api/csvImports'
 import { endOfOneHourWindow } from '../deliveryWindows'
+import { MAX_CLIENT_PACKAGES } from '../clientPackageCsv'
 import {
   ClientPackageDialog,
   emptyClientPackage,
   type ClientPackageDraft,
 } from './ClientPackageDialog'
 import { LocationPicker } from './LocationPicker'
+import { ClientPackageCsvImport } from './ClientPackageCsvImport'
 
 function tomorrow(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -106,6 +108,8 @@ export function ClientDeliveryRequestForm({
   const [packages, setPackages] = useState<ClientPackageDraft[]>([])
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importNotice, setImportNotice] = useState<string>()
   const [error, setError] = useState<string>()
   const [capacityError, setCapacityError] = useState<DailyCapacityExceededError>()
 
@@ -117,8 +121,14 @@ export function ClientDeliveryRequestForm({
     (sum, item) => sum + (item.pricingQuote?.deliveryFeeAriary ?? 0),
     0,
   ), [packages])
+  const packagesToCorrect = packages.filter((item) => !locationConfirmed(item.destination) || !item.pricingQuote).length
 
   function startAdding() {
+    if (importing) return
+    if (packages.length >= MAX_CLIENT_PACKAGES) {
+      setError(`Une demande est limitée à ${MAX_CLIENT_PACKAGES} colis.`)
+      return
+    }
     setEditingIndex(packages.length)
   }
 
@@ -150,6 +160,15 @@ export function ClientDeliveryRequestForm({
     }
     if (packages.length === 0) {
       setError('Ajoutez au moins un colis à la demande.')
+      return
+    }
+    if (importing) return
+    if (packages.length > MAX_CLIENT_PACKAGES) {
+      setError(`Une demande est limitée à ${MAX_CLIENT_PACKAGES} colis.`)
+      return
+    }
+    if (packagesToCorrect > 0) {
+      setError(`Vérifiez le lieu et le tarif des ${packagesToCorrect} colis à corriger avant d’envoyer la demande.`)
       return
     }
 
@@ -273,11 +292,28 @@ export function ClientDeliveryRequestForm({
             <div className="client-section-heading client-section-heading--actions">
               <span aria-hidden="true"><PackagePlus /></span>
               <div><p className="eyebrow">Étape 2</p><h2>Colis à livrer</h2></div>
-              <button className="button" type="button" onClick={startAdding}><PackagePlus aria-hidden="true" />Ajouter un colis</button>
+              <button className="button" type="button" disabled={importing} onClick={startAdding}><PackagePlus aria-hidden="true" />Ajouter un colis</button>
             </div>
 
+            <ClientPackageCsvImport
+              accessToken={accessToken}
+              requestKind={requestKind}
+              clientAccountId={clientAccountId}
+              quotePrice={quotePrice}
+              packageCount={packages.length}
+              onBusyChange={setImporting}
+              onImported={(imported) => {
+                setPackages((current) => [...current, ...imported])
+                setCapacityError(undefined)
+                setError(undefined)
+                setImportNotice(`${imported.length} colis ajouté${imported.length > 1 ? 's' : ''}. Vérifiez les destinataires, les lieux retenus et les montants avant d’envoyer la demande.`)
+              }}
+            />
+            {importNotice && <p className="client-alert" role="status">{importNotice}</p>}
+            {packagesToCorrect > 0 && <p className="client-alert client-alert--error" role="alert"><AlertTriangle aria-hidden="true" /><span>{packagesToCorrect} colis à corriger. Utilisez le bouton Modifier de chaque ligne pour confirmer le lieu et le tarif.</span></p>}
+
             {packages.length === 0 ? (
-              <button className="client-empty-state" type="button" onClick={startAdding}>
+              <button className="client-empty-state" type="button" disabled={importing} onClick={startAdding}>
                 <span aria-hidden="true"><PackagePlus /></span>
                 <strong>Aucun colis pour le moment</strong>
                 <small>Ajoutez le premier destinataire pour continuer.</small>
@@ -288,10 +324,10 @@ export function ClientDeliveryRequestForm({
                   <span>Destinataire</span><span>Destination</span><span>Encaissement</span><span>Options</span><span />
                 </div>
                 {packages.map((item, index) => (
-                  <article className="client-package-row" role="listitem" key={item.localId}>
+                  <article className={`client-package-row${!locationConfirmed(item.destination) || !item.pricingQuote ? ' client-package-row--needs-review' : ''}`} role="listitem" key={item.localId}>
                     <div className="client-package-row__index">{index + 1}</div>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
-                    <div><strong>{item.destination.label || item.destination.destinationQuery}</strong><small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Tarif à recalculer'}{item.faritra ? ' · Faritra' : ''}</small></div>
+                    <div><strong>{item.destination.label || item.destination.destinationQuery}</strong>{item.importResolvedPlace && <small title={item.importResolvedPlace}>Lieu retenu : {item.importResolvedPlace.split(',').map((part) => part.trim()).filter(Boolean).slice(0, 2).join(', ')}</small>}<small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Lieu ou tarif à confirmer'}{item.faritra ? ' · Faritra' : ''}</small>{item.importWarning && <small className="client-package-row__warning">{item.importWarning}</small>}</div>
                     <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-package-row__tags">
                       {item.desiredDeliveryTime && <span>{item.desiredDeliveryTime}–{endOfOneHourWindow(item.desiredDeliveryTime)}</span>}
@@ -319,7 +355,7 @@ export function ClientDeliveryRequestForm({
             <div><dt>Dont frais de livraison</dt><dd>{formatAriary(deliveryFeeTotal)}</dd></div>
           </dl>
 
-          {locationConfirmed(pickup) && packages.length > 0 && (
+          {locationConfirmed(pickup) && packages.length > 0 && packagesToCorrect === 0 && !importing && (
             <p className="client-ready"><CheckCircle2 aria-hidden="true" />La demande est prête à être envoyée.</p>
           )}
           {capacityError && (
@@ -333,7 +369,7 @@ export function ClientDeliveryRequestForm({
             </div>
           )}
           {error && <p className="client-alert client-alert--error" role="alert">{error}</p>}
-          <button className="button button--wide" type="button" disabled={submitting || Boolean(capacityError)} onClick={() => void submit()}>
+          <button className="button button--wide" type="button" disabled={submitting || importing || packagesToCorrect > 0 || Boolean(capacityError)} onClick={() => void submit()}>
             <Send aria-hidden="true" />{submitting ? 'Enregistrement…' : 'Envoyer la demande'}
           </button>
           <small className="client-submit-card__note">La demande sera enregistrée en attente. L’équipe AZY confirmera ensuite son traitement.</small>

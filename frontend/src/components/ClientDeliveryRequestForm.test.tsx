@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientDefaultPickup, DeliveryRequestRecord } from '../api/client'
+import { searchAddress } from '../api/geocoding'
+import { CLIENT_PACKAGE_CSV_TEMPLATE } from '../clientPackageCsv'
 import { ClientDeliveryRequestForm } from './ClientDeliveryRequestForm'
+
+vi.mock('../api/geocoding', () => ({ searchAddress: vi.fn() }))
 
 vi.mock('./LocationPicker', () => ({
   LocationPicker: ({ title, onChange }: {
@@ -107,5 +111,60 @@ describe('ClientDeliveryRequestForm', () => {
     expect(within(dateSummary).getByText('Aujourd’hui')).toBeInTheDocument()
     expect(within(dateSummary).queryByDisplayValue(/^\d{4}-\d{2}-\d{2}$/)).not.toBeInTheDocument()
     expect(screen.queryByText('Date souhaitée')).not.toBeInTheDocument()
+  })
+
+  it('importe tous les champs dans la liste pour contrôle et n’enregistre rien avant envoi', async () => {
+    vi.mocked(searchAddress).mockResolvedValue({
+      query: 'Ankorondrano', provider: 'NOMINATIM', cached: false, resultCount: 1,
+      candidates: [{ id: 'place', osmId: 1, osmType: 'node', displayName: 'Ankorondrano, Antananarivo, Madagascar', latitude: -18.88, longitude: 47.52 }],
+    })
+    const createRequest = vi.fn().mockResolvedValue(createdRequest)
+    const quotePrice = vi.fn().mockResolvedValue({
+      pricingZoneId: 'centre', pricingZoneName: 'Centre', deliveryFeeAriary: 3000,
+      distanceFromCenterMeters: 1000, pricingZoneMaxDistanceMeters: 5000, pricingPolicyVersion: 1, distanceMode: 'AIR_DISTANCE',
+    })
+    render(<ClientDeliveryRequestForm accessToken="admin-token" clientAccountId="client-42" defaultPickup={defaultPickup} createRequest={createRequest} quotePrice={quotePrice} onCreated={vi.fn()} onCancel={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Importer un fichier CSV' }))
+    const file = new File([CLIENT_PACKAGE_CSV_TEMPLATE], 'colis.csv', { type: 'text/csv' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(CLIENT_PACKAGE_CSV_TEMPLATE).buffer })
+    fireEvent.change(screen.getByLabelText('Fichier de colis · CSV UTF-8'), { target: { files: [file] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter les colis au formulaire' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
+    expect(screen.getByText('Bureau Ankorondrano')).toBeInTheDocument()
+    expect(screen.getByText('Lieu retenu : Ankorondrano, Antananarivo')).toBeInTheDocument()
+    expect(screen.getByText(/Vérifiez les destinataires, les lieux retenus/)).toBeInTheDocument()
+    expect(createRequest).not.toHaveBeenCalled()
+    expect(searchAddress).toHaveBeenCalledWith(expect.any(String), 'admin-token', expect.any(AbortSignal), { purpose: 'DESTINATION', requestKind: 'NORMAL', clientAccountId: 'client-42' })
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la demande' }))
+    await waitFor(() => expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({ packages: [
+      expect.objectContaining({ recipientName: 'Miora', contact: '0340000000', amountToCollectAriary: 25000, faritra: false, mobileMoneyPaid: false, weightKg: 1.5, desiredDeliveryTime: '14:00', destination: expect.objectContaining({ label: 'Bureau Ankorondrano', latitude: -18.88, query: 'Ankorondrano, Antananarivo, Madagascar' }) }),
+      expect.objectContaining({ recipientName: 'Rakoto', mobileMoneyPaid: true, destination: expect.objectContaining({ latitude: -18.9089 }) }),
+    ] })))
+  })
+
+  it('garde les lieux introuvables visibles et bloque l’envoi jusqu’à correction', async () => {
+    vi.mocked(searchAddress).mockResolvedValue({ query: 'Ankorondrano', provider: 'NOMINATIM', cached: false, resultCount: 0, candidates: [] })
+    const createRequest = vi.fn()
+    const quotePrice = vi.fn().mockResolvedValue({
+      pricingZoneId: 'centre', pricingZoneName: 'Centre', deliveryFeeAriary: 3000,
+      distanceFromCenterMeters: 1000, pricingZoneMaxDistanceMeters: 5000, pricingPolicyVersion: 1, distanceMode: 'AIR_DISTANCE',
+    })
+    render(<ClientDeliveryRequestForm accessToken="token" defaultPickup={defaultPickup} createRequest={createRequest} quotePrice={quotePrice} onCreated={vi.fn()} onCancel={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Importer un fichier CSV' }))
+    const file = new File([CLIENT_PACKAGE_CSV_TEMPLATE], 'colis.csv', { type: 'text/csv' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(CLIENT_PACKAGE_CSV_TEMPLATE).buffer })
+    fireEvent.change(screen.getByLabelText('Fichier de colis · CSV UTF-8'), { target: { files: [file] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter les colis au formulaire' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
+    expect(screen.getByText(/1 colis à corriger/)).toBeInTheDocument()
+    expect(screen.getByText(/Aucun lieu trouvé/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled()
+    expect(createRequest).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier le colis 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer Lieu de livraison' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le colis' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le colis' }))
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeEnabled()
+    expect(screen.queryByText(/Aucun lieu trouvé/)).not.toBeInTheDocument()
   })
 })

@@ -91,6 +91,10 @@ La clôture manuelle n'est possible que lorsque tous les colis ont une issue fin
 
 Une journée clôturée peut être rouverte avec une raison auditée. Une fois clôturée, elle fournit un rapport général et un rapport par compte client, chacun en PDF et en véritable fichier Excel `.xlsx`. Les exports distinguent le livreur prévu du livreur réel et regroupent les synthèses par livreur réel. Le retour physique d'un colis peut encore être confirmé après la clôture : cette action est auditée, ne change aucun montant financier et apparaît dans les exports régénérés ensuite.
 
+### Import de colis dans une demande
+
+Le formulaire partagé entre le client et l'administration propose un import CSV et un modèle contenant tous les champs du colis. L'import remplit la liste modifiable de la demande ; l'enregistrement reste une action explicite après vérification. Pour un lieu textuel sans coordonnées, le premier résultat de la recherche géographique dans la zone desservie est retenu. Un lieu introuvable ou un tarif indisponible reste signalé et doit être corrigé avant l'envoi. Le retrait et la date sont choisis dans le formulaire pour l'ensemble des lignes. Le [format CSV complet](schemas/csv/README.md) décrit les colonnes et les exemples.
+
 ### Statuts persistés
 
 | Objet | Statuts |
