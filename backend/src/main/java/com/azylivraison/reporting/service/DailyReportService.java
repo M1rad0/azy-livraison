@@ -183,13 +183,18 @@ public class DailyReportService {
                 .append(day.closureRevision()).append('|')
                 .append(day.dispatchPlanId());
         for (DailyPackageRecord deliveryPackage : source.packages()) {
+            SuccessorDetails successor = source.successors().get(deliveryPackage.packageId());
+            // A deferred rescheduling adds logistical information after closure,
+            // but must not change a report ID already used by financial settlements.
+            UUID successorAtClosure = successor != null && !successor.createdAt().isAfter(day.closedAt())
+                    ? successor.packageId() : null;
             reportIdentity.append('|').append(deliveryPackage.packageId())
                     .append(':').append(deliveryPackage.finalOutcome())
                     .append(':').append(deliveryPackage.actualCollectedAriary())
                     .append(':').append(deliveryPackage.actualCourierId())
                     .append(':').append(deliveryPackage.chargedDeliveryFeeAriary())
                     .append(':').append(deliveryPackage.returnCompletedAt())
-                    .append(':').append(deliveryPackage.carriedForwardToPackageId());
+                    .append(':').append(successorAtClosure);
         }
         String closedBy = firstNonBlank(
                 source.context().closedByDisplayName(),

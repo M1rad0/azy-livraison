@@ -62,9 +62,9 @@ public class DailyWorkflowRepository {
                 Date.valueOf(serviceDate)).stream().findFirst();
     }
 
-    public List<DailyPackageRecord> findPackages(OperationDay day) {
-        return jdbcTemplate.query("""
+    private static final String SELECT_PACKAGES = """
                 SELECT p.id AS package_id, p.delivery_request_id,
+                       listing_day.service_date AS source_service_date,
                        dr.owner_account_id,
                        COALESCE(snapshot.display_name, account.display_name) AS owner_display_name,
                        COALESCE(snapshot.phone, account.phone) AS owner_phone,
@@ -96,9 +96,12 @@ public class DailyWorkflowRepository {
                 FROM delivery_package p
                 JOIN delivery_request dr ON dr.id = p.delivery_request_id
                 JOIN app_account account ON account.id = dr.owner_account_id
+                LEFT JOIN dispatch_plan source_plan ON source_plan.id = p.dispatch_plan_id
+                JOIN delivery_operation_day listing_day
+                     ON listing_day.service_date = COALESCE(source_plan.service_date, dr.requested_date)
                 LEFT JOIN delivery_operation_client_snapshot snapshot
-                       ON snapshot.service_date = ?
-                      AND snapshot.closure_revision = ?
+                       ON snapshot.service_date = listing_day.service_date
+                      AND snapshot.closure_revision = %s
                       AND snapshot.account_id = dr.owner_account_id
                 LEFT JOIN delivery_package successor
                        ON successor.carried_forward_from_package_id = p.id
@@ -116,7 +119,12 @@ public class DailyWorkflowRepository {
                           FROM express_delivery_courier selected_courier
                           WHERE selected_courier.delivery_request_id = dr.id
                       )
-                WHERE p.cancelled_before_processing_at IS NULL
+                """;
+
+    public List<DailyPackageRecord> findPackages(OperationDay day) {
+        return jdbcTemplate.query(SELECT_PACKAGES.formatted("?") + """
+                WHERE listing_day.service_date = ?
+                  AND p.cancelled_before_processing_at IS NULL
                   AND (p.dispatch_plan_id IN (
                         SELECT historical_plan.id
                         FROM dispatch_plan historical_plan
@@ -130,11 +138,54 @@ public class DailyWorkflowRepository {
                 ORDER BY dr.owner_account_id, p.priority_at, dr.created_at,
                          p.sequence_number, p.id
                 """, this::mapDailyPackage,
-                Date.valueOf(day.serviceDate()),
                 day.closureRevision(),
                 Date.valueOf(day.serviceDate()),
                 Date.valueOf(day.serviceDate()),
+                Date.valueOf(day.serviceDate()),
                 Date.valueOf(day.serviceDate()));
+    }
+
+    public List<PostponedPackage> findPostponedPackages(String query) {
+        String normalizedQuery = query == null || query.isBlank() ? null : query.trim().toLowerCase(java.util.Locale.ROOT);
+        String snapshotRevision = """
+                COALESCE((
+                    SELECT client_closure.closure_revision
+                    FROM delivery_operation_client_closure client_closure
+                    WHERE client_closure.service_date = listing_day.service_date
+                      AND client_closure.client_account_id = dr.owner_account_id
+                      AND client_closure.status = 'CLOSED'
+                    ORDER BY client_closure.closure_revision DESC
+                    LIMIT 1
+                ), listing_day.closure_revision)
+                """;
+        return jdbcTemplate.query(SELECT_PACKAGES.formatted(snapshotRevision) + """
+                WHERE p.cancelled_before_processing_at IS NULL
+                  AND p.final_outcome = 'POSTPONED'
+                  AND successor.id IS NULL
+                  AND (listing_day.status = 'CLOSED' OR EXISTS (
+                      SELECT 1 FROM delivery_operation_client_closure closure
+                      WHERE closure.service_date = listing_day.service_date
+                        AND closure.client_account_id = dr.owner_account_id
+                        AND closure.status = 'CLOSED'
+                  ))
+                  AND ((dr.request_kind = 'NORMAL'
+                        AND source_plan.status IN ('READY', 'READY_WITH_WARNINGS')
+                        AND source_plan.lifecycle_status = 'ACTIVE')
+                       OR (dr.request_kind = 'EXPRESS'
+                           AND dr.express_status IN ('CONFIRMED', 'COMPLETED')))
+                ORDER BY listing_day.service_date, p.priority_at, dr.created_at, p.sequence_number, p.id
+                """, (resultSet, rowNumber) -> new PostponedPackage(
+                        resultSet.getObject("source_service_date", LocalDate.class),
+                        mapDailyPackage(resultSet, rowNumber)))
+                .stream()
+                .filter(item -> normalizedQuery == null || matchesPostponedQuery(item.deliveryPackage(), normalizedQuery))
+                .toList();
+    }
+
+    private boolean matchesPostponedQuery(DailyPackageRecord item, String query) {
+        return java.util.stream.Stream.of(item.ownerDisplayName(), item.ownerPhone(), item.recipientName(),
+                        item.contact(), item.pickup().label(), item.destination().label(), item.outcomeNote())
+                .anyMatch(value -> value != null && value.toLowerCase(java.util.Locale.ROOT).contains(query));
     }
 
     public Optional<PackageForUpdate> lockPackage(UUID packageId) {
@@ -219,6 +270,7 @@ public class DailyWorkflowRepository {
                 FROM delivery_package p
                 JOIN delivery_request dr ON dr.id = p.delivery_request_id
                 WHERE dr.requested_date = ?
+                  AND dr.request_kind = 'NORMAL'
                   AND p.cancelled_before_processing_at IS NULL
                   AND (p.final_outcome IS NULL OR p.final_outcome <> 'CANCELLED')
                 """, Integer.class, Date.valueOf(date));
@@ -380,26 +432,6 @@ public class DailyWorkflowRepository {
         return count == null ? 0 : count;
     }
 
-    public int uncarriedPostponedDayPackageCount(LocalDate serviceDate) {
-        Integer count = jdbcTemplate.queryForObject("""
-                SELECT COUNT(*)
-                FROM delivery_package source
-                JOIN delivery_request request ON request.id = source.delivery_request_id
-                JOIN dispatch_plan plan ON plan.id = source.dispatch_plan_id
-                WHERE plan.service_date = ?
-                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS')
-                  AND plan.lifecycle_status = 'ACTIVE'
-                  AND request.request_kind = 'NORMAL'
-                  AND source.final_outcome = 'POSTPONED'
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM delivery_package successor
-                      WHERE successor.carried_forward_from_package_id = source.id
-                  )
-                """, Integer.class, Date.valueOf(serviceDate));
-        return count == null ? 0 : count;
-    }
-
     public int missingActualCourierDayPackageCount(LocalDate serviceDate) {
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
@@ -485,15 +517,15 @@ public class DailyWorkflowRepository {
         int projected = Math.addExact(currentCapacity, 1);
         jdbcTemplate.update("""
                 INSERT INTO delivery_request (
-                    id, owner_account_id, requested_date,
+                    id, owner_account_id, created_by_account_id, request_kind, requested_date,
                     pickup_label, pickup_query, pickup_latitude, pickup_longitude,
                     capacity_limit_snapshot, capacity_current_snapshot,
                     capacity_requested_snapshot, capacity_projected_snapshot,
                     capacity_overflow_warning, capacity_overflow_accepted,
                     status, version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, FALSE, FALSE, 'PENDING', 0, ?, ?)
+                ) VALUES (?, ?, ?, 'NORMAL', ?, ?, ?, ?, ?, ?, ?, 1, ?, FALSE, FALSE, 'PENDING', 0, ?, ?)
                 """,
-                requestId, source.ownerAccountId(), Date.valueOf(targetDate),
+                requestId, source.ownerAccountId(), actorAccountId, Date.valueOf(targetDate),
                 pickup.label(), pickup.query(), pickup.latitude(), pickup.longitude(),
                 settings.dailyPackageLimit(), currentCapacity, projected,
                 timestamp(now), timestamp(now));
@@ -506,6 +538,8 @@ public class DailyWorkflowRepository {
                     contact, amount_to_collect_ariary, mobile_money_paid,
                     desired_delivery_time,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
+                    final_delivery_fee_ariary, delivery_fee_override_reason,
+                    delivery_fee_overridden_at, delivery_fee_overridden_by_account_id,
                     distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
                     pricing_policy_version, pricing_policy_id,
                     base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
@@ -517,7 +551,7 @@ public class DailyWorkflowRepository {
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
                 ) VALUES (
-                    ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     'PENDING', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                     ?, NULL, ?, 0, ?, ?
                 )
@@ -529,6 +563,8 @@ public class DailyWorkflowRepository {
                 source.contact(), source.amountToCollectAriary(), source.mobileMoneyPaid(),
                 source.desiredDeliveryTime(),
                 source.pricingZoneId(), source.pricingZoneName(), source.deliveryFeeAriary(),
+                source.finalDeliveryFeeAriary(), source.deliveryFeeOverrideReason(),
+                timestamp(source.deliveryFeeOverriddenAt()), source.deliveryFeeOverriddenByAccountId(),
                 source.distanceFromCenterMeters(),
                 source.pricingDistanceMode() == null ? null : source.pricingDistanceMode().name(),
                 source.pricingZoneMaxDistanceMeters(),
@@ -701,6 +737,7 @@ public class DailyWorkflowRepository {
                         nullableLong(resultSet, "delivery_fee_ariary")),
                 resultSet.getString("delivery_fee_override_reason"),
                 instant(resultSet, "delivery_fee_overridden_at"),
+                resultSet.getObject("delivery_fee_overridden_by_account_id", UUID.class),
                 resultSet.getLong("delivery_fee_version"),
                 nullableLong(resultSet, "distance_from_center_meters"),
                 pricingDistanceMode(resultSet),
@@ -771,6 +808,9 @@ public class DailyWorkflowRepository {
     public record CarryForwardIds(UUID requestId, UUID packageId, LocalDate requestedDate) {
     }
 
+    public record PostponedPackage(LocalDate serviceDate, DailyPackageRecord deliveryPackage) {
+    }
+
     public record CourierSnapshot(UUID courierId, String name, String contact, String vehicleType) {
     }
 
@@ -805,6 +845,7 @@ public class DailyWorkflowRepository {
             Long finalDeliveryFeeAriary,
             String deliveryFeeOverrideReason,
             Instant deliveryFeeOverriddenAt,
+            UUID deliveryFeeOverriddenByAccountId,
             long deliveryFeeVersion,
             Long distanceFromCenterMeters,
             PricingDistanceMode pricingDistanceMode,

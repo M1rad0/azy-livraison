@@ -17,6 +17,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.azylivraison.reporting.service.DailyReportService;
+
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -72,6 +74,9 @@ class DailyReportApiIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private DailyReportService reportService;
+
     @BeforeEach
     void setUpAccounts() {
         insertAccount(CLIENT_ONE_ID, "rado-report", "Boutique Rado actuelle", "CLIENT");
@@ -90,6 +95,33 @@ class DailyReportApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("DAILY_REPORT_NOT_AVAILABLE"))
                 .andExpect(jsonPath("$.message").value(
                         "Clôturez la journée avant de générer ses rapports."));
+    }
+
+    @Test
+    void deferredReschedulingPreservesClosedReportIdsAndFinancialTotals() {
+        installScenario(true);
+        jdbcTemplate.update("UPDATE delivery_package SET carried_forward_from_package_id = NULL WHERE id = ?",
+                SUCCESSOR_ID);
+        var generalBefore = reportService.getGeneralReport(SERVICE_DATE);
+        var clientBefore = reportService.getClientReport(SERVICE_DATE, CLIENT_TWO_ID);
+
+        Instant closedAt = jdbcTemplate.queryForObject(
+                "SELECT closed_at FROM delivery_operation_day WHERE service_date = ?",
+                Timestamp.class, Date.valueOf(SERVICE_DATE)).toInstant();
+        jdbcTemplate.update("""
+                UPDATE delivery_package
+                SET carried_forward_from_package_id = ?, created_at = ?
+                WHERE id = ?
+                """, POSTPONED_ID, Timestamp.from(closedAt.plusSeconds(86_400)), SUCCESSOR_ID);
+
+        var generalAfter = reportService.getGeneralReport(SERVICE_DATE);
+        var clientAfter = reportService.getClientReport(SERVICE_DATE, CLIENT_TWO_ID);
+        assertThat(generalAfter.reportId()).isEqualTo(generalBefore.reportId());
+        assertThat(generalAfter.totals()).isEqualTo(generalBefore.totals());
+        assertThat(clientAfter.reportId()).isEqualTo(clientBefore.reportId());
+        assertThat(clientAfter.totals()).isEqualTo(clientBefore.totals());
+        assertThat(generalAfter.packages().stream().filter(item -> item.packageId().equals(POSTPONED_ID))
+                .findFirst().orElseThrow().postponedToDate()).isEqualTo(NEXT_DATE);
     }
 
     @Test

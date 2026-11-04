@@ -18,6 +18,8 @@ export interface ClientPackageDraft {
   weightKg: string
   desiredDeliveryTime: string
   pricingQuote?: DeliveryPricingQuote
+  importWarning?: string
+  importResolvedPlace?: string
 }
 
 export function emptyClientPackage(localId: string): ClientPackageDraft {
@@ -193,6 +195,8 @@ export function ClientPackageDialog({
     }
     onSave({
       ...value,
+      importWarning: undefined,
+      importResolvedPlace: undefined,
       recipientName: value.recipientName.trim(),
       contact: value.contact.trim(),
       destination: {

@@ -101,11 +101,6 @@ function expressOnlyDayFixture(deliveryPackage: DailyOperationPackage): DailyOpe
 
 function closureFixture(day: DailyOperation, closed = day.status === 'CLOSED'): ClientClosureOverview {
   const ready = day.counts.awaitingOutcome === 0
-    && day.packages.every((item) => (
-      item.requestKind === 'EXPRESS'
-      || item.finalOutcome !== 'POSTPONED'
-      || Boolean(item.carriedForwardToPackageId)
-    ))
   return {
     serviceDate: day.serviceDate,
     dayStatus: day.status,
@@ -337,7 +332,7 @@ describe('AdminDailyOperationsPanel', () => {
 
     render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
 
-    expect(await screen.findByText('À recréer manuellement si nécessaire')).toBeInTheDocument()
+    expect(await screen.findByText('À reprogrammer dans l’onglet Reportés après clôture')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Programmer demain' })).not.toBeInTheDocument()
     expect(screen.getByText('Prêt à clôturer')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clôturer le compte de Boutique Soa' })).toBeEnabled()
@@ -436,7 +431,7 @@ describe('AdminDailyOperationsPanel', () => {
     expect(screen.getByRole('button', { name: /Retour effectué/ })).toBeEnabled()
   })
 
-  it('interdit la clôture tant qu’un report n’est pas programmé et fige celui déjà transmis', async () => {
+  it('autorise la clôture sans reprogrammer les reports et fige ceux déjà transmis', async () => {
     const postponed = {
       ...packageFixture,
       finalOutcome: 'POSTPONED' as const,
@@ -447,8 +442,9 @@ describe('AdminDailyOperationsPanel', () => {
 
     render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
 
-    expect(await screen.findByText('Un colis reste à finaliser.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Clôturer le compte de Boutique Soa' })).toBeDisabled()
+    expect(await screen.findByText('Prêt à clôturer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clôturer le compte de Boutique Soa' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Programmer demain' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clôturer la journée' })).toBeDisabled()
 
     cleanup()

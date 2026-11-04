@@ -175,6 +175,8 @@ class DailyWorkflowApiIntegrationTest {
         updateOutcome(postponedId, "POSTPONED", null, 1);
         updateOutcome(returnId, "RETURN_TO_SENDER", 0L, 1);
 
+        closeClient(CLIENT_ID, 0);
+
         MvcResult carried = mockMvc.perform(post(
                         "/api/admin/delivery-days/{date}/packages/{id}/carry-forward",
                         SERVICE_DATE, postponedId)
@@ -232,7 +234,7 @@ class DailyWorkflowApiIntegrationTest {
                         .content("{\"outcome\":\"DELIVERED\",\"version\":2}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
-                        "Ce report a déjà créé le colis du lendemain. Son état ne peut plus être remplacé."));
+                        "Ce client est déjà clôturé pour cette journée. Ses informations sont désormais figées."));
 
         MvcResult beforeClose = mockMvc.perform(get("/api/admin/delivery-days/{date}", SERVICE_DATE)
                         .with(admin()))
@@ -250,8 +252,7 @@ class DailyWorkflowApiIntegrationTest {
                 .isEqualTo(10_000 - chargedFees);
         assertThat(chargedFees).isPositive();
 
-        long dayVersion = day.get("version").asLong();
-        long versionAfterClientClosure = closeClient(CLIENT_ID, dayVersion);
+        long versionAfterClientClosure = day.get("version").asLong();
 
         mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE)
                         .with(client(CLIENT_ID)))
@@ -321,23 +322,197 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
-    void refusesClosureUntilEveryPostponedPackageConsumesTomorrowCapacity() throws Exception {
+    void postponedListKeepsEachClientsClosedIdentityAfterAnotherClientCloses() throws Exception {
+        UUID firstPackage = packageId(createRequest(CLIENT_ID, SERVICE_DATE, 1), 0);
+        UUID secondPackage = packageId(createRequest(OTHER_CLIENT_ID, SERVICE_DATE, 1), 0);
+        installPlan(SERVICE_DATE, List.of(firstPackage, secondPackage));
+        updateOutcome(firstPackage, "POSTPONED", null, 1);
+        updateOutcome(secondPackage, "POSTPONED", null, 1);
+        long dayVersion = jdbcTemplate.queryForObject(
+                "SELECT version FROM delivery_operation_day WHERE service_date = ?", Long.class, SERVICE_DATE);
+        MvcResult firstClosed = mockMvc.perform(post(
+                        "/api/admin/delivery-days/{date}/clients/{clientId}/close", SERVICE_DATE, CLIENT_ID)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":" + dayVersion + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allClientsClosed").value(false))
+                .andReturn();
+        long firstClosedVersion = objectMapper.readTree(firstClosed.getResponse().getContentAsString())
+                .get("dayVersion").asLong();
+        closeClient(OTHER_CLIENT_ID, firstClosedVersion);
+        jdbcTemplate.update("UPDATE app_account SET display_name = 'Nouveau nom', phone = '0999999999' WHERE id = ?",
+                CLIENT_ID);
+
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed")
+                        .param("query", "Client workflow").with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].package.ownerDisplayName").value("Client workflow"));
+    }
+
+    @Test
+    void closesWithoutSchedulingPostponedPackagesAndReprogramsAfterwardToAChosenDate() throws Exception {
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
         UUID packageId = packageId(created, 0);
         installPlan(SERVICE_DATE, List.of(packageId));
         updateOutcome(packageId, "POSTPONED", null, 1);
 
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/packages/{id}/carry-forward", SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(carryForwardJson(SERVICE_DATE.plusDays(5), 2)))
+                .andExpect(status().isConflict());
+
         long version = jdbcTemplate.queryForObject(
                 "SELECT version FROM delivery_operation_day WHERE service_date = ?",
                 Long.class,
                 SERVICE_DATE);
+        long clientClosedVersion = closeClient(CLIENT_ID, version);
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].serviceDate").value(SERVICE_DATE.toString()))
+                .andExpect(jsonPath("$[0].package.packageId").value(packageId.toString()));
+
         mockMvc.perform(post("/api/admin/delivery-days/{date}/close", SERVICE_DATE)
                         .with(admin())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":" + version + "}"))
+                        .content("{\"version\":" + clientClosedVersion + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+        String reportBefore = mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE).with(client(CLIENT_ID)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        LocalDate targetDate = SERVICE_DATE.plusDays(5);
+        MvcResult carried = mockMvc.perform(post("/api/admin/delivery-days/{date}/packages/{id}/carry-forward",
+                        SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(carryForwardJson(targetDate, 2)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestedDate").value(targetDate.toString()))
+                .andReturn();
+        UUID successor = UUID.fromString(objectMapper.readTree(carried.getResponse().getContentAsString())
+                .get("packageId").asText());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT priority_at FROM delivery_package WHERE id = ?", java.sql.Timestamp.class, successor))
+                .isEqualTo(jdbcTemplate.queryForObject(
+                        "SELECT priority_at FROM delivery_package WHERE id = ?", java.sql.Timestamp.class, packageId));
+        assertThat(jdbcTemplate.queryForObject("SELECT created_by_account_id FROM delivery_request WHERE id = ?",
+                UUID.class, UUID.fromString(objectMapper.readTree(carried.getResponse().getContentAsString())
+                        .get("deliveryRequestId").asText()))).isEqualTo(ADMIN_ID);
+
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/packages/{id}/carry-forward", SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(carryForwardJson(targetDate.plusDays(1), 2)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Ce colis a déjà été reprogrammé."));
+
+        JsonNode before = objectMapper.readTree(reportBefore);
+        JsonNode after = objectMapper.readTree(mockMvc.perform(get("/api/client/reports/{date}", SERVICE_DATE)
+                        .with(client(CLIENT_ID))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        assertThat(after.get("reportId")).isEqualTo(before.get("reportId"));
+        assertThat(after.get("totals")).isEqualTo(before.get("totals"));
+
+        long closedVersion = jdbcTemplate.queryForObject(
+                "SELECT version FROM delivery_operation_day WHERE service_date = ?", Long.class, SERVICE_DATE);
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/reopen", SERVICE_DATE)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":" + closedVersion + ",\"reason\":\"Contrôle\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/admin/delivery-days/{date}/packages/{id}/outcome", SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":2,\"outcome\":\"CANCELLED\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
-                        "Transmettez au lendemain le colis reporté avant la clôture."));
+                        "Ce report a déjà créé un colis reprogrammé. Son état ne peut plus être remplacé."));
+    }
+
+    @Test
+    void rejectsPastDatesCapacityOverflowAndClosedTargetDaysWhenRescheduling() throws Exception {
+        JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
+        UUID packageId = packageId(created, 0);
+        installPlan(SERVICE_DATE, List.of(packageId));
+        updateOutcome(packageId, "POSTPONED", null, 1);
+        closeClient(CLIENT_ID, 0);
+
+        for (LocalDate invalidDate : List.of(SERVICE_DATE, SERVICE_DATE.minusDays(1))) {
+            mockMvc.perform(post("/api/admin/delivery-days/{date}/packages/{id}/carry-forward", SERVICE_DATE, packageId)
+                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                            .content(carryForwardJson(invalidDate, 2)))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+        LocalDate fullDate = SERVICE_DATE.plusDays(3);
+        createRequest(OTHER_CLIENT_ID, fullDate, 1);
+        jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/packages/{id}/carry-forward", SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(carryForwardJson(fullDate, 2)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DAILY_CAPACITY_EXCEEDED"));
+        LocalDate closedDate = SERVICE_DATE.plusDays(4);
+        jdbcTemplate.update("INSERT INTO delivery_operation_day(service_date,status,admissions_closed_at) VALUES (?, 'OPEN', CURRENT_TIMESTAMP)",
+                closedDate);
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/packages/{id}/carry-forward", SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(carryForwardJson(closedDate, 2)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DELIVERY_DATE_CLOSED"));
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").param("query", "workflow").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").param("query", "introuvable").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").with(client(CLIENT_ID)))
+                .andExpect(status().isForbidden());
+    }
+
+    private String carryForwardJson(LocalDate targetDate, long version) {
+        return """
+                {"targetDate":"%s","version":%d,
+                 "pickup":{"label":"Retrait de reprise","query":"Analakely, Antananarivo",
+                           "latitude":-18.9089,"longitude":47.5212}}
+                """.formatted(targetDate, version);
+    }
+
+    @Test
+    void reschedulingPreservesTheAnnouncedManualTariffAndItsOriginalCalculation() throws Exception {
+        JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
+        UUID packageId = packageId(created, 0);
+        Long calculatedFee = jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_ariary FROM delivery_package WHERE id = ?", Long.class, packageId);
+        installPlan(SERVICE_DATE, List.of(packageId));
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}/delivery-fee", packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"mode":"MANUAL","manualFeeAriary":12345,
+                                 "reason":"Prix annoncé au client","version":1}
+                                """))
+                .andExpect(status().isOk());
+        updateOutcome(packageId, "POSTPONED", null, 2);
+        closeClient(CLIENT_ID, 0);
+        MvcResult carried = mockMvc.perform(post(
+                        "/api/admin/delivery-days/{date}/packages/{id}/carry-forward", SERVICE_DATE, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(carryForwardJson(SERVICE_DATE.plusDays(6), 3)))
+                .andExpect(status().isOk()).andReturn();
+        UUID successor = UUID.fromString(objectMapper.readTree(carried.getResponse().getContentAsString())
+                .get("packageId").asText());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_ariary FROM delivery_package WHERE id = ?", Long.class, successor))
+                .isEqualTo(calculatedFee);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT final_delivery_fee_ariary FROM delivery_package WHERE id = ?", Long.class, successor))
+                .isEqualTo(12345L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_override_reason FROM delivery_package WHERE id = ?", String.class, successor))
+                .isEqualTo("Prix annoncé au client");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_overridden_by_account_id FROM delivery_package WHERE id = ?", UUID.class, successor))
+                .isEqualTo(ADMIN_ID);
     }
 
     @Test

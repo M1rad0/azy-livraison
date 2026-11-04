@@ -17,12 +17,9 @@ import {
   RotateCcw,
   Search,
   TriangleAlert,
-  Undo2,
   UsersRound,
-  X,
 } from 'lucide-react'
 import {
-  carryForwardDeliveryPackage,
   closeDeliveryClient,
   closeDeliveryDay,
   downloadClientDailyReport,
@@ -43,9 +40,7 @@ import {
   type DownloadedReport,
   type ReportFormat,
 } from '../../api/admin'
-import type { Location } from '../../api/csvImports'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { LocationPicker } from '../LocationPicker'
 import { AdminPackageOutcomeDialog, type PackageOutcomeInput } from './AdminPackageOutcomeDialog'
 import { AdminDeliveryFeeDialog, type DeliveryFeeInput } from './AdminDeliveryFeeDialog'
 import { AdminCourierCompensationPanel } from './AdminCourierCompensationPanel'
@@ -67,19 +62,6 @@ const DAY_STATUS = {
 
 type OutcomeFilter = 'ALL' | 'AWAITING' | 'DELIVERED' | 'POSTPONED' | 'RETURN_TO_SENDER' | 'CANCELLED'
 
-function asLocation(deliveryPackage: DailyOperationPackage): Location {
-  return {
-    label: deliveryPackage.pickup.label,
-    destinationQuery: deliveryPackage.pickup.query ?? deliveryPackage.pickup.destinationQuery,
-    latitude: deliveryPackage.pickup.latitude,
-    longitude: deliveryPackage.pickup.longitude,
-  }
-}
-
-function confirmed(location: Location): boolean {
-  return Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
-}
-
 function saveDownloadedReport(file: DownloadedReport) {
   const url = URL.createObjectURL(file.blob)
   const anchor = document.createElement('a')
@@ -89,61 +71,6 @@ function saveDownloadedReport(file: DownloadedReport) {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
-}
-
-function CarryForwardDialog({
-  accessToken,
-  deliveryPackage,
-  busy,
-  error,
-  onConfirm,
-  onClose,
-}: {
-  accessToken: string
-  deliveryPackage: DailyOperationPackage
-  busy: boolean
-  error?: string
-  onConfirm: (pickup: Location) => void
-  onClose: () => void
-}) {
-  const [pickup, setPickup] = useState<Location>(() => asLocation(deliveryPackage))
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose()
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [busy, onClose])
-
-  return (
-    <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget && !busy) onClose()
-    }}>
-      <section className="admin-carry-dialog" role="dialog" aria-modal="true" aria-labelledby="carry-dialog-title">
-        <header>
-          <div><p className="admin-eyebrow">Report au lendemain</p><h2 id="carry-dialog-title">Nouveau retrait de {deliveryPackage.recipientName}</h2></div>
-          <button type="button" aria-label="Fermer" disabled={busy} onClick={onClose}><X aria-hidden="true" /></button>
-        </header>
-        <div className="admin-carry-dialog__body">
-          <p>Le nouveau colis conservera sa priorité d’origine et occupera une place dans la capacité de demain.</p>
-          <label className="admin-outcome-field"><span>Libellé du retrait</span><input value={pickup.label ?? ''} maxLength={200} onChange={(event) => setPickup({ ...pickup, label: event.target.value })} /></label>
-          <LocationPicker
-            accessToken={accessToken}
-            value={pickup}
-            title="Nouveau point de retrait"
-            description="Indiquez le lieu où le colis sera récupéré demain."
-            onChange={(next) => setPickup({ ...next, label: pickup.label?.trim() || next.label || next.destinationQuery || 'Nouveau retrait' })}
-          />
-          {error && <p className="admin-form-error" role="alert">{error}</p>}
-        </div>
-        <footer>
-          <button className="admin-button admin-button--ghost" type="button" disabled={busy} onClick={onClose}>Annuler</button>
-          <button className="admin-button" type="button" disabled={busy || !confirmed(pickup)} onClick={() => onConfirm(pickup)}>{busy ? 'Programmation…' : 'Programmer pour demain'}</button>
-        </footer>
-      </section>
-    </div>
-  )
 }
 
 export function AdminDailyOperationsPanel({
@@ -169,7 +96,6 @@ export function AdminDailyOperationsPanel({
   const [dialogError, setDialogError] = useState<string>()
   const [editingPackage, setEditingPackage] = useState<DailyOperationPackage>()
   const [editingFeePackage, setEditingFeePackage] = useState<DailyOperationPackage>()
-  const [carryPackage, setCarryPackage] = useState<DailyOperationPackage>()
   const [closing, setClosing] = useState(false)
   const [closingClient, setClosingClient] = useState<ClientClosureItem>()
   const [reopening, setReopening] = useState(false)
@@ -242,11 +168,6 @@ export function AdminDailyOperationsPanel({
   const clientClosureById = useMemo(() => new Map(
     (clientClosures?.clients ?? []).map((client) => [client.clientAccountId, client]),
   ), [clientClosures])
-  const unscheduledPostponements = day?.packages.filter((deliveryPackage) => (
-    deliveryPackage.requestKind !== 'EXPRESS'
-    && deliveryPackage.finalOutcome === 'POSTPONED'
-    && !deliveryPackage.carriedForwardToPackageId
-  )).length ?? 0
   const isExpressOnlyDayWithoutPlan = Boolean(
     day
     && !day.dispatchPlanId
@@ -257,7 +178,6 @@ export function AdminDailyOperationsPanel({
     day
     && (day.status === 'DISPATCHED' || (day.status === 'OPEN' && isExpressOnlyDayWithoutPlan))
     && day.counts.awaitingOutcome === 0
-    && unscheduledPostponements === 0
     && clientClosures?.allClientsClosed === true,
   )
 
@@ -333,27 +253,6 @@ export function AdminDailyOperationsPanel({
       onChanged()
     } catch (returnError) {
       setError(errorMessage(returnError))
-    } finally {
-      setBusyAction(undefined)
-    }
-  }
-
-  async function carryForward(pickup: Location) {
-    if (!carryPackage || !confirmed(pickup)) return
-    setBusyAction(`carry:${carryPackage.packageId}`)
-    setDialogError(undefined)
-    try {
-      await carryForwardDeliveryPackage(date, carryPackage.packageId, {
-        label: pickup.label,
-        destinationQuery: pickup.destinationQuery,
-        latitude: pickup.latitude as number,
-        longitude: pickup.longitude as number,
-      }, carryPackage.version, accessToken)
-      setCarryPackage(undefined)
-      await load()
-      onChanged()
-    } catch (carryError) {
-      setDialogError(errorMessage(carryError))
     } finally {
       setBusyAction(undefined)
     }
@@ -541,8 +440,8 @@ export function AdminDailyOperationsPanel({
                     <small>Situation</small>
                     <span className={`admin-outcome-chip is-${(deliveryPackage.finalOutcome ?? 'awaiting').toLowerCase()}`}>{deliveryPackage.finalOutcome ? OUTCOME_LABELS[deliveryPackage.finalOutcome] : 'À finaliser'}</span>
                     {deliveryPackage.finalOutcome === 'RETURN_TO_SENDER' && <em>{deliveryPackage.returnCompletedAt ? 'Remis à l’expéditeur' : 'Retour en attente'}</em>}
-                    {deliveryPackage.carriedForwardToPackageId && <em>Programmé pour demain</em>}
-                    {deliveryPackage.requestKind === 'EXPRESS' && deliveryPackage.finalOutcome === 'POSTPONED' && <em>À recréer manuellement si nécessaire</em>}
+                    {deliveryPackage.carriedForwardToPackageId && <em>Reprogrammé</em>}
+                    {deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId && <em>À reprogrammer dans l’onglet Reportés après clôture</em>}
                   </div>
                   <div className="admin-day-package__actions">
                     {day.status !== 'CLOSED' && deliveryPackage.finalOutcome !== 'CANCELLED' && (
@@ -556,9 +455,6 @@ export function AdminDailyOperationsPanel({
                     )}
                     {deliveryPackage.finalOutcome === 'RETURN_TO_SENDER' && !deliveryPackage.returnCompletedAt && (
                       <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={busyAction === `return:${deliveryPackage.packageId}`} onClick={() => void confirmReturn(deliveryPackage)}><PackageCheck aria-hidden="true" />Retour effectué</button>
-                    )}
-                    {deliveryPackage.requestKind !== 'EXPRESS' && deliveryPackage.finalOutcome === 'POSTPONED' && !deliveryPackage.carriedForwardToPackageId && (
-                      <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={clientClosed} title={clientClosed ? 'Le compte de ce client est clôturé.' : undefined} onClick={() => { setDialogError(undefined); setCarryPackage(deliveryPackage) }}><Undo2 aria-hidden="true" />Programmer demain</button>
                     )}
                   </div>
                   {deliveryPackage.outcomeNote && <p className="admin-day-package__note">{deliveryPackage.outcomeNote}</p>}
@@ -653,7 +549,6 @@ export function AdminDailyOperationsPanel({
 
       {editingPackage && <AdminPackageOutcomeDialog deliveryPackage={editingPackage} couriers={couriers} busy={busyAction === `outcome:${editingPackage.packageId}`} error={dialogError} onClose={() => setEditingPackage(undefined)} onSave={(input) => void saveOutcome(input)} />}
       {editingFeePackage && <AdminDeliveryFeeDialog deliveryPackage={editingFeePackage} busy={busyAction === `fee:${editingFeePackage.packageId}`} error={dialogError} onClose={() => setEditingFeePackage(undefined)} onSave={(input) => void saveDeliveryFee(input)} />}
-      {carryPackage && <CarryForwardDialog accessToken={accessToken} deliveryPackage={carryPackage} busy={busyAction === `carry:${carryPackage.packageId}`} error={dialogError} onClose={() => setCarryPackage(undefined)} onConfirm={(pickup) => void carryForward(pickup)} />}
       {closingClient && <ConfirmDialog title={`Clôturer ${closingClient.clientDisplayName} ?`} confirmLabel="Clôturer ce client" busy={busyAction === `close-client:${closingClient.clientAccountId}`} onClose={() => { setClosingClient(undefined); setDialogError(undefined) }} onConfirm={() => void closeClient()}><p>Les {closingClient.packageCount} colis de ce client seront figés. Ses rapports financiers et la validation des rémunérations livreurs deviendront immédiatement disponibles.</p>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
       {reopeningClient && <ConfirmDialog title={`Rouvrir ${reopeningClient.clientDisplayName} ?`} confirmLabel="Rouvrir ce client" busy={busyAction === `reopen-client:${reopeningClient.clientAccountId}`} danger onClose={() => { setReopeningClient(undefined); setClientReopenReason(''); setDialogError(undefined) }} onConfirm={() => void reopenClient()}><p>Les rapports et rémunérations liés à cette clôture ne seront plus définitifs pendant la correction.</p><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={clientReopenReason} placeholder="Ex. Corriger l’état final d’un colis" onChange={(event) => setClientReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
       {closing && <ConfirmDialog title="Clôturer cette journée ?" confirmLabel="Clôturer et activer le rapport général" busy={busyAction === 'close'} onClose={() => setClosing(false)} onConfirm={() => void closeDay()}><p>Les {clientClosures?.clientCount ?? day?.clients.length ?? 0} comptes clients sont clôturés. La journée sera figée et le rapport général deviendra téléchargeable.</p></ConfirmDialog>}
