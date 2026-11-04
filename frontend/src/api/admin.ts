@@ -553,6 +553,11 @@ export interface CarryForwardResult {
   requestedDate: string
 }
 
+export interface PostponedPackage {
+  serviceDate: string
+  package: DailyOperationPackage
+}
+
 export interface DownloadedReport {
   blob: Blob
   filename: string
@@ -1241,6 +1246,7 @@ export function markReturnCompleted(
 export function carryForwardDeliveryPackage(
   serviceDate: string,
   packageId: string,
+  targetDate: string,
   pickup: ConfirmedLocation,
   version: number,
   accessToken: string,
@@ -1249,6 +1255,7 @@ export function carryForwardDeliveryPackage(
     `delivery-days/${encodeURIComponent(serviceDate)}/packages/${encodeURIComponent(packageId)}/carry-forward`,
     accessToken,
     jsonRequest('POST', {
+      targetDate,
       pickup: {
         label: pickup.label?.trim() || pickup.query?.trim() || pickup.destinationQuery?.trim() || 'Point de retrait',
         query: pickup.query?.trim() || pickup.destinationQuery?.trim() || null,
@@ -1258,6 +1265,11 @@ export function carryForwardDeliveryPackage(
       version,
     }),
   )
+}
+
+export function listPostponedPackages(accessToken: string, query = '', signal?: AbortSignal) {
+  const suffix = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : ''
+  return adminRequest<PostponedPackage[]>(`delivery-packages/postponed${suffix}`, accessToken, { signal })
 }
 
 export function closeDeliveryDay(serviceDate: string, version: number, accessToken: string) {

@@ -2,6 +2,8 @@ package com.azylivraison.dailyworkflow.service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.dailyworkflow.domain.DailyOperationDetails;
@@ -13,6 +15,7 @@ import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CarryFo
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CourierSnapshot;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.DeliveryFeeRecord;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.PackageForUpdate;
+import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.PostponedPackage;
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.SettingsSnapshot;
 import com.azylivraison.delivery.domain.ConfirmedLocation;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
@@ -56,6 +59,11 @@ public class DailyWorkflowService {
         return DailyOperationDetails.of(
                 day,
                 repository.findPackages(day));
+    }
+
+    @Transactional(readOnly = true)
+    public List<PostponedPackage> postponed(String query) {
+        return repository.findPostponedPackages(query);
     }
 
     @Transactional
@@ -139,7 +147,7 @@ public class DailyWorkflowService {
         if (outcome != DeliveryPackageOutcome.POSTPONED
                 && repository.hasCarriedForwardSuccessor(packageId)) {
             throw new DailyWorkflowConflictException(
-                    "Ce report a déjà créé le colis du lendemain. Son état ne peut plus être remplacé.");
+                    "Ce report a déjà créé un colis reprogrammé. Son état ne peut plus être remplacé.");
         }
         Long recovered = switch (outcome) {
             case DELIVERED -> actualCollectedAriary == null
@@ -227,6 +235,7 @@ public class DailyWorkflowService {
     public CarryForwardIds carryForward(
             LocalDate serviceDate,
             UUID packageId,
+            LocalDate requestedTargetDate,
             ConfirmedLocation newPickup,
             long expectedVersion,
             UUID actorAccountId) {
@@ -236,17 +245,23 @@ public class DailyWorkflowService {
         PackageForUpdate source = requirePackage(packageId);
         requirePackageInDay(sourceDay, source);
         requireVersion(expectedVersion, source.version(), "Le colis a été modifié entre-temps.");
-        if (source.requestKind() == DeliveryRequestKind.EXPRESS) {
-            throw new DailyWorkflowConflictException(
-                    "Une livraison express reportée doit être recréée manuellement.");
-        }
         if (source.finalOutcome() != DeliveryPackageOutcome.POSTPONED) {
-            throw new DailyWorkflowConflictException("Seul un colis reporté peut être programmé au lendemain.");
+            throw new DailyWorkflowConflictException("Seul un colis reporté peut être reprogrammé.");
         }
         if (repository.hasCarriedForwardSuccessor(packageId)) {
-            throw new DailyWorkflowConflictException("Ce colis a déjà été transmis au jour suivant.");
+            throw new DailyWorkflowConflictException("Ce colis a déjà été reprogrammé.");
         }
-        LocalDate targetDate = serviceDate.plusDays(1);
+        if (!clientClosures.isClientClosed(serviceDate, source.ownerAccountId())) {
+            throw new DailyWorkflowConflictException(
+                    "Clôturez d'abord ce client ou sa journée avant de reprogrammer ce colis.");
+        }
+        LocalDate targetDate = requestedTargetDate == null ? serviceDate.plusDays(1) : requestedTargetDate;
+        if (!targetDate.isAfter(serviceDate)
+                || targetDate.isBefore(LocalDate.now(ZoneId.of("Indian/Antananarivo")))) {
+            throw new DailyWorkflowInputException(
+                    "Choisissez une date après la journée d'origine et à partir d'aujourd'hui.");
+        }
+        clientClosures.assertClientOpenForMutation(targetDate, source.ownerAccountId());
         if (repository.isAdmissionsClosed(targetDate)) {
             throw new DeliveryDateClosedException(targetDate);
         }
@@ -301,13 +316,6 @@ public class DailyWorkflowService {
             throw new DailyWorkflowConflictException(
                     "Indiquez le livreur réellement intervenu pour " + missingActualCouriers
                             + " colis facturé" + (missingActualCouriers > 1 ? "s" : "")
-                            + " avant la clôture.");
-        }
-        int notCarried = repository.uncarriedPostponedDayPackageCount(serviceDate);
-        if (notCarried > 0) {
-            throw new DailyWorkflowConflictException(
-                    "Transmettez au lendemain "
-                            + (notCarried == 1 ? "le colis reporté" : "les " + notCarried + " colis reportés")
                             + " avant la clôture.");
         }
         clientClosures.assertAllClientsClosed(serviceDate);

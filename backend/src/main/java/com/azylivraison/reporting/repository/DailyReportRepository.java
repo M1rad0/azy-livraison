@@ -1,5 +1,6 @@
 package com.azylivraison.reporting.repository;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -155,7 +156,8 @@ public class DailyReportRepository {
                 SELECT successor.carried_forward_from_package_id AS source_package_id,
                        successor.id AS successor_package_id,
                        request.requested_date,
-                       request.pickup_label
+                       request.pickup_label,
+                       successor.created_at
                 FROM delivery_package successor
                 JOIN delivery_request request ON request.id = successor.delivery_request_id
                 WHERE successor.carried_forward_from_package_id IN (:sourcePackageIds)
@@ -164,7 +166,8 @@ public class DailyReportRepository {
                     successors.put(sourceId, new SuccessorDetails(
                             resultSet.getObject("successor_package_id", UUID.class),
                             resultSet.getObject("requested_date", LocalDate.class),
-                            resultSet.getString("pickup_label")));
+                            resultSet.getString("pickup_label"),
+                            resultSet.getTimestamp("created_at").toInstant()));
                 });
         return Map.copyOf(successors);
     }
@@ -196,7 +199,8 @@ public class DailyReportRepository {
     public record SuccessorDetails(
             UUID packageId,
             LocalDate requestedDate,
-            String pickupLabel) {
+            String pickupLabel,
+            Instant createdAt) {
     }
 
 }

@@ -1409,6 +1409,11 @@
 .admin-outcome-chip.is-awaiting { color: var(--admin-navy); background: var(--admin-blue-soft); }
 .admin-day-package__note { grid-column: 1 / -1; margin: -.15rem 0 0; padding: .45rem .55rem; color: var(--admin-ink-soft); background: #f8fafc; border-radius: .55rem; font-size: .62rem; }
 
+.admin-postponed-package { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto; }
+.admin-postponed-package small { display: flex; align-items: center; gap: .3rem; }
+.admin-postponed-package small svg { width: .75rem; height: .75rem; }
+.admin-postponed-package strong, .admin-postponed-package em { white-space: normal; overflow-wrap: anywhere; }
+
 .admin-client-closures { display: grid; gap: .75rem; margin-top: .8rem; padding: 1rem; background: #fff; border: 1px solid var(--admin-line); border-radius: 1rem; }
 .admin-client-closures > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .admin-client-closures > header h3 { margin: 0; font-size: 1.05rem; }

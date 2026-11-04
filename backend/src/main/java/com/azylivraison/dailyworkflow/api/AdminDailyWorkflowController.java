@@ -1,6 +1,7 @@
 package com.azylivraison.dailyworkflow.api;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.dailyworkflow.repository.DailyWorkflowRepository.CarryForwardIds;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -37,6 +39,11 @@ public class AdminDailyWorkflowController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate serviceDate) {
         return DailyOperationResponse.from(service.get(serviceDate));
+    }
+
+    @GetMapping("/delivery-packages/postponed")
+    public List<PostponedPackageResponse> postponed(@RequestParam(required = false) String query) {
+        return service.postponed(query).stream().map(PostponedPackageResponse::from).toList();
     }
 
     @PostMapping("/delivery-packages/{packageId}/cancel")
@@ -99,6 +106,7 @@ public class AdminDailyWorkflowController {
         CarryForwardIds ids = service.carryForward(
                 serviceDate,
                 packageId,
+                request.targetDate(),
                 new ConfirmedLocation(
                         pickup.label().trim(),
                         pickup.query() == null || pickup.query().isBlank() ? null : pickup.query().trim(),

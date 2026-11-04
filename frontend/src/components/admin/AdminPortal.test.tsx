@@ -93,6 +93,7 @@ function portalFetchMock(
       { ...pricingPolicy, id: 2, requestKind: 'EXPRESS' },
     ]))
     if (input === '/api/admin/clients') return Promise.resolve(jsonResponse([]))
+    if (input === '/api/admin/delivery-packages/postponed') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/settings/pricing') return Promise.resolve(jsonResponse(pricingPolicy))
     if (input === '/api/admin/couriers') return Promise.resolve(jsonResponse([]))
     if (input === '/api/admin/vehicle-presets') return Promise.resolve(jsonResponse([]))
@@ -256,6 +257,17 @@ describe('AdminPortal', () => {
     expect(activityDate).toHaveValue('2099-12-30')
     expect(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/admin/delivery-requests')))
       .toHaveLength(1)
+  })
+
+  it('ouvre un espace séparé pour reprogrammer les colis reportés', async () => {
+    const fetchMock = portalFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AdminPortal accessToken="admin-token" />)
+    await screen.findByText('Boutique Rado')
+    fireEvent.click(screen.getByRole('button', { name: /Reportés/ }))
+    expect(await screen.findByRole('heading', { name: 'Colis reportés' })).toBeInTheDocument()
+    expect(await screen.findByText('Aucun colis à reprogrammer')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/delivery-packages/postponed', expect.anything())
   })
 
   it('prépare automatiquement toute la file admissible sans sélection manuelle', async () => {

@@ -173,26 +173,6 @@ class ExpressDeliveryApiIntegrationTest {
                 UUID.fromString(requestId));
         org.assertj.core.api.Assertions.assertThat(expressStatus).isEqualTo("COMPLETED");
 
-        mockMvc.perform(post(
-                        "/api/admin/delivery-days/{date}/packages/{id}/carry-forward",
-                        serviceDate, packageId)
-                        .with(admin())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "version":2,
-                                  "pickup":{
-                                    "label":"Nouveau retrait",
-                                    "query":"Analakely, Antananarivo",
-                                    "latitude":-18.9089,
-                                    "longitude":47.5212
-                                  }
-                                }
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(
-                        "Une livraison express reportée doit être recréée manuellement."));
-
         mockMvc.perform(post("/api/admin/delivery-days/{date}/clients/{clientId}/close",
                         serviceDate, CLIENT_ID)
                         .with(admin())
@@ -207,6 +187,33 @@ class ExpressDeliveryApiIntegrationTest {
                         .content("{\"version\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"));
+
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].package.requestKind").value("EXPRESS"));
+        Long initialFee = jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_ariary FROM delivery_package WHERE id = ?", Long.class, UUID.fromString(packageId));
+        LocalDate targetDate = serviceDate.plusDays(5);
+        MvcResult reprogrammed = mockMvc.perform(post(
+                        "/api/admin/delivery-days/{date}/packages/{id}/carry-forward", serviceDate, packageId)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetDate":"%s","version":2,
+                                 "pickup":{"label":"Nouveau retrait","query":"Analakely, Antananarivo",
+                                           "latitude":-18.9089,"longitude":47.5212}}
+                                """.formatted(targetDate)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestedDate").value(targetDate.toString()))
+                .andReturn();
+        var successor = objectMapper.readTree(reprogrammed.getResponse().getContentAsString());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT request_kind FROM delivery_request WHERE id = ?", String.class,
+                UUID.fromString(successor.get("deliveryRequestId").asText()))).isEqualTo("NORMAL");
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_ariary FROM delivery_package WHERE id = ?", Long.class,
+                UUID.fromString(successor.get("packageId").asText()))).isEqualTo(initialFee);
+        mockMvc.perform(get("/api/admin/delivery-packages/postponed").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test

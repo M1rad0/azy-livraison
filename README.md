@@ -56,7 +56,7 @@ Le tarif est calculé côté backend au moment de l'enregistrement et copié dan
 
 La limite journalière correspond actuellement à un **nombre de colis**, pas à un nombre de demandes ni à un poids total. Lors de la création, le backend compare les colis déjà en attente pour la date, la limite configurée et les nouveaux colis.
 
-Si la projection dépasse la limite, la demande complète est refusée en HTTP `409` avec le code `DAILY_CAPACITY_EXCEEDED`. La réponse contient `limit`, `current`, `requested`, `projected`, `remaining` et surtout `excess`, afin d'indiquer exactement combien de colis retirer. Il n'existe aucun contournement utilisateur de cette limite. Un colis annulé libère sa place ; un colis reporté et transmis au lendemain consomme une place dans le quota du lendemain.
+Si la projection dépasse la limite, la demande complète est refusée en HTTP `409` avec le code `DAILY_CAPACITY_EXCEEDED`. La réponse contient `limit`, `current`, `requested`, `projected`, `remaining` et surtout `excess`, afin d'indiquer exactement combien de colis retirer. Il n'existe aucun contournement utilisateur de cette limite. Un colis annulé libère sa place ; un colis reporté consomme une place dans le quota de sa nouvelle date uniquement lors de sa reprogrammation.
 
 ### Parcours administrateur
 
@@ -80,14 +80,16 @@ Après le dispatch, l'administrateur attribue à chaque colis une issue finale :
 
 - `DELIVERED` : livré ; le montant réellement récupéré vaut par défaut le montant prévu mais reste modifiable ;
 - `CANCELLED` : annulé avant dispatch, sans frais de livraison ;
-- `POSTPONED` : reporté, sans frais sur la journée d'origine ; il doit être transmis au lendemain avec un nouveau retrait avant la clôture ;
+- `POSTPONED` : reporté, sans frais sur la journée d'origine ; après clôture du compte client ou de la journée, il reste dans l'onglet **Reportés** jusqu'à sa reprogrammation manuelle à une date choisie, avec un nouveau retrait ;
 - `RETURN_TO_SENDER` : livraison non aboutie à retourner à l'expéditeur, avec frais de livraison et suivi séparé du retour physique.
 
 Le livreur prévu par l'optimiseur et le livreur réellement intervenu sont deux données distinctes. Lors du compte rendu, l'affectation prévue est proposée par défaut mais l'administrateur peut choisir n'importe quel profil livreur, même inactif ou absent du dispatch. Ce choix est obligatoire pour `DELIVERED` et `RETURN_TO_SENDER`, les deux issues facturées, puis son identité est conservée sous forme de snapshot pour les futurs calculs de rémunération. Les anciens comptes rendus ne sont pas attribués automatiquement : sans preuve d'exécution, ils restent explicitement non renseignés.
 
 L'indicateur Mobile Money est purement informatif : il ne met jamais un montant à zéro et n'intervient dans aucun total financier. Le montant à reverser est toujours `montant réellement récupéré - frais de livraison` et peut donc être négatif pour un retour.
 
-La clôture manuelle n'est possible que lorsque tous les colis ont une issue finale, que chaque issue facturée possède son livreur réel et que tous les reports ont été programmés au lendemain. Une journée clôturée peut être rouverte avec une raison auditée. Une fois clôturée, elle fournit un rapport général et un rapport par compte client, chacun en PDF et en véritable fichier Excel `.xlsx`. Les exports distinguent le livreur prévu du livreur réel et regroupent les synthèses par livreur réel. Le retour physique d'un colis peut encore être confirmé après la clôture : cette action est auditée, ne change aucun montant financier et apparaît dans les exports régénérés ensuite.
+La clôture manuelle n'est possible que lorsque tous les colis ont une issue finale et que chaque issue facturée possède son livreur réel. Les colis reportés ne bloquent pas les clôtures et peuvent rester sans nouvelle date aussi longtemps que nécessaire. Leur reprogrammation crée un colis lié dans une demande normale à la date choisie, y compris pour un express d'origine, conserve le tarif et la priorité initiaux, et respecte le quota et les fermetures de cette date. Un seul successeur peut être créé par colis.
+
+Une journée clôturée peut être rouverte avec une raison auditée. Une fois clôturée, elle fournit un rapport général et un rapport par compte client, chacun en PDF et en véritable fichier Excel `.xlsx`. Les exports distinguent le livreur prévu du livreur réel et regroupent les synthèses par livreur réel. Le retour physique d'un colis peut encore être confirmé après la clôture : cette action est auditée, ne change aucun montant financier et apparaît dans les exports régénérés ensuite.
 
 ### Statuts persistés
 
@@ -608,7 +610,7 @@ L'application propose une inscription publique réservée aux clients et une aut
 | `GET` | `/api/admin/queue?date=YYYY-MM-DD` | Lire la file encore en attente de cette date, avec les compteurs opérationnels |
 | `POST` | `/api/admin/delivery-packages/{id}/cancel` | Annuler un colis encore en attente |
 
-La file opérationnelle est strictement limitée à la date choisie. Les demandes d'autres dates restent visibles dans la liste globale et ne sont jamais aspirées silencieusement : le passage au lendemain se fait uniquement avec l'action explicite de report.
+La file opérationnelle est strictement limitée à la date choisie. Les demandes d'autres dates restent visibles dans la liste globale et ne sont jamais aspirées silencieusement : la reprogrammation d'un colis reporté se fait uniquement par une action explicite avec une nouvelle date.
 
 ### Administration et dispatch
 
@@ -631,9 +633,10 @@ La création d'un dispatch ne reçoit aucun `packageIds` : elle sélectionne obl
 |---|---|---|
 | `GET` | `/api/admin/delivery-days/{date}` | Lire l'état opérationnel, les colis et les totaux de la journée |
 | `PUT` | `/api/admin/delivery-days/{date}/packages/{id}/outcome` | Enregistrer ou corriger l'issue finale, le montant et le `actualCourierId` d'un colis |
-| `POST` | `/api/admin/delivery-days/{date}/packages/{id}/carry-forward` | Créer le colis lié du lendemain avec son nouveau retrait |
+| `GET` | `/api/admin/delivery-packages/postponed?query=` | Rechercher les colis reportés après clôture, encore à reprogrammer |
+| `POST` | `/api/admin/delivery-days/{date}/packages/{id}/carry-forward` | Créer le colis lié à la date `targetDate` choisie, avec son nouveau retrait |
 | `POST` | `/api/admin/delivery-days/{date}/packages/{id}/return-completed` | Confirmer le retour physique à l'expéditeur |
-| `POST` | `/api/admin/delivery-days/{date}/close` | Clôturer après validation de tous les colis et reports |
+| `POST` | `/api/admin/delivery-days/{date}/close` | Clôturer après validation des états finaux et des comptes clients |
 | `POST` | `/api/admin/delivery-days/{date}/reopen` | Rouvrir avec une raison auditée |
 | `GET` | `/api/admin/delivery-days/{date}/reports/general.{pdf,xlsx}` | Télécharger le rapport général clôturé |
 | `GET` | `/api/admin/delivery-days/{date}/reports/clients/{accountId}.{pdf,xlsx}` | Télécharger le rapport clôturé d'un compte client |
@@ -913,7 +916,7 @@ La version multi-utilisateur est considérée conforme lorsque les scénarios su
 10. un dispatch terminé peut être relu avec ses snapshots, ses arrêts, ses affectations et ses métriques ;
 11. l'expiration, le renouvellement et la révocation des jetons fonctionnent ;
 12. une date dispatchée refuse de nouvelles demandes et toute seconde génération de plan ;
-13. un report crée un colis lié au lendemain, consomme son quota et conditionne la clôture ;
+13. les reports ne bloquent aucune clôture ; leur reprogrammation différée crée un unique colis lié à la date choisie et consomme le quota de cette date ;
 14. les frais et montants à reverser ignorent l'indicateur Mobile Money et autorisent un solde négatif ;
 15. les rapports PDF/XLSX ne sont disponibles qu'après clôture et isolent correctement chaque compte client ;
 16. la limite de matrice refuse proprement un plan trop grand.
@@ -978,7 +981,7 @@ Les fichiers mono-client conservent le schéma JSON `1.0`. Les fichiers multi-cl
 - [x] réglages opérationnels, préréglages et profils livreurs administrables ;
 - [x] dispatch `VIA_HUB` persistant avec snapshots et protections contre les doubles traitements ;
 - [x] espace client et espace administrateur dédiés dans le frontend ;
-- [x] compte rendu, reports au lendemain, retours expéditeur et clôture auditée ;
+- [x] compte rendu, reports différés à une date choisie, retours expéditeur et clôture auditée ;
 - [x] rapports financiers généraux et par client en PDF/XLSX ;
 - validation de bout en bout sur données de production représentatives.
 

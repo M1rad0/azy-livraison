@@ -69,8 +69,7 @@ public final class ClientClosureModels {
                     && pendingExpressRequestCount == 0
                     && undispatchedNormalPackageCount == 0
                     && incompletePackageCount == 0
-                    && missingActualCourierCount == 0
-                    && uncarriedPostponedCount == 0;
+                    && missingActualCourierCount == 0;
         }
 
         public List<String> blockers() {
@@ -87,9 +86,6 @@ public final class ClientClosureModels {
             }
             if (missingActualCourierCount > 0) {
                 blockers.add("Le livreur réel manque pour " + missingActualCourierCount + " colis facturé(s).");
-            }
-            if (uncarriedPostponedCount > 0) {
-                blockers.add(uncarriedPostponedCount + " colis reporté(s) ne sont pas encore transmis au lendemain.");
             }
             return List.copyOf(blockers);
         }
