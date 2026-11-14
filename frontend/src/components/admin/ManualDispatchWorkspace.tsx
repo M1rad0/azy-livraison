@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
-import { ArrowDown, ArrowRightLeft, ArrowUp, Check, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowRightLeft, ArrowUp, Check, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, Undo2, WandSparkles, X } from 'lucide-react'
 import type { DispatchPlan } from '../../api/admin'
 import { cancelManualDraft, finalizeManualDraft, getActiveManualDraft, saveManualDraft, type ManualDispatchDraft, type ManualDispatchStep } from '../../api/manualDispatch'
 import { LocationPicker } from '../LocationPicker'
@@ -9,6 +9,7 @@ import { asConfirmedLocation, errorMessage, formatAriary, formatDate, vehicleLab
 import { dispatchPlace, dispatchPlaceText as locationLabel } from './manualDispatchPresentation'
 import { assignmentIds, assignPoint, changeManualStep, manualTransfers, packageCollector } from './manualDispatchLayout'
 import { groupByGeography, manualDispatchCourierColor } from './manualDispatchGeography'
+import { automaticallyAssignPhase } from './manualDispatchAutomatic'
 import './ManualDispatchWorkspace.css'
 
 export function ManualDispatchReview({ draft }: { draft: ManualDispatchDraft }) {
@@ -63,12 +64,15 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
   const [dropTarget, setDropTarget] = useState<string>()
   const [conflict, setConflict] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
+  const [automating, setAutomating] = useState(false)
+  const [automaticUndo, setAutomaticUndo] = useState<Pick<ManualDispatchDraft, 'collections' | 'deliveries'> & { phase: 'COLLECTION' | 'DELIVERY' }>()
+  const automaticAbort = useRef<AbortController | null>(null)
   const busyRef = useRef(false)
   const dirtyRef = useRef(false)
   const workingRef = useRef(working)
   workingRef.current = working
   const phase = working.step === 'COLLECTION' ? 'COLLECTION' : 'DELIVERY'
-  const editable = !busy && !conflict
+  const editable = !busy && !automating && !conflict
   const missingPickups = working.pickups.filter((p) => !working.collections.some((c) => c.pickupId === p.id)).length
   const missingPackages = working.packages.filter((p) => !working.deliveries.some((d) => d.packageId === p.packageId)).length
   const courierOptions = working.couriers.map((c) => ({ id: c.courierId, name: c.name, contact: c.contact, active: true }))
@@ -83,6 +87,8 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
     return () => window.removeEventListener('beforeunload', listener)
   }, [dirty])
 
+  useEffect(() => () => { automaticAbort.current?.abort() }, [])
+
   useEffect(() => () => {
     // Flush the debounce when switching to another portal section.
     if (!dirtyRef.current || busyRef.current) return
@@ -94,9 +100,10 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
   }, [accessToken])
 
   function change(next: ManualDispatchDraft) {
-    if (busyRef.current || conflict) return
+    if (busyRef.current || automaticAbort.current || conflict) return
     workingRef.current = next; dirtyRef.current = true
     setWorking(next); setDirty(true); setMessage(undefined); setSaveFailed(false)
+    setAutomaticUndo(undefined)
   }
 
   async function persist() {
@@ -111,7 +118,7 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
   }
 
   async function save(finalize = false) {
-    if (busyRef.current || conflict) return
+    if (busyRef.current || automaticAbort.current || conflict) return
     busyRef.current = true; setBusy(true); setMessage(undefined)
     try {
       const current = dirty ? await persist() : workingRef.current
@@ -125,7 +132,7 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
 
   // Keep navigation safe while also offering an explicit save action.
   useEffect(() => {
-    if (!dirty || busy || conflict || saveFailed) return
+    if (!dirty || busy || automating || conflict || saveFailed) return
     const timer = window.setTimeout(() => { void save() }, 1200)
     return () => window.clearTimeout(timer)
   })
@@ -162,6 +169,35 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
   }
 
   function assign(id: string, courier: string, before?: string) { change(assignPoint(working, phase, id, courier, before)) }
+  async function autoAssign() {
+    if (!editable || busyRef.current || automaticAbort.current || working.step === 'REVIEW') return
+    const current = workingRef.current
+    const assignments = phase === 'COLLECTION' ? current.collections : current.deliveries
+    if (assignments.length && !window.confirm(phase === 'COLLECTION'
+      ? 'Remplacer les affectations de récupération par une proposition automatique ? Les livraisons resteront inchangées et vous pourrez annuler cette proposition.'
+      : 'Remplacer les affectations de livraison par une proposition automatique ? Les récupérations resteront inchangées et vous pourrez annuler cette proposition.')) return
+    const controller = new AbortController()
+    automaticAbort.current = controller; setAutomating(true); setMessage(undefined)
+    try {
+      const next = await automaticallyAssignPhase(current, phase, accessToken, controller.signal)
+      if (controller.signal.aborted || workingRef.current !== current) return
+      automaticAbort.current = null
+      change(next)
+      setAutomaticUndo({ phase, collections: current.collections, deliveries: current.deliveries })
+      setSelected(undefined)
+    } catch (error) {
+      if (!controller.signal.aborted) setMessage(errorMessage(error))
+    } finally {
+      if (automaticAbort.current === controller) automaticAbort.current = null
+      if (!controller.signal.aborted) setAutomating(false)
+    }
+  }
+  function undoAutomatic() {
+    if (!editable || !automaticUndo) return
+    change(automaticUndo.phase === 'COLLECTION'
+      ? { ...workingRef.current, collections: automaticUndo.collections }
+      : { ...workingRef.current, deliveries: automaticUndo.deliveries })
+  }
   function drop(event: DragEvent, courier: string, before?: string) {
     event.preventDefault(); event.stopPropagation(); setDropTarget(undefined)
     const prefix = phase === 'COLLECTION' ? 'pickup:' : 'package:'
@@ -214,10 +250,10 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
     </article>
   }
 
-  return <section className="admin-panel manual-workspace" aria-labelledby={headingId} aria-busy={busy}>
+  return <section className="admin-panel manual-workspace" aria-labelledby={headingId} aria-busy={busy || automating}>
     <header className="manual-workspace__header"><div><p className="admin-eyebrow">Dispatch manuel · {formatDate(working.serviceDate)}</p>
       <h2 id={headingId}>Organiser la journée</h2><p className="admin-muted">{working.packages.length} colis · {working.pickups.length} points de récupération · {working.couriers.length} livreurs</p></div>
-      <div className="admin-toolbar"><small role="status">{busy ? 'Enregistrement…' : dirty ? 'Modifications en cours…' : 'Brouillon enregistré'}</small>
+      <div className="admin-toolbar"><small role="status">{automating ? 'Recherche d’une répartition…' : busy ? 'Enregistrement…' : dirty ? 'Modifications en cours…' : 'Brouillon enregistré'}</small>
         <button className="admin-button admin-button--ghost" type="button" disabled={!editable || !dirty} onClick={() => void save()}><Save />Enregistrer</button>
         {onClose && <button className="admin-button admin-button--ghost" type="button" disabled={!editable} onClick={() => void close()}><X />Fermer</button>}</div>
     </header>
@@ -269,7 +305,14 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
         })}</div>
       </section>
     </fieldset>}
+    {automaticUndo && <div className="admin-callout manual-automatic-notice" role="status"><span>Répartition proposée. Vous pouvez la modifier librement.</span>
+      <button type="button" className="admin-button admin-button--ghost" disabled={!editable} onClick={undoAutomatic}><Undo2 aria-hidden="true" />Annuler la proposition</button></div>}
     <footer className="manual-workspace__footer"><button type="button" className="admin-button admin-button--ghost" aria-label="Abandonner le brouillon" title="Abandonner le brouillon" disabled={!editable} onClick={() => void abandon()}><Trash2 /><span>Abandonner</span></button>
+      {working.step !== 'REVIEW' && <button type="button" className="admin-button admin-button--ghost manual-workspace__automatic"
+        aria-label={phase === 'COLLECTION' ? 'Répartition automatique des récupérations' : 'Répartition automatique des livraisons'}
+        title="Proposer des trajets courts en regroupant les lieux proches, sans tenir compte du poids."
+        disabled={!editable || !working.couriers.length || !(phase === 'COLLECTION' ? working.pickups.length : working.packages.length) || (phase === 'DELIVERY' && !!missingPickups)} onClick={() => void autoAssign()}>
+        {automating ? <LoaderCircle className="admin-spin" aria-hidden="true" /> : <WandSparkles aria-hidden="true" />}<span>{automating ? 'Calcul en cours…' : 'Répartition automatique'}</span></button>}
       <div className="admin-toolbar">{working.step !== 'COLLECTION' && <button type="button" className="admin-button admin-button--ghost" disabled={!editable} onClick={() => go(working.step === 'REVIEW' ? 'DELIVERY' : 'COLLECTION')}>Retour</button>}
         {working.step === 'COLLECTION' && <button className="admin-button" type="button" disabled={!editable || missingPickups > 0} onClick={() => go('DELIVERY')}>Répartir les colis</button>}
         {working.step === 'DELIVERY' && <button className="admin-button" type="button" disabled={!editable || missingPackages > 0} onClick={() => go('REVIEW')}>Vérifier le dispatch</button>}
