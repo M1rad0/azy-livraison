@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
 import { ArrowDown, ArrowRightLeft, ArrowUp, Check, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, X } from 'lucide-react'
 import type { DispatchPlan } from '../../api/admin'
 import { cancelManualDraft, finalizeManualDraft, getActiveManualDraft, saveManualDraft, type ManualDispatchDraft, type ManualDispatchStep } from '../../api/manualDispatch'
@@ -53,6 +53,7 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
   onCancelled: () => void
   onClose?: () => void
 }) {
+  const headingId = useId()
   const [working, setWorking] = useState(draft)
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -213,9 +214,9 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
     </article>
   }
 
-  return <section className="manual-workspace" aria-busy={busy}>
+  return <section className="admin-panel manual-workspace" aria-labelledby={headingId} aria-busy={busy}>
     <header className="manual-workspace__header"><div><p className="admin-eyebrow">Dispatch manuel · {formatDate(working.serviceDate)}</p>
-      <h2>Organiser la journée</h2><p className="admin-muted">{working.packages.length} colis · {working.pickups.length} points de récupération · {working.couriers.length} livreurs</p></div>
+      <h2 id={headingId}>Organiser la journée</h2><p className="admin-muted">{working.packages.length} colis · {working.pickups.length} points de récupération · {working.couriers.length} livreurs</p></div>
       <div className="admin-toolbar"><small role="status">{busy ? 'Enregistrement…' : dirty ? 'Modifications en cours…' : 'Brouillon enregistré'}</small>
         <button className="admin-button admin-button--ghost" type="button" disabled={!editable || !dirty} onClick={() => void save()}><Save />Enregistrer</button>
         {onClose && <button className="admin-button admin-button--ghost" type="button" disabled={!editable} onClick={() => void close()}><X />Fermer</button>}</div>

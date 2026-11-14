@@ -18,6 +18,14 @@ describe('espace de dispatch manuel', () => {
   })
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
+  it('reprend la carte blanche commune aux autres onglets administrateur', () => {
+    render(<ManualDispatchWorkspace accessToken="token" draft={draftFixture()} onDraftChange={vi.fn()} onFinalized={vi.fn()} onCancelled={vi.fn()} />)
+    const panel = screen.getByRole('region', { name: 'Organiser la journée' })
+    expect(panel).toHaveClass('admin-panel', 'manual-workspace')
+    expect(panel.querySelector('.admin-panel')).toBeNull()
+    expect(within(panel).getByRole('navigation', { name: 'Étapes du dispatch' })).toBeInTheDocument()
+  })
+
   it('bloque la suite avant affectation de toutes les récupérations', () => {
     render(<ManualDispatchWorkspace accessToken="token" draft={draftFixture()} onDraftChange={vi.fn()} onFinalized={vi.fn()} onCancelled={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Répartir les colis' })).toBeDisabled()
