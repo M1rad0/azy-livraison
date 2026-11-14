@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-@RestControllerAdvice(assignableTypes = AdminDispatchController.class)
+@RestControllerAdvice(assignableTypes = {AdminDispatchController.class, ManualDispatchController.class})
 public class DispatchExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

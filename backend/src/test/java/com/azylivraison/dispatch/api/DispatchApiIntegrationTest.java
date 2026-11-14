@@ -5,6 +5,8 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,6 +25,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.Map;
+import com.azylivraison.dispatch.domain.ManualDispatchDraft;
 
 import com.azylivraison.optimization.domain.OptimizationComparisonResult.CourierHubManifest;
 import com.azylivraison.optimization.domain.OptimizationComparisonResult.HubExecution;
@@ -673,6 +677,218 @@ class DispatchApiIntegrationTest {
                         .claim("accountId", CLIENT_ID.toString())
                         .claim("role", "CLIENT"))
                 .authorities(new SimpleGrantedAuthority("ROLE_CLIENT"));
+    }
+
+    @Test
+    void manualDraftIsDurableIdempotentAndPreventsAnotherDispatch() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-draft-1", List.of(COURIER_ID));
+        assertEquals(draft.id(), manualDraft("manual-draft-1", List.of(COURIER_ID)).id());
+        assertEquals(1, draft.pickups().size());
+        assertTrue(draft.collections().isEmpty());
+        mockMvc.perform(get("/api/admin/manual-dispatch-drafts/active?date=2026-08-24").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(draft.id().toString()));
+        mockMvc.perform(post("/api/admin/dispatch-plans").with(admin()).header("Idempotency-Key", "legacy-blocked")
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "serviceDate", "2026-08-24", "courierIds", List.of(COURIER_ID)))))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts").with(admin()).header("Idempotency-Key", "other-draft")
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "serviceDate", "2026-08-24", "courierIds", List.of(COURIER_ID)))))
+                .andExpect(status().isConflict());
+        assertEquals("OPEN", jdbcTemplate.queryForObject("SELECT status FROM delivery_operation_day WHERE service_date='2026-08-24'", String.class));
+        assertEquals(Boolean.TRUE, jdbcTemplate.queryForObject("SELECT admissions_closed_at IS NOT NULL FROM delivery_operation_day WHERE service_date='2026-08-24'", Boolean.class));
+        verifyNoInteractions(optimizationFacade);
+    }
+
+    @Test
+    void manualValidationRequiresAllAssignmentsAndChecksVersions() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-incomplete", List.of(COURIER_ID));
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+                .andExpect(status().isUnprocessableEntity());
+        var collections = List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0));
+        ManualDispatchDraft saved = saveManual(draft, collections, List.of());
+        assertEquals(1, saved.version());
+        mockMvc.perform(put("/api/admin/manual-dispatch-drafts/{id}", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "expectedVersion", 0, "step", "COLLECTION", "couriers", draft.couriers(),
+                        "collections", collections, "deliveries", List.of()))))
+                .andExpect(status().isConflict());
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM dispatch_plan", Integer.class));
+    }
+
+    @Test
+    void manualPlanGroupsExactPickupsKeepsTransfersAndDoesNotUseSolverOrHub() throws Exception {
+        UUID secondCourier = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO courier_profile (id, name, vehicle_type, max_weight_kg_override, default_departure_time,
+                    departure_location_label, departure_latitude, departure_longitude)
+                VALUES (?, 'Jean', 'MOTO', 0.1, '08:00:00', 'Ankadivato', -18.91, 47.54)
+                """, secondCourier);
+        UUID secondRequest = UUID.randomUUID(), secondPackage = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO delivery_request (id, owner_account_id, requested_date,
+                    pickup_label, pickup_query, pickup_latitude, pickup_longitude,
+                    capacity_limit_snapshot, capacity_current_snapshot, capacity_requested_snapshot, capacity_projected_snapshot)
+                SELECT ?, owner_account_id, requested_date, 'Autre boutique au même point', pickup_query,
+                    pickup_latitude, pickup_longitude, 100, 1, 1, 2 FROM delivery_request WHERE id = ?
+                """, secondRequest, REQUEST_ID);
+        jdbcTemplate.update("""
+                INSERT INTO delivery_package (id, delivery_request_id, sequence_number, recipient_name, faritra,
+                    destination_label, destination_latitude, destination_longitude, contact,
+                    amount_to_collect_ariary, mobile_money_paid, effective_weight_kg, weight_source, priority_at)
+                VALUES (?, ?, 1, 'Rabe', FALSE, 'Ankadivato', -18.91, 47.54, '034', 10000, FALSE, 20, 'PROVIDED', CURRENT_TIMESTAMP)
+                """, secondPackage, secondRequest);
+        ManualDispatchDraft draft = manualDraft("manual-transfer", List.of(COURIER_ID, secondCourier));
+        assertEquals(1, draft.pickups().size());
+        assertEquals(2, draft.pickups().getFirst().packageIds().size());
+        ManualDispatchDraft saved = saveManual(draft,
+                List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0)),
+                List.of(new ManualDispatchDraft.Delivery(PACKAGE_ID, secondCourier, 0),
+                        new ManualDispatchDraft.Delivery(secondPackage, secondCourier, 1)));
+        MvcResult result = mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", saved.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.plan.strategy").value("MANUAL"))
+                .andExpect(jsonPath("$.plan.status").value("READY"))
+                .andExpect(jsonPath("$.plan.assignedPackageCount").value(2))
+                .andExpect(jsonPath("$.packages[0].transferred").value(true))
+                .andExpect(jsonPath("$.result").doesNotExist()).andExpect(jsonPath("$.hubExecution").doesNotExist())
+                .andExpect(jsonPath("$.plan.totalDistanceMeters").doesNotExist())
+                .andReturn();
+        String planId = objectMapper.readTree(result.getResponse().getContentAsString()).path("plan").path("id").asText();
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM dispatch_stop WHERE stop_type = 'HUB'", Integer.class));
+        assertEquals(2, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM delivery_package WHERE status = 'DISPATCHED'", Integer.class));
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", saved.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.plan.id").value(planId));
+        mockMvc.perform(get("/api/admin/manual-dispatch-drafts/for-plan/{id}", planId).with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FINALIZED"));
+        assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM dispatch_plan", Integer.class));
+        verifyNoInteractions(optimizationFacade);
+        verify(routingProvider, times(0)).route(any());
+    }
+
+    @Test
+    void manualFinalizationRejectsStaleBusinessInputsEvenIfIdsAreUnchanged() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-changed", List.of(COURIER_ID));
+        ManualDispatchDraft saved = saveManual(draft,
+                List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0)),
+                List.of(new ManualDispatchDraft.Delivery(PACKAGE_ID, COURIER_ID, 0)));
+        jdbcTemplate.update("UPDATE delivery_package SET destination_latitude = -18.95 WHERE id = ?", PACKAGE_ID);
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", saved.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isConflict());
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM dispatch_plan", Integer.class));
+        assertEquals("PENDING", jdbcTemplate.queryForObject("SELECT status FROM delivery_package WHERE id = ?", String.class, PACKAGE_ID));
+    }
+
+    @Test
+    void cancellingOldDraftCannotReopenNewDraftAndClientCannotReadIt() throws Exception {
+        ManualDispatchDraft first = manualDraft("manual-cancel-1", List.of(COURIER_ID));
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/cancel", first.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+                .andExpect(status().isNoContent());
+        assertEquals(Boolean.TRUE, jdbcTemplate.queryForObject("SELECT admissions_closed_at IS NULL FROM delivery_operation_day WHERE service_date='2026-08-24'", Boolean.class));
+        ManualDispatchDraft second = manualDraft("manual-cancel-2", List.of(COURIER_ID));
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/cancel", first.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+                .andExpect(status().isNoContent());
+        assertEquals(Boolean.TRUE, jdbcTemplate.queryForObject("SELECT admissions_closed_at IS NOT NULL FROM delivery_operation_day WHERE service_date='2026-08-24'", Boolean.class));
+        mockMvc.perform(get("/api/admin/manual-dispatch-drafts/{id}", second.id()).with(
+                jwt().authorities(new SimpleGrantedAuthority("ROLE_CLIENT")).jwt(token -> token.claim("accountId", CLIENT_ID.toString()))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void reopensManualPlanAtomicallyUntilFirstOutcome() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-edit", List.of(COURIER_ID));
+        ManualDispatchDraft saved = saveManual(draft,
+                List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0)),
+                List.of(new ManualDispatchDraft.Delivery(PACKAGE_ID, COURIER_ID, 0)));
+        var finalized = mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", saved.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isOk()).andReturn();
+        String planId = objectMapper.readTree(finalized.getResponse().getContentAsString()).path("plan").path("id").asText();
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/from-plan/{id}", planId).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.step").value("REVIEW"))
+                .andExpect(jsonPath("$.deliveries[0].courierId").value(COURIER_ID.toString()));
+        assertEquals("CANCELLED", jdbcTemplate.queryForObject("SELECT lifecycle_status FROM dispatch_plan WHERE id = ?", String.class, UUID.fromString(planId)));
+        assertEquals("PENDING", jdbcTemplate.queryForObject("SELECT status FROM delivery_package WHERE id = ?", String.class, PACKAGE_ID));
+    }
+
+    @Test
+    void manualPlanSupportsDailyOutcomesProgressiveClientClosureReportsAndCompensation() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-workflow", List.of(COURIER_ID));
+        ManualDispatchDraft saved = saveManual(draft,
+                List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0)),
+                List.of(new ManualDispatchDraft.Delivery(PACKAGE_ID, COURIER_ID, 0)));
+        var result = mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", saved.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isOk()).andReturn();
+        String planId = objectMapper.readTree(result.getResponse().getContentAsString()).path("plan").path("id").asText();
+        mockMvc.perform(get("/api/admin/delivery-days/2026-08-24").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.packages[0].distributorCourierId").value(COURIER_ID.toString()));
+        mockMvc.perform(put("/api/admin/delivery-days/2026-08-24/packages/{id}/outcome", PACKAGE_ID).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "outcome", "DELIVERED", "actualCourierId", COURIER_ID, "version", 1))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/from-plan/{id}", planId).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+                .andExpect(status().isConflict());
+        long dayVersion = jdbcTemplate.queryForObject("SELECT version FROM delivery_operation_day WHERE service_date='2026-08-24'", Long.class);
+        var closedClient = mockMvc.perform(post("/api/admin/delivery-days/2026-08-24/clients/{id}/close", CLIENT_ID).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"version\":" + dayVersion + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.allClientsClosed").value(true)).andReturn();
+        long nextVersion = objectMapper.readTree(closedClient.getResponse().getContentAsString()).path("dayVersion").asLong();
+        mockMvc.perform(get("/api/admin/delivery-days/2026-08-24/reports/clients/{id}.pdf", CLIENT_ID).with(admin()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/admin/finance/delivery-days/2026-08-24/clients/{id}/courier-compensations", CLIENT_ID).with(admin()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/delivery-days/2026-08-24/close").with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"version\":" + nextVersion + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CLOSED"));
+        mockMvc.perform(get("/api/admin/delivery-days/2026-08-24/reports/general.pdf").with(admin()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void manualSaveRejectsDuplicateOrdersAndPreservesServerOwnedCourierMetadata() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-integrity", List.of(COURIER_ID));
+        var original = draft.couriers().getFirst();
+        var changed = new ManualDispatchDraft.DraftCourier(original.courierId(), "Faux nom", "Faux contact", original.vehicleType(),
+                BigDecimal.valueOf(900), BigDecimal.valueOf(999), original.departureAt().plusHours(1), original.departure());
+        mockMvc.perform(put("/api/admin/manual-dispatch-drafts/{id}", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "expectedVersion", 0, "step", "COLLECTION", "couriers", List.of(changed),
+                        "collections", List.of(), "deliveries", List.of()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.couriers[0].name").value("Soa"))
+                .andExpect(jsonPath("$.couriers[0].departureAt").value("2026-08-24T07:00:00+03:00"));
+        mockMvc.perform(put("/api/admin/manual-dispatch-drafts/{id}", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "expectedVersion", 1, "step", "COLLECTION", "couriers", draft.couriers(),
+                        "collections", List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0),
+                                new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 1)),
+                        "deliveries", List.of()))))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    private ManualDispatchDraft manualDraft(String key, List<UUID> courierIds) throws Exception {
+        var result = mockMvc.perform(post("/api/admin/manual-dispatch-drafts").with(admin())
+                .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("serviceDate", "2026-08-24", "courierIds", courierIds))))
+                .andExpect(status().isOk()).andReturn();
+        return objectMapper.readValue(result.getResponse().getContentAsString(), ManualDispatchDraft.class);
+    }
+
+    private ManualDispatchDraft saveManual(ManualDispatchDraft draft, List<ManualDispatchDraft.Collection> collections,
+            List<ManualDispatchDraft.Delivery> deliveries) throws Exception {
+        var result = mockMvc.perform(put("/api/admin/manual-dispatch-drafts/{id}", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "expectedVersion", draft.version(), "step", "COLLECTION", "couriers", draft.couriers(),
+                        "collections", collections, "deliveries", deliveries))))
+                .andExpect(status().isOk()).andReturn();
+        return objectMapper.readValue(result.getResponse().getContentAsString(), ManualDispatchDraft.class);
     }
 
     private void insertAccount(UUID id, String username, String displayName, String role) {

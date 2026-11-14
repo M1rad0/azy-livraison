@@ -430,7 +430,7 @@ public class CreateDispatchService {
                 Math.max(0, Math.round(raw.cumulativeDurationSeconds())));
     }
 
-    private List<SelectedCourierSnapshot> selectedCouriers(LocalDate serviceDate, List<UUID> courierIds) {
+    List<SelectedCourierSnapshot> selectedCouriers(LocalDate serviceDate, List<UUID> courierIds) {
         List<UUID> distinctIds = courierIds.stream().distinct().toList();
         if (distinctIds.isEmpty()) throw new DispatchInputException("Sélectionnez au moins un livreur.");
         if (distinctIds.size() != courierIds.size()) {
@@ -570,7 +570,7 @@ public class CreateDispatchService {
                 "SERVICE_START");
     }
 
-    private Location resolvedHub(Location override, ConfirmedLocation defaultHub) {
+    Location resolvedHub(Location override, ConfirmedLocation defaultHub) {
         if (override != null) {
             requireCoordinates(override, "Confirmez le point de ralliement sur la carte.");
             return namedHub(override);
