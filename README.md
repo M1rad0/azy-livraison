@@ -2,7 +2,7 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
-> **État du projet : workflow journalier multi-utilisateur persistant.** Les demandes, colis, livreurs, réglages, dispatchs, comptes rendus et clôtures sont historisés dans PostgreSQL. Le parcours opérationnel utilise exclusivement le scénario `VIA_HUB` : collecte, rendez-vous au siège, redistribution, puis livraison. Les anciens outils par fichiers et la comparaison direct/siège restent disponibles dans l'historique Git, mais ne constituent plus le parcours principal.
+> **État du projet : workflow journalier multi-utilisateur persistant.** Les demandes, colis, livreurs, réglages, dispatchs, comptes rendus et clôtures sont historisés dans PostgreSQL. Le dispatch opérationnel est manuel : affectation des récupérations, répartition des colis, ordre des passages et échanges à prévoir. Le ralliement reste un repère, sans passage imposé. Les anciens plans automatiques `VIA_HUB` restent consultables.
 
 ## Objectif
 
@@ -68,11 +68,13 @@ L'administrateur peut :
 - modifier les préréglages `MOTO` et `BICYCLE` ;
 - modifier le point central, les rayons et les prix des zones de livraison ;
 - régler la limite journalière, le poids par défaut, le siège par défaut, les durées de service, les tolérances horaires, le délai OR-Tools et le profil routier ;
-- sélectionner les livreurs actifs d'une journée, éventuellement remplacer le siège, puis générer automatiquement un dispatch avec tous les colis admis pour cette date.
+- sélectionner les livreurs actifs d'une journée, éventuellement remplacer le ralliement de référence, puis préparer un dispatch manuel avec tous les colis normaux en attente de cette date.
 
-Un dispatch public/opérationnel ne lance que la stratégie `VIA_HUB`. Tous les colis retenus passent par le point de ralliement : les livreurs partent de leurs lieux et heures respectifs, collectent les retraits qui leur sont affectés, attendent le dernier participant au siège, redistribuent les colis, puis livrent. Une seule action administrateur produit un résultat final historisé ; les recalculs internes bornés de l'optimiseur restent un détail d'implémentation.
+Le dispatch se prépare en trois étapes : **Récupérations**, **Livraisons**, puis **Vérification**. Les retraits situés aux mêmes coordonnées sont regroupés, tout en conservant les clients, demandes et colis d'origine. Une vue liste ou carte permet de consulter les points et les départs enregistrés des livreurs. Les fiches se déplacent vers les livreurs par glisser-déposer ; la recherche de livreur et les flèches permettent aussi de travailler au clavier ou sur mobile. Les regroupements géographiques sont uniquement une aide visuelle, sans affectation automatique.
 
-Un seul plan opérationnel peut être généré par date. Dès le début du calcul, cette date n'accepte plus de nouvelle demande ni d'annulation. Le dispatch conserve des snapshots des entrées et des règles, les livreurs sélectionnés, leurs rôles collecte/distribution, les arrêts, les transferts de colis, les heures estimées, les distances, les résultats non affectés et les métriques globales. `Idempotency-Key` protège contre les répétitions réseau ; un rejeu renvoie le plan existant en HTTP `200`, tandis qu'une création réelle renvoie `201`. Le temps OR-Tools est configurable de 1 à 1 200 secondes afin de conserver une marge avant la libération automatique d'un calcul interrompu depuis plus de trente minutes.
+Les colis sont initialement proposés à la livraison chez leur collecteur ; l'administrateur peut ensuite les déplacer individuellement et ordonner chaque tournée. Les différences collecteur/livreur produisent une liste d'échanges, sans inventer leur lieu, leur heure ou un trajet par le siège. Les poids et créneaux restent informatifs et ne bloquent pas les affectations. Aucune heure d'arrivée ou distance non calculée n'est présentée comme une estimation réelle.
+
+Un seul brouillon ou plan actif est autorisé par date. Le brouillon est enregistré dans PostgreSQL, avec sauvegarde automatique, version et snapshots des entrées. Sa création ferme les admissions normales et les annulations de colis de cette date ; les expresses restent indépendantes. L'abandon du brouillon rouvre les admissions. La validation exige un collecteur pour chaque retrait et un livreur pour chaque colis, sans doublon. Elle est atomique et idempotente et alimente les tables existantes pour les comptes rendus et rapports. Un plan manuel validé peut être rouvert dans l'éditeur tant qu'aucun résultat de livraison n'est renseigné ; l'ancienne version reste historisée.
 
 ### Compte rendu, clôture et rapports
 
@@ -109,7 +111,7 @@ Les statuts de colis et de demande sont des statuts techniques historiques ; l'i
 
 ### Limite de routage actuelle
 
-L'instance OSRM locale est configurée par défaut pour `250` points par matrice (`OSRM_MAX_TABLE_SIZE`). Le dispatch contrôle séparément :
+Le dispatch manuel n'appelle ni la matrice OSRM ni OR-Tools : cette limite ne bloque pas la préparation ou la validation. Pour les outils automatiques historiques uniquement, l'instance OSRM locale est configurée par défaut pour `250` points par matrice (`OSRM_MAX_TABLE_SIZE`). Ils contrôlent séparément :
 
 - collecte : départs des livreurs sélectionnés + retraits distincts + siège ;
 - distribution : siège + destinations des colis.
@@ -294,7 +296,7 @@ Le backend reste un monolithe modulaire Spring Boot :
 account/        comptes, rôles, profils clients, login et jetons
 administration/ réglages opérationnels, préréglages et profils livreurs
 delivery/       demandes persistées, colis, file et règles de capacité
-dispatch/       sélection, snapshots et résultats VIA_HUB persistés
+dispatch/       brouillons manuels, affectations et anciens résultats VIA_HUB persistés
 pricing/        paliers géographiques, devis et snapshots tarifaires
 planning/       modèle du plan et règles de validation
 geography/      fournisseurs de géocodage, cache et ambiguïtés
@@ -618,6 +620,21 @@ La file opérationnelle est strictement limitée à la date choisie. Les demande
 
 ### Administration et dispatch
 
+Le parcours courant utilise les endpoints suivants, réservés aux administrateurs :
+
+| Méthode | Route | Usage |
+|---|---|---|
+| `POST` | `/api/admin/manual-dispatch-drafts` | Préparer la file normale complète de la date ; exige `Idempotency-Key` |
+| `GET` | `/api/admin/manual-dispatch-drafts/active?date=` | Reprendre le brouillon actif, ou `204` |
+| `GET` | `/api/admin/manual-dispatch-drafts/{id}` | Relire les entrées et affectations enregistrées |
+| `PUT` | `/api/admin/manual-dispatch-drafts/{id}` | Enregistrer départs, étape et affectations avec `expectedVersion` |
+| `POST` | `/api/admin/manual-dispatch-drafts/{id}/finalize` | Valider toutes les affectations et publier le plan journalier |
+| `POST` | `/api/admin/manual-dispatch-drafts/{id}/cancel` | Abandonner le brouillon et rouvrir les admissions normales |
+| `GET` | `/api/admin/manual-dispatch-drafts/for-plan/{planId}` | Consulter le snapshot manuel d'un plan final |
+| `POST` | `/api/admin/manual-dispatch-drafts/from-plan/{planId}` | Rouvrir un plan manuel sans résultat renseigné |
+
+Les ordres du brouillon commencent à `0` et sont continus, séparément pour les récupérations et les livraisons de chaque livreur. Les entrées commerciales et les identités ne sont jamais modifiables via le layout. Une version périmée donne `409`. Les champs du résultat d'optimisation, métriques et rendez-vous sont absents pour un nouveau plan manuel ; le `strategy` exposé vaut `MANUAL`. Les routes historiques ci-dessous sont conservées pour compatibilité :
+
 | Méthode | Route | Usage |
 |---|---|---|
 | `GET`, `PUT` | `/api/admin/settings` | Lire ou modifier les réglages opérationnels |
@@ -693,6 +710,7 @@ Flyway applique automatiquement les migrations au démarrage, dans l'ordre :
 | `V8__create_delivery_pricing_zones.sql` | point central, zones tarifaires et snapshots de prix des colis |
 | `V9__create_daily_delivery_workflow.sql` | issues finales, reports liés, journées, clôtures, audit et snapshots clients |
 | `V10__record_actual_delivery_courier.sql` | livreur réellement intervenu et snapshot d'identité distinct de l'affectation planifiée |
+| `V20__create_manual_dispatch_drafts.sql` | brouillons manuels versionnés, reprise, identifiants d'idempotence et lien au plan final ; aucune donnée existante supprimée |
 
 Ne renommez et ne modifiez pas une migration déjà appliquée sur une base partagée : tout changement ultérieur doit utiliser une nouvelle version Flyway. Le passage de `V3` à `V4` attribue le rôle `ADMIN` aux comptes déjà présents afin de préserver l'accès au back-office.
 
@@ -915,7 +933,7 @@ La version multi-utilisateur est considérée conforme lorsque les scénarios su
 5. un dépassement journalier refuse toute la demande avec `DAILY_CAPACITY_EXCEEDED` et le nombre exact de colis en excès ;
 6. les modifications de réglages et de profils livreurs utilisent leur version afin d'éviter les écrasements concurrents ;
 7. un dispatch concurrent ne peut pas réserver deux fois la même journée ou le même colis ;
-8. le dispatch opérationnel utilise toujours `VIA_HUB` et tient compte des départs réels, des retraits, du siège et des capacités ;
+8. le dispatch manuel respecte les affectations et ordres explicites, conserve les départs journaliers et ne force aucun passage au siège ;
 9. tous les colis admis de la date entrent dans l'unique plan, tandis que les non-affectés restent traçables et finalisables ;
 10. un dispatch terminé peut être relu avec ses snapshots, ses arrêts, ses affectations et ses métriques ;
 11. l'expiration, le renouvellement et la révocation des jetons fonctionnent ;
@@ -923,7 +941,7 @@ La version multi-utilisateur est considérée conforme lorsque les scénarios su
 13. les reports ne bloquent aucune clôture ; leur reprogrammation différée crée un unique colis lié à la date choisie et consomme le quota de cette date ;
 14. les frais et montants à reverser ignorent l'indicateur Mobile Money et autorisent un solde négatif ;
 15. les rapports PDF/XLSX ne sont disponibles qu'après clôture et isolent correctement chaque compte client ;
-16. la limite de matrice refuse proprement un plan trop grand.
+16. les anciens calculs automatiques refusent proprement une matrice trop grande, sans imposer cette limite à l'éditeur manuel.
 
 Les anciens scénarios JSON/CSV, l'optimisation directe et la comparaison direct/siège restent couverts par leurs tests de non-régression.
 

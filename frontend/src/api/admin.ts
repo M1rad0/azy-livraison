@@ -306,7 +306,7 @@ export interface DispatchPlanSummary {
   archivedByAccountId?: string | null
   archiveReason?: string | null
   editable?: boolean
-  strategy: 'VIA_HUB'
+  strategy: 'VIA_HUB' | 'MANUAL'
   hub: ConfirmedLocation
   selectedPackageCount: number
   assignedPackageCount?: number

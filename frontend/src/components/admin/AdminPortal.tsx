@@ -36,7 +36,7 @@ type AdminTab = 'queue' | 'express' | 'dispatch' | 'day' | 'postponed' | 'financ
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
   { id: 'express', label: 'Express', detail: 'Traitement immédiat', icon: Zap },
-  { id: 'dispatch', label: 'Dispatch', detail: 'Via point de ralliement', icon: Sparkles },
+  { id: 'dispatch', label: 'Dispatch', detail: 'Affectations et tournées', icon: Sparkles },
   { id: 'day', label: 'Compte rendu', detail: 'Clôture et rapports', icon: ClipboardCheck },
   { id: 'postponed', label: 'Reportés', detail: 'Choisir une nouvelle date', icon: CalendarClock },
   { id: 'finance', label: 'Finances', detail: 'Versements et soldes', icon: WalletCards },
@@ -216,6 +216,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           couriers={couriers}
           settings={settings}
           history={currentHistory}
+          onRefresh={() => { void loadPending(); void loadDispatchDay() }}
           onDateChange={(date) => {
             if (date) setDispatchDate(date)
           }}

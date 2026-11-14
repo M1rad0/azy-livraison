@@ -88,6 +88,7 @@ function portalFetchMock(
       }))
     }
     if (input.startsWith('/api/admin/dispatch-plans')) return Promise.resolve(jsonResponse(dispatchHistory))
+    if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(new Response(null, { status: 204 }))
     if (input === '/api/admin/pricing-policies') return Promise.resolve(jsonResponse([
       pricingPolicy,
       { ...pricingPolicy, id: 2, requestKind: 'EXPRESS' },
@@ -123,7 +124,7 @@ describe('AdminPortal', () => {
     vi.unstubAllGlobals()
   })
 
-  it('présente la file métier puis le dispatch via siège', async () => {
+  it('présente la file métier puis le dispatch manuel', async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.startsWith('/api/admin/delivery-requests')) {
         return Promise.resolve(jsonResponse([requestFixture({ requestedDate: '2026-08-22' })]))
@@ -171,6 +172,7 @@ describe('AdminPortal', () => {
         }))
       }
       if (input.startsWith('/api/admin/dispatch-plans')) return Promise.resolve(jsonResponse([]))
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(new Response(null, { status: 204 }))
       if (input === '/api/admin/couriers') return Promise.resolve(jsonResponse([]))
       if (input === '/api/admin/vehicle-presets') return Promise.resolve(jsonResponse([]))
       if (input === '/api/admin/settings') {
@@ -208,7 +210,7 @@ describe('AdminPortal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Dispatch/ }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Préparer le dispatch' })).toBeInTheDocument())
-    expect(screen.getByText('Une seule stratégie · via siège')).toBeInTheDocument()
+    expect(screen.getAllByText('Affectations et tournées')).toHaveLength(2)
     expect(screen.queryByText(/stratégie directe/i)).not.toBeInTheDocument()
   })
 
@@ -287,7 +289,7 @@ describe('AdminPortal', () => {
 
     expect(await screen.findByText(/1 colis inclus selon leur ordre d’arrivée/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Sélection/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Dispatcher automatiquement 1 colis' })).toBeEnabled()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Organiser 1 colis' })).toBeEnabled())
   })
 
   it('permet de relancer la journée après un dispatch échoué', async () => {
@@ -317,7 +319,7 @@ describe('AdminPortal', () => {
     await screen.findByText('Colis à relancer')
     fireEvent.click(screen.getByRole('button', { name: 'Préparer la journée' }))
 
-    expect(await screen.findByRole('button', { name: 'Dispatcher automatiquement 1 colis' })).toBeEnabled()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Organiser 1 colis' })).toBeEnabled())
   })
 
   it('permet de modifier les rayons et prix dans un onglet dédié', async () => {

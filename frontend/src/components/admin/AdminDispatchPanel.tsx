@@ -15,7 +15,7 @@ import {
   Warehouse,
 } from 'lucide-react'
 import {
-  createDispatchPlan,
+  cancelDispatchPlan,
   getDispatchPlan,
   type AdminQueue,
   type Courier,
@@ -24,11 +24,13 @@ import {
   type DispatchPlanSummary,
   type OperationalSettings,
 } from '../../api/admin'
+import { createManualDraft, editManualPlan, getActiveManualDraft, getManualDraftForPlan, type ManualDispatchDraft } from '../../api/manualDispatch'
 import type { Location } from '../../api/csvImports'
 import type { CourierRoute, RouteStop } from '../../api/optimization'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { LocationPicker } from '../LocationPicker'
 import { AdminPlanControls } from './AdminPlanControls'
+import { ManualDispatchReview, ManualDispatchWorkspace } from './ManualDispatchWorkspace'
 import {
   asConfirmedLocation,
   dispatchStatusLabel,
@@ -49,11 +51,10 @@ interface AdminDispatchPanelProps {
   settings?: OperationalSettings
   history: DispatchPlanSummary[]
   busy: boolean
+  onRefresh?: () => void
   onDateChange: (date: string) => void
   onCreated: (plan: DispatchPlan) => void
 }
-
-const ROUTING_MATRIX_MAX_POINTS = 250
 
 export function collectionMatrixUsage(
   queue: AdminQueue | undefined,
@@ -217,6 +218,48 @@ export function DispatchResult({ plan, couriers }: { plan: DispatchPlan; courier
   )
 }
 
+function ManualPlanResult({ plan, accessToken, onEdited, onChanged }: {
+  plan: DispatchPlan
+  accessToken: string
+  onEdited: (draft: ManualDispatchDraft) => void
+  onChanged: (plan: DispatchPlan) => void
+}) {
+  const [snapshot, setSnapshot] = useState<ManualDispatchDraft>()
+  const [message, setMessage] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    setSnapshot(undefined); setMessage(undefined)
+    getManualDraftForPlan(plan.plan.id, accessToken, controller.signal).then(setSnapshot).catch((error) => {
+      if (!controller.signal.aborted) setMessage(errorMessage(error))
+    })
+    return () => controller.abort()
+  }, [plan.plan.id, accessToken])
+
+  async function edit() {
+    if (!window.confirm('Rouvrir ce plan ? Les colis reviendront en préparation jusqu’à sa prochaine validation.')) return
+    setBusy(true); setMessage(undefined)
+    try { onEdited(await editManualPlan(plan.plan.id, plan.plan.version ?? 0, accessToken)) }
+    catch (error) { setMessage(errorMessage(error)) }
+    finally { setBusy(false) }
+  }
+  async function cancel() {
+    if (!window.confirm('Annuler ce dispatch et remettre les colis en attente ?')) return
+    setBusy(true); setMessage(undefined)
+    try { onChanged(await cancelDispatchPlan(plan.plan.id, plan.plan.version ?? 0, 'Annulation du dispatch manuel', accessToken)) }
+    catch (error) { setMessage(errorMessage(error)) }
+    finally { setBusy(false) }
+  }
+  return <section className="admin-dispatch-result"><header><div><p className="admin-eyebrow">Plan manuel · {formatDate(plan.plan.serviceDate)}</p><h3>Répartition des récupérations et livraisons</h3></div>
+    <span className={`admin-chip admin-chip--${plan.plan.status.toLowerCase()}`}>{dispatchStatusLabel(plan.plan.status)}</span></header>
+    {message && <p role="alert" className="admin-callout admin-callout--error">{message}</p>}
+    {snapshot && <ManualDispatchReview draft={snapshot} />}
+    {!snapshot && !message && <p role="status">Chargement du plan…</p>}
+    {plan.plan.editable && <div className="admin-toolbar"><button type="button" className="admin-button" disabled={busy} onClick={() => void edit()}>Modifier les affectations</button>
+      <button type="button" className="admin-button admin-button--ghost" disabled={busy} onClick={() => void cancel()}>Annuler le dispatch</button></div>}
+  </section>
+}
+
 export function AdminDispatchPanel({
   accessToken,
   date,
@@ -225,6 +268,7 @@ export function AdminDispatchPanel({
   settings,
   history,
   busy,
+  onRefresh,
   onDateChange,
   onCreated,
 }: AdminDispatchPanelProps) {
@@ -244,6 +288,9 @@ export function AdminDispatchPanel({
   const [loadingPlanId, setLoadingPlanId] = useState<string>()
   const [message, setMessage] = useState<string>()
   const [visiblePlan, setVisiblePlan] = useState<DispatchPlan>()
+  const [draft, setDraft] = useState<ManualDispatchDraft>()
+  const [loadingDraft, setLoadingDraft] = useState(true)
+  const [workspaceOpen, setWorkspaceOpen] = useState(true)
 
   useEffect(() => {
     setCourierIds((current) => new Set([...current].filter((id) => activeCouriers.some((courier) => courier.id === id))))
@@ -252,7 +299,17 @@ export function AdminDispatchPanel({
   useEffect(() => {
     setVisiblePlan(undefined)
     setMessage(undefined)
-  }, [date])
+    setDraft(undefined)
+    setWorkspaceOpen(true)
+    setLoadingDraft(true)
+    const controller = new AbortController()
+    getActiveManualDraft(date, accessToken, controller.signal).then((active) => {
+      if (!controller.signal.aborted) setDraft(active)
+    }).catch((error) => {
+      if (!controller.signal.aborted) setMessage(errorMessage(error))
+    }).finally(() => { if (!controller.signal.aborted) setLoadingDraft(false) })
+    return () => controller.abort()
+  }, [date, accessToken])
 
   async function create() {
     if (busy || !currentQueue) {
@@ -268,20 +325,6 @@ export function AdminDispatchPanel({
       setMessage('Un plan existe déjà pour cette journée. Ouvrez-le depuis l’historique.')
       return
     }
-    if (pendingPackages.length >= ROUTING_MATRIX_MAX_POINTS) {
-      setMessage('La capacité de cette date dépasse la limite technique d’un plan unique. Corrigez la limite journalière avant de continuer.')
-      return
-    }
-    if (courierIds.size > ROUTING_MATRIX_MAX_POINTS - 2) {
-      setMessage(`Un dispatch peut contenir au maximum ${ROUTING_MATRIX_MAX_POINTS - 2} livreurs.`)
-      return
-    }
-    const { pickupCount, pointCount } = collectionMatrixUsage(currentQueue, courierIds.size)
-    if (pointCount > ROUTING_MATRIX_MAX_POINTS) {
-      const maximumCouriers = Math.max(0, ROUTING_MATRIX_MAX_POINTS - 1 - pickupCount)
-      setMessage(`Cette journée contient ${pickupCount} retraits. Sélectionnez au maximum ${maximumCouriers} livreur${maximumCouriers > 1 ? 's' : ''}, ou réduisez le nombre de retraits.`)
-      return
-    }
     if (overrideHub && !chosenHub) {
       setMessage('Confirmez le point de ralliement sur la carte.')
       return
@@ -294,13 +337,14 @@ export function AdminDispatchPanel({
     setCreating(true)
     setMessage(undefined)
     try {
-      const plan = await createDispatchPlan({
+      const nextDraft = await createManualDraft({
         serviceDate: date,
         courierIds: [...courierIds],
         ...(chosenHub ? { hubOverride: chosenHub } : {}),
       }, idempotencyKey(), accessToken)
-      setVisiblePlan(plan)
-      onCreated(plan)
+      setDraft(nextDraft)
+      setWorkspaceOpen(true)
+      setVisiblePlan(undefined)
     } catch (error) {
       setMessage(errorMessage(error))
     } finally {
@@ -320,13 +364,18 @@ export function AdminDispatchPanel({
     }
   }
 
+  if (draft && workspaceOpen) return <ManualDispatchWorkspace key={draft.id} accessToken={accessToken} draft={draft} onDraftChange={setDraft}
+    onFinalized={(plan) => { setDraft(undefined); setVisiblePlan(plan); onCreated(plan) }}
+    onClose={() => setWorkspaceOpen(false)}
+    onCancelled={() => { setDraft(undefined); onRefresh?.() }} />
+
   return (
     <section className="admin-panel" aria-labelledby="dispatch-title">
       <header className="admin-panel__heading">
         <div>
-          <p className="admin-eyebrow">Une seule stratégie · via siège</p>
+          <p className="admin-eyebrow">Affectations et tournées</p>
           <h2 id="dispatch-title">Préparer le dispatch</h2>
-          <p>Choisissez les livreurs et le point de ralliement. Tous les colis admissibles seront inclus automatiquement.</p>
+          <p>Choisissez les livreurs, puis affectez les récupérations et les livraisons. Tous les colis normaux en attente de cette date seront inclus.</p>
         </div>
         <div className="admin-toolbar">
           <label className="admin-date-field">
@@ -341,12 +390,14 @@ export function AdminDispatchPanel({
 
       {message && <div className="admin-callout admin-callout--error" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Dispatch impossible</strong><span>{message}</span></div></div>}
 
+      {draft && <div className="admin-callout"><div><strong>Un brouillon est enregistré pour cette date</strong><span>{draft.packages.length} colis · {draft.couriers.length} livreurs</span></div>
+        <button type="button" className="admin-button" onClick={() => setWorkspaceOpen(true)}>Reprendre le dispatch</button></div>}
+
       <div className="admin-dispatch-layout">
-        <div className="admin-dispatch-builder">
+        {!draft && <div className="admin-dispatch-builder">
           <section className="admin-builder-step">
             <header><span>1</span><div><strong>File automatique du {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00+03:00`))}</strong><small>{busy ? 'Chargement de la file…' : `${pendingPackages.length} colis inclus selon leur ordre d’arrivée`}</small></div></header>
             <div className="admin-location-summary"><Boxes aria-hidden="true" /><div><small>Périmètre du plan</small><strong>Toute la file admissible · {pendingPackages.length} colis</strong></div></div>
-            {pendingPackages.length >= ROUTING_MATRIX_MAX_POINTS && <p className="admin-settings-hint admin-settings-hint--warning"><TriangleAlert aria-hidden="true" />Le volume de la journée dépasse la capacité d’un plan unique.</p>}
             {hasActiveOrCompletedPlan && <p className="admin-settings-hint"><PackageCheck aria-hidden="true" />Le plan unique de cette date est déjà enregistré.</p>}
             {!hasActiveOrCompletedPlan && history.some((plan) => plan.status === 'FAILED') && <p className="admin-settings-hint admin-settings-hint--warning"><TriangleAlert aria-hidden="true" />Le dernier calcul a échoué. Vous pouvez relancer le dispatch.</p>}
           </section>
@@ -375,7 +426,7 @@ export function AdminDispatchPanel({
           </section>
 
           <section className="admin-builder-step">
-            <header><span>3</span><div><strong>Point de ralliement</strong><small>Tous les colis y passent avant leur livraison</small></div></header>
+            <header><span>3</span><div><strong>Point de ralliement de référence</strong><small>Repère pour les échanges, sans passage imposé</small></div></header>
             <div className="admin-segmented" role="group" aria-label="Choix du point de ralliement">
               <button className={!overrideHub ? 'is-active' : undefined} type="button" onClick={() => setOverrideHub(false)}><Warehouse aria-hidden="true" />Point par défaut</button>
               <button className={overrideHub ? 'is-active' : undefined} type="button" onClick={() => setOverrideHub(true)}><MapPin aria-hidden="true" />Changer pour ce dispatch</button>
@@ -385,7 +436,7 @@ export function AdminDispatchPanel({
                 accessToken={accessToken}
                 value={hub}
                 title="Point de ralliement du dispatch"
-                description="Choisissez le lieu où les livreurs se retrouvent pour redistribuer tous les colis."
+                description="Choisissez un repère pour cette journée. Les échanges seront indiqués sans imposer leur lieu."
                 onChange={setHub}
               />
             ) : settings?.defaultHub ? (
@@ -395,11 +446,11 @@ export function AdminDispatchPanel({
             )}
           </section>
 
-          <button className="admin-button admin-button--generate" type="button" onClick={() => void create()} disabled={creating || busy || !currentQueue || pendingPackages.length === 0 || pendingPackages.length >= ROUTING_MATRIX_MAX_POINTS || hasActiveOrCompletedPlan}>
+          <button className="admin-button admin-button--generate" type="button" onClick={() => void create()} disabled={creating || loadingDraft || busy || !currentQueue || pendingPackages.length === 0 || hasActiveOrCompletedPlan}>
             {creating ? <LoaderCircle className="admin-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-            {creating ? 'Calcul et enregistrement…' : `Dispatcher automatiquement ${pendingPackages.length} colis`}
+            {loadingDraft ? 'Recherche d’un brouillon…' : creating ? 'Préparation du brouillon…' : `Organiser ${pendingPackages.length} colis`}
           </button>
-        </div>
+        </div>}
 
         <aside className="admin-history">
           <div className="admin-subheading"><History aria-hidden="true" /><div><strong>Historique du {formatDate(date)}</strong><small>{history.length} plan{history.length > 1 ? 's' : ''} enregistré{history.length > 1 ? 's' : ''}</small></div></div>
@@ -417,7 +468,7 @@ export function AdminDispatchPanel({
         </aside>
       </div>
 
-      {visiblePlan && (
+      {visiblePlan && visiblePlan.plan.strategy === 'MANUAL' ? <ManualPlanResult plan={visiblePlan} accessToken={accessToken} onEdited={(nextDraft) => { setDraft(nextDraft); setWorkspaceOpen(true); setVisiblePlan(undefined); onRefresh?.() }} onChanged={(plan) => { setVisiblePlan(plan); onCreated(plan) }} /> : visiblePlan && (
         <>
           <DispatchResult plan={visiblePlan} couriers={couriers} />
           <AdminPlanControls

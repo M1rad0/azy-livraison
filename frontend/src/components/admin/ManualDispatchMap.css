@@ -1,0 +1,8 @@
+.manual-dispatch-map { min-width: 0; isolation: isolate; }
+.manual-dispatch-map__canvas { height: clamp(22rem, 60vh, 38rem); width: 100%; z-index: 0; border-radius: 14px; font: inherit; }
+.manual-dispatch-map > p { margin: .65rem 0 0; font-size: .75rem; }
+.manual-dispatch-map__popup { display: grid; gap: .6rem; max-height: min(40vh, 24rem); overflow: auto; padding: .2rem; }
+.manual-dispatch-map__popup button { display: grid; gap: .3rem; border: 1px solid #dfe5eb; padding: .8rem; border-radius: 10px; background: white; text-align: left; color: #102f46; cursor: grab; font: inherit; }
+.manual-dispatch-map__popup button:hover, .manual-dispatch-map__popup button.is-selected { background: #fff7f0; border-color: #e46824; }
+.manual-dispatch-map__popup small { color: #637585; font-size: .75rem; overflow-wrap: anywhere; }
+@media (max-width: 650px) { .manual-dispatch-map__canvas { height: 22rem; } }
