@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
-import { ArrowDown, ArrowRightLeft, ArrowUp, Check, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, Undo2, WandSparkles, X } from 'lucide-react'
+import { ArrowDown, ArrowRightLeft, ArrowUp, Check, Clock3, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, Undo2, WandSparkles, X } from 'lucide-react'
 import type { DispatchPlan } from '../../api/admin'
 import { cancelManualDraft, finalizeManualDraft, getActiveManualDraft, saveManualDraft, type ManualDispatchDraft, type ManualDispatchStep } from '../../api/manualDispatch'
 import { LocationPicker } from '../LocationPicker'
@@ -265,10 +265,11 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
     {message && <div className="admin-callout admin-callout--error" role="alert"><span>{message}</span>{conflict && <button type="button" className="admin-button admin-button--ghost" onClick={() => void reload()}>Recharger le brouillon</button>}</div>}
     <details className="manual-departures"><summary>Départs des livreurs <small>Ralliement de référence : {locationLabel(working.hub)}</small></summary>
       <fieldset disabled={!editable}>{working.couriers.map((courier) => <div key={courier.courierId}><h3>{courier.name}</h3>
-        <label>Heure de départ<input type="time" value={courier.departureAt.slice(11, 16)} onChange={(event) => {
+        <label><span>Heure de départ</span><span className="manual-departure-time"><Clock3 aria-hidden="true" />
+          <input type="time" step={60} aria-label={`Heure de départ de ${courier.name}`} value={courier.departureAt.slice(11, 16)} onChange={(event) => {
           if (event.target.value) change({ ...working, couriers: working.couriers.map((c) => c.courierId === courier.courierId
             ? { ...c, departureAt: `${working.serviceDate}T${event.target.value}:00+03:00` } : c) })
-        }} /></label>
+        }} /></span></label>
         <LocationPicker accessToken={accessToken} value={courier.departure} title={`Départ de ${courier.name}`} description="Point de départ pour cette journée."
           onChange={(location) => {
             const confirmed = asConfirmedLocation(location)

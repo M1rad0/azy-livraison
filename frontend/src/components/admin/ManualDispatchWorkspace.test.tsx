@@ -39,6 +39,22 @@ describe('espace de dispatch manuel', () => {
     expect(screen.getByText('Carte de test')).toBeInTheDocument()
   })
 
+  it('conserve la saisie horaire native et enregistre uniquement le départ du livreur concerné', async () => {
+    const draft = draftFixture()
+    render(<ManualDispatchWorkspace accessToken="token" draft={draft} onDraftChange={vi.fn()} onFinalized={vi.fn()} onCancelled={vi.fn()} />)
+    const input = screen.getByLabelText('Heure de départ de Baptiste')
+    expect(input).toHaveAttribute('type', 'time')
+    expect(input).toHaveAttribute('step', '60')
+    expect(input.closest('.manual-departure-time')).not.toBeNull()
+    fireEvent.change(input, { target: { value: '07:45' } })
+    expect(screen.getByLabelText('Heure de départ de Jean')).toHaveValue('06:00')
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(saveManualDraft).toHaveBeenCalledWith(draft.id, draft.version, {
+      step: draft.step, collections: draft.collections, deliveries: draft.deliveries,
+      couriers: [{ ...draft.couriers[0], departureAt: '2026-11-14T07:45:00+03:00' }, draft.couriers[1]],
+    }, 'token'))
+  })
+
   it('affecte par glisser-déposer et initialise les colis chez leur collecteur', async () => {
     const { container } = render(<ManualDispatchWorkspace accessToken="token" draft={draftFixture()} onDraftChange={vi.fn()} onFinalized={vi.fn()} onCancelled={vi.fn()} />)
     const lanes = container.querySelectorAll('.manual-lane')
@@ -166,6 +182,7 @@ describe('espace de dispatch manuel', () => {
     fireEvent.click(button); fireEvent.click(button)
     expect(automaticallyAssignPhase).toHaveBeenCalledTimes(1)
     expect(button).toBeDisabled()
+    expect(screen.getByLabelText('Heure de départ de Baptiste')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Répartir les colis' })).toBeDisabled()
     const signal = vi.mocked(automaticallyAssignPhase).mock.calls[0][3]!
     unmount()

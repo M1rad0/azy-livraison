@@ -18,6 +18,18 @@
 .manual-departures fieldset, .manual-inventory > div { margin: 0; border: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1rem; padding: 0 1rem 1rem; min-width: 0; }
 .manual-departures fieldset > div, .manual-inventory section { padding: .9rem; border: 1px solid #e3e8ee; border-radius: 12px; min-width: 0; display: grid; gap: .75rem; align-content: start; }
 .manual-departures label { display: grid; gap: .4rem; font-size: .8rem; }
+.manual-departure-time { position: relative; display: block; min-width: 0; }
+.manual-departure-time > svg { position: absolute; top: 50%; left: .85rem; width: 1rem; height: 1rem; color: #748692; transform: translateY(-50%); pointer-events: none; }
+.manual-departures .manual-departure-time > input {
+  display: block; width: 100%; min-width: 0; min-height: 2.8rem; box-sizing: border-box;
+  padding: .7rem .85rem .7rem 2.45rem; border: 1px solid #dfe5eb; border-radius: .78rem;
+  color: #102f46; background: #f7f9fb; font-size: .83rem; font-weight: 550; font-variant-numeric: tabular-nums;
+  outline: none; color-scheme: light; transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+.manual-departures .manual-departure-time > input:hover:not(:disabled) { border-color: #b8c7d3; }
+.manual-departures .manual-departure-time:focus-within > input { background: white; border-color: var(--admin-orange, #f45b0b); box-shadow: 0 0 0 4px #f45b0b1f; }
+.manual-departure-time:focus-within > svg { color: var(--admin-orange, #f45b0b); }
+.manual-departures .manual-departure-time > input:disabled { color: #7d8992; background: #edf1f4; cursor: not-allowed; }
 .manual-board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; margin: 0; padding: 0; border: 0; min-width: 0; align-items: start; }
 .manual-pool, .manual-lanes { min-width: 0; border: 1px solid #e0e6ec; border-radius: 14px; background: white; }
 .manual-pool > header, .manual-lanes > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .7rem; padding: 1rem; border-bottom: 1px solid #e4e9ee; }
