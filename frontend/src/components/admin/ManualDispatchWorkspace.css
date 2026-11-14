@@ -67,18 +67,25 @@
 .manual-review__couriers li :is(strong, span, small) { display: block; margin-bottom: .2rem; }
 .manual-review__couriers li :is(span, small) { color: #647586; font-size: .75rem; }
 .manual-review__couriers h4 + p { margin-top: .6rem; font-size: .78rem; }
-.manual-workspace__footer { position: sticky; bottom: .5rem; z-index: 8; padding: .9rem; border: 1px solid #e0e6ec; border-radius: 14px; background: #fffffff5; backdrop-filter: blur(10px); }
+.manual-workspace > .manual-workspace__footer {
+  position: sticky; bottom: .5rem; z-index: 8;
+  display: flex; flex-direction: row; align-items: center; justify-content: space-between;
+  width: 100%; min-height: 5.5rem; margin: 0; padding: 1.1rem 1.5rem;
+  border: 1px solid #e0e6ec; border-radius: 14px; background: #fffffff5; backdrop-filter: blur(10px);
+  letter-spacing: normal; text-transform: none; font-size: .83rem; font-weight: inherit;
+}
+.manual-workspace__footer > .admin-toolbar { align-items: center; }
+.manual-workspace__footer .admin-button { align-self: center; margin: 0; min-height: 2.75rem; font-size: .8rem; line-height: 1.25; font-weight: 650; letter-spacing: normal; }
 @media (max-width: 1000px) { .manual-board { grid-template-columns: minmax(0, 1fr); } .manual-lanes__body { max-height: none; overflow: visible; } }
 @media (max-width: 650px) {
   .manual-workspace__header { align-items: stretch; flex-direction: column; }
   .manual-workspace__header .admin-toolbar { justify-content: flex-start; gap: .6rem; }
   .manual-workspace__header .admin-toolbar > small { width: 100%; }
-  .manual-workspace__footer { flex-wrap: nowrap; gap: .6rem; }
+  .manual-workspace > .manual-workspace__footer { flex-direction: row; flex-wrap: nowrap; gap: .75rem; bottom: 0; min-height: 0; padding: 1rem; }
   .manual-workspace__footer > button { flex: 0 0 2.8rem; padding: .6rem; }
   .manual-workspace__footer > button > span { display: none; }
-  .manual-workspace__footer { bottom: 0; }
-  .manual-workspace__footer .admin-toolbar { display: flex; flex: 1; flex-wrap: nowrap; }
-  .manual-workspace__footer .admin-toolbar button { flex: 1; }
+  .manual-workspace__footer .admin-toolbar { display: flex; flex: 1; min-width: 0; flex-wrap: nowrap; }
+  .manual-workspace__footer .admin-toolbar button { flex: 1; min-width: 0; }
   .manual-steps button { padding: .65rem .3rem; gap: .3rem; font-size: .75rem; flex-direction: column; }
   .manual-departures summary small { display: block; margin: .4rem 0 0; }
 }

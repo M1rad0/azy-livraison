@@ -31,6 +31,7 @@ import { formatOneHourWindow } from '../../deliveryWindows'
 import { LocationPicker } from '../LocationPicker'
 import { AdminPlanControls } from './AdminPlanControls'
 import { ManualDispatchReview, ManualDispatchWorkspace } from './ManualDispatchWorkspace'
+import { dispatchPlaceText } from './manualDispatchPresentation'
 import {
   asConfirmedLocation,
   dispatchStatusLabel,
@@ -440,7 +441,7 @@ export function AdminDispatchPanel({
                 onChange={setHub}
               />
             ) : settings?.defaultHub ? (
-              <div className="admin-location-summary"><Warehouse aria-hidden="true" /><div><small>Siège utilisé</small><strong>{locationLabel(settings.defaultHub)}</strong></div></div>
+              <div className="admin-location-summary"><Warehouse aria-hidden="true" /><div><small>Ralliement de référence</small><strong>{dispatchPlaceText(settings.defaultHub)}</strong></div></div>
             ) : (
               <div className="admin-callout admin-callout--warning"><TriangleAlert aria-hidden="true" /><div><strong>Aucun point par défaut</strong><span>Choisissez un point pour ce dispatch ou configurez-le dans Paramètres.</span></div></div>
             )}

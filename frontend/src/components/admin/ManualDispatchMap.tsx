@@ -2,7 +2,8 @@ import { useEffect, useMemo } from 'react'
 import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import { latLngBounds, type LatLngTuple } from 'leaflet'
 import type { ManualDispatchDraft } from '../../api/manualDispatch'
-import { locationLabel, vehicleLabel } from './adminHelpers'
+import { vehicleLabel } from './adminHelpers'
+import { dispatchPlace, dispatchPlaceText as locationLabel } from './manualDispatchPresentation'
 import { manualDispatchCourierColor, validPosition } from './manualDispatchGeography'
 import 'leaflet/dist/leaflet.css'
 import './ManualDispatchMap.css'
@@ -34,15 +35,17 @@ export function ManualDispatchMap({ draft, phase, selectedId, onSelect }: {
 }) {
   const names = new Map(draft.couriers.map((c) => [c.courierId, c.name]))
   const points = phase === 'COLLECTION'
-    ? draft.pickups.map((p) => ({ id: p.id, location: p.location, title: locationLabel(p.location),
-      courierId: draft.collections.find((c) => c.pickupId === p.id)?.courierId,
-      details: p.packageIds.flatMap((id) => {
-        const pkg = draft.packages.find((item) => item.packageId === id)
-        return pkg ? [`${pkg.serviceClientName} · ${pkg.recipientName} — ${locationLabel(pkg.destination)}`] : []
-      }) }))
-    : draft.packages.map((p) => ({ id: p.packageId, location: p.destination, title: p.recipientName,
+    ? draft.pickups.map((p) => {
+      const place = dispatchPlace(p.location)
+      const sellers = [...new Set(draft.packages.filter((pkg) => p.packageIds.includes(pkg.packageId)).map((pkg) => pkg.serviceClientName))]
+      return { id: p.id, location: p.location, title: place.title, address: place.address,
+        courierId: draft.collections.find((c) => c.pickupId === p.id)?.courierId,
+        details: [sellers.join(', '), `${p.packageIds.length} colis`].filter(Boolean) }
+    })
+    : draft.packages.map((p) => ({ id: p.packageId, location: p.destination, title: dispatchPlace(p.destination).title,
+      address: dispatchPlace(p.destination).address,
       courierId: draft.deliveries.find((d) => d.packageId === p.packageId)?.courierId,
-      details: [locationLabel(p.destination), p.serviceClientName, p.contact, p.desiredDeliveryTime ? `Créneau : ${p.desiredDeliveryTime.slice(0, 5)}` : ''].filter(Boolean) }))
+      details: [p.recipientName, p.serviceClientName, p.contact, p.desiredDeliveryTime ? `Créneau : ${p.desiredDeliveryTime.slice(0, 5)}` : ''].filter(Boolean) }))
   // Colocated packages remain independently selectable inside a shared popup.
   const groups = new Map<string, typeof points>()
   for (const point of points) {
@@ -77,14 +80,16 @@ export function ManualDispatchMap({ draft, phase, selectedId, onSelect }: {
             radius={group.some((p) => p.id === selectedId) ? 12 : 9}
             pathOptions={{ color: group.some((p) => p.id === selectedId) ? '#102f46' : '#fff', fillColor: color, fillOpacity: 0.95, weight: 3 }}
             eventHandlers={{ click: () => onSelect(group[0].id) }}>
-            <Tooltip direction="top"><strong>{group[0].title}</strong><br />{group.length > 1 ? `${group.length} colis à cet endroit` : group[0].details.slice(0, 2).join(' · ')}<br />{group[0].courierId ? names.get(group[0].courierId) : 'Non affecté'}</Tooltip>
+            <Tooltip direction="top"><strong>{group[0].title}</strong>{group[0].address && <><br />{group[0].address}</>}<br />{group.length > 1 ? `${group.length} ${phase === 'COLLECTION' ? 'points' : 'colis'} à cet endroit` : group[0].details.slice(0, 2).join(' · ')}
+              {phase === 'DELIVERY' && <><br />{group[0].courierId ? names.get(group[0].courierId) : 'Non affecté'}</>}</Tooltip>
             <Popup minWidth={220} maxWidth={320}>
               <div className="manual-dispatch-map__popup">
                 {group.map((p) => <button type="button" key={p.id} draggable onDragStart={(event) => {
                   event.dataTransfer.setData('text/plain', `${phase === 'COLLECTION' ? 'pickup:' : 'package:'}${p.id}`)
                   event.dataTransfer.effectAllowed = 'move'
                 }} onClick={() => onSelect(p.id)} className={p.id === selectedId ? 'is-selected' : undefined}>
-                  <strong>{p.title}</strong><span>{p.courierId ? names.get(p.courierId) : 'Non affecté'}</span>
+                  <strong>{p.title}</strong>{p.address && <span>{p.address}</span>}
+                  {phase === 'DELIVERY' && <span>{p.courierId ? names.get(p.courierId) : 'Non affecté'}</span>}
                   {p.details.map((detail, i) => <small key={i}>{detail}</small>)}
                 </button>)}
               </div>

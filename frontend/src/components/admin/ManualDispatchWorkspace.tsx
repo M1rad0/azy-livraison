@@ -5,7 +5,8 @@ import { cancelManualDraft, finalizeManualDraft, getActiveManualDraft, saveManua
 import { LocationPicker } from '../LocationPicker'
 import { CourierCombobox } from './CourierCombobox'
 import { ManualDispatchMap } from './ManualDispatchMap'
-import { asConfirmedLocation, errorMessage, formatAriary, formatDate, locationLabel, vehicleLabel } from './adminHelpers'
+import { asConfirmedLocation, errorMessage, formatAriary, formatDate, vehicleLabel } from './adminHelpers'
+import { dispatchPlace, dispatchPlaceText as locationLabel } from './manualDispatchPresentation'
 import { assignmentIds, assignPoint, changeManualStep, manualTransfers, packageCollector } from './manualDispatchLayout'
 import { groupByGeography, manualDispatchCourierColor } from './manualDispatchGeography'
 import './ManualDispatchWorkspace.css'
@@ -31,7 +32,8 @@ export function ManualDispatchReview({ draft }: { draft: ManualDispatchDraft }) 
         {collections.length ? <ol>{collections.map((id) => {
           const pickup = draft.pickups.find((p) => p.id === id)!
           const clients = [...new Set(draft.packages.filter((p) => pickup.packageIds.includes(p.packageId)).map((p) => p.serviceClientName))]
-          return <li key={id}><strong>{locationLabel(pickup.location)}</strong><span>{pickup.packageIds.length} colis · {clients.join(', ')}</span></li>
+          const place = dispatchPlace(pickup.location)
+          return <li key={id}><strong>{place.title}</strong>{place.address && <span>{place.address}</span>}<span>{pickup.packageIds.length} colis · {clients.join(', ')}</span></li>
         })}</ol> : <p className="admin-muted">Aucune récupération</p>}
         <h4>Livraisons · {deliveries.length}</h4>
         {deliveries.length ? <ol>{deliveries.map((id) => {
@@ -171,25 +173,31 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
     const pkg = phase === 'DELIVERY' ? working.packages.find((p) => p.packageId === id) : undefined
     if (!pickup && !pkg) return null
     const packages = pickup ? working.packages.filter((p) => pickup.packageIds.includes(p.packageId)) : [pkg!]
-    const title = pickup ? locationLabel(pickup.location) : pkg!.recipientName
+    const place = dispatchPlace(pickup?.location ?? pkg!.destination)
+    const title = pickup ? place.title : pkg!.recipientName
+    const clients = [...new Set(packages.map((p) => p.serviceClientName))]
+    const mapPickupSummary = !!pickup && view === 'map' && !lane
+    const showDetails = expanded && !mapPickupSummary
     const assigned = pickup ? working.collections.find((c) => c.pickupId === id)?.courierId : working.deliveries.find((d) => d.packageId === id)?.courierId
     const ids = lane ? assignmentIds(working, phase, lane) : []
     const index = ids.indexOf(id)
     const collector = pkg ? working.couriers.find((c) => c.courierId === packageCollector(working, id)) : undefined
-    return <article key={id} className={`manual-card${expanded ? ' is-selected' : ''}`} draggable={editable}
-      title={packages.map((p) => `${p.serviceClientName} · ${p.recipientName} · ${locationLabel(p.destination)}`).join('\n')}
+    return <article key={id} className={`manual-card${selected === id ? ' is-selected' : ''}`} draggable={editable}
+      title={pickup ? `${locationLabel(pickup.location)} · ${clients.join(', ')} · ${packages.length} colis`
+        : `${pkg!.recipientName} · ${pkg!.serviceClientName} · ${locationLabel(pkg!.destination)}`}
       onDragStart={(event) => {
         event.dataTransfer.setData('text/plain', `${phase === 'COLLECTION' ? 'pickup:' : 'package:'}${id}`)
         event.dataTransfer.effectAllowed = 'move'; setSelected(id)
       }} onDrop={lane ? (event) => drop(event, lane, id) : undefined}
       onDragOver={lane ? (event) => { event.preventDefault(); event.stopPropagation() } : undefined}>
-      <button type="button" className="manual-card__main" onClick={() => setSelected(expanded ? undefined : id)} aria-expanded={expanded}>
+      <button type="button" className="manual-card__main" onClick={() => setSelected(mapPickupSummary ? id : expanded ? undefined : id)} aria-expanded={showDetails}>
         {lane && <span className="manual-order">{index + 1}</span>}
-        <span><strong>{title}</strong><small>{pickup ? `${packages.length} colis · ${[...new Set(packages.map((p) => p.serviceClientName))].join(', ')}` : locationLabel(pkg!.destination)}</small>
+        <span><strong>{title}</strong>{!pickup && <small>{place.title}</small>}{place.address && <small>{place.address}</small>}
+          <small>{pickup ? `${packages.length} colis · ${clients.join(', ')}` : pkg!.serviceClientName}</small>
           {collector && <small>Récupération : {collector.name}</small>}</span><GripVertical aria-hidden="true" />
       </button>
-      {expanded && <div className="manual-card__details">{packages.map((p) => <div key={p.packageId}>
-        <strong>{p.recipientName}</strong><span>{p.serviceClientName} · {locationLabel(p.destination)}</span>
+      {showDetails && <div className="manual-card__details">{packages.map((p) => <div key={p.packageId}>
+        <strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span>
         <small>{p.contact} · {p.effectiveWeightKg} kg{p.desiredDeliveryTime ? ` · ${p.desiredDeliveryTime.slice(0, 5)}` : ''}</small>
         <small>À récupérer : {formatAriary(p.amountToCollectAriary)}</small>
       </div>)}</div>}
@@ -235,7 +243,7 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
       <div>{working.couriers.map((courier) => {
         const items = working.packages.filter((p) => packageCollector(working, p.packageId) === courier.courierId)
         return <section key={courier.courierId}><h3>{courier.name} <small>{items.length} colis</small></h3>
-          {items.length ? <ul>{items.map((p) => <li key={p.packageId}><strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span></li>)}</ul> : <p className="admin-muted">Aucun colis récupéré</p>}</section>
+          {items.length ? <ul>{items.map((p) => <li key={p.packageId}><strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span><small>{p.serviceClientName}</small></li>)}</ul> : <p className="admin-muted">Aucun colis récupéré</p>}</section>
       })}</div>
     </details>}
     {working.step === 'REVIEW' ? <ManualDispatchReview draft={working} /> : <fieldset disabled={!editable} className="manual-board">
