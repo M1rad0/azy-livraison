@@ -1,0 +1,36 @@
+.admin-client-payouts {
+  min-width: 0;
+  padding: 1rem 0 0;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-client-payouts > header h3 {
+  margin: 0;
+  font-size: .85rem;
+}
+
+.admin-client-payouts > header p {
+  margin: .35rem 0 0;
+  color: var(--admin-ink-soft);
+  font-size: .7rem;
+  line-height: 1.5;
+}
+
+.admin-client-payouts .client-priority-list > article {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-client-payouts .client-priority-actions {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.admin-client-payouts > footer {
+  justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .admin-client-payouts .client-priority-list > article {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -84,7 +84,7 @@ public class ClientProfileService {
             long expectedVersion,
             List<UpdateClientPayoutDestinationsRequest.Item> requestedItems) {
         Account account = clientAccount(username);
-        List<ClientPayoutDestination> destinations = normalizePayoutDestinations(requestedItems);
+        List<ClientPayoutDestination> destinations = ClientPayoutDestinationNormalizer.normalize(requestedItems);
         if (!clientProfileRepository.bumpVersion(account.id(), expectedVersion)) {
             throw new ClientProfileVersionConflictException();
         }
@@ -142,32 +142,6 @@ public class ClientProfileService {
             }
             return new ClientContactNumber(
                     id, trimToNull(item.label()), number, item.priority(), item.active());
-        }).toList();
-    }
-
-    private List<ClientPayoutDestination> normalizePayoutDestinations(
-            List<UpdateClientPayoutDestinationsRequest.Item> requestedItems) {
-        requireOrderedPriorities(requestedItems.stream()
-                .map(UpdateClientPayoutDestinationsRequest.Item::priority).toList());
-        Set<UUID> ids = new HashSet<>();
-        Set<String> destinations = new HashSet<>();
-        return requestedItems.stream().map(item -> {
-            UUID id = item.id() == null ? UUID.randomUUID() : item.id();
-            if (!ids.add(id)) {
-                throw new InvalidClientProfileException("Une destination de versement est présente plusieurs fois.");
-            }
-            String identity = item.operator().trim().toLowerCase() + "\u0000" + item.number().trim();
-            if (!destinations.add(identity)) {
-                throw new InvalidClientProfileException(
-                        "Deux destinations de versement utilisent le même opérateur et le même numéro.");
-            }
-            return new ClientPayoutDestination(
-                    id,
-                    item.operator().trim(),
-                    item.accountHolder().trim(),
-                    item.number().trim(),
-                    item.priority(),
-                    item.active());
         }).toList();
     }
 

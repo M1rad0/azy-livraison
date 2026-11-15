@@ -8,8 +8,10 @@ import java.util.UUID;
 import com.azylivraison.account.domain.Account;
 import com.azylivraison.account.domain.AccountRole;
 import com.azylivraison.account.domain.ClientProfile;
+import com.azylivraison.account.domain.ClientPayoutDestination;
 import com.azylivraison.account.repository.AccountRepository;
 import com.azylivraison.account.repository.ClientProfileRepository;
+import com.azylivraison.account.service.ClientPayoutDestinationNormalizer;
 import com.azylivraison.administration.api.AdminClientRequest;
 import com.azylivraison.administration.api.AdminClientResponse;
 
@@ -41,6 +43,7 @@ public class AdminClientService {
 
     @Transactional
     public CreationResult create(AdminClientRequest request) {
+        List<ClientPayoutDestination> destinations = normalizePayoutDestinations(request);
         String temporaryPassword = normalizePassword(request.temporaryPassword());
         Account account = new Account(UUID.randomUUID(), request.username().trim().toLowerCase(Locale.ROOT),
                 passwordEncoder.encode(temporaryPassword), true, AccountRole.CLIENT,
@@ -51,6 +54,9 @@ public class AdminClientService {
             profiles.createPrimaryContact(account.id(), account.phone());
             if (Boolean.TRUE.equals(request.expressDeliveryEnabled())) {
                 profiles.updateExpressDeliveryPermission(account.id(), true, 0);
+            }
+            if (destinations != null) {
+                profiles.replacePayoutDestinations(account.id(), destinations);
             }
         } catch (DuplicateKeyException exception) {
             throw new AdministrationConflictException("CLIENT_USERNAME_EXISTS",
@@ -63,6 +69,7 @@ public class AdminClientService {
     public AdminClientResponse update(UUID accountId, AdminClientRequest request) {
         Account current = client(accountId);
         ClientProfile profile = profile(accountId);
+        List<ClientPayoutDestination> destinations = normalizePayoutDestinations(request);
         long expectedVersion = request.version() == null ? profile.version() : request.version();
         accounts.updateClient(accountId, request.displayName().trim(), request.phone().trim(),
                 !Boolean.FALSE.equals(request.enabled()));
@@ -73,6 +80,9 @@ public class AdminClientService {
         }
         if (!current.phone().equals(request.phone().trim())) {
             profiles.updatePrimaryContact(accountId, request.phone().trim());
+        }
+        if (destinations != null) {
+            profiles.replacePayoutDestinations(accountId, destinations);
         }
         return response(accounts.findById(accountId).orElseThrow());
     }
@@ -102,6 +112,11 @@ public class AdminClientService {
 
     private String normalizePassword(String requested) {
         return requested == null || requested.isBlank() ? generatePassword() : requested;
+    }
+
+    private List<ClientPayoutDestination> normalizePayoutDestinations(AdminClientRequest request) {
+        return request.payoutDestinations() == null ? null
+                : ClientPayoutDestinationNormalizer.normalize(request.payoutDestinations());
     }
 
     private String generatePassword() {

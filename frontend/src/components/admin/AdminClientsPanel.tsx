@@ -12,7 +12,9 @@ import {
 } from '../../api/admin'
 import type { DeliveryRequestRecord } from '../../api/client'
 import { ClientDeliveryRequestForm } from '../ClientDeliveryRequestForm'
+import { ClientPayoutDestinationsEditor, payoutDestinationDrafts, type PayoutDestinationDraft } from '../ClientPayoutDestinationsEditor'
 import { errorMessage } from './adminHelpers'
+import './AdminClientsPanel.css'
 
 interface ClientDraft {
   username: string
@@ -35,6 +37,7 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft)
+  const [payouts, setPayouts] = useState<PayoutDestinationDraft[]>([])
   const [editing, setEditing] = useState<AdminClient>()
   const [clientDialogOpen, setClientDialogOpen] = useState(false)
   const [deliveryClient, setDeliveryClient] = useState<AdminClient>()
@@ -66,6 +69,7 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
   function closeClientDialog() {
     setEditing(undefined)
     setDraft(emptyDraft)
+    setPayouts([])
     setTemporaryPassword(undefined)
     setMessage(undefined)
     setClientDialogOpen(false)
@@ -93,6 +97,7 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
   function openCreate() {
     setEditing(undefined)
     setDraft(emptyDraft)
+    setPayouts([])
     setTemporaryPassword(undefined)
     setMessage(undefined)
     setClientDialogOpen(true)
@@ -104,6 +109,7 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
       username: client.username, displayName: client.displayName, phone: client.phone,
       enabled: client.enabled, expressDeliveryEnabled: client.expressDeliveryEnabled,
     })
+    setPayouts(payoutDestinationDrafts(client.payoutDestinations))
     setTemporaryPassword(undefined)
     setMessage(undefined)
     setClientDialogOpen(true)
@@ -114,18 +120,33 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
       setMessage('Identifiant, nom et téléphone sont obligatoires.')
       return
     }
+    if (payouts.some((item) => !item.operator.trim() || !item.accountHolder.trim() || !item.number.trim())) {
+      setMessage('Indiquez l’opérateur, le titulaire et le numéro de chaque versement.')
+      return
+    }
+    const destinations = payouts.map(({ key: _key, ...item }, index) => ({
+      ...item, operator: item.operator.trim(), accountHolder: item.accountHolder.trim(),
+      number: item.number.trim(), priority: index + 1,
+    }))
+    const identities = destinations.map((item) => `${item.operator.toLocaleLowerCase('fr')}\u0000${item.number.replace(/\s+/g, '')}`)
+    if (new Set(identities).size !== identities.length) {
+      setMessage('Deux numéros de versement utilisent le même opérateur et le même numéro.')
+      return
+    }
     setSaving(true)
     setMessage(undefined)
     try {
       if (editing) {
-        const saved = await updateAdminClient(editing.accountId, { ...draft, version: editing.version }, accessToken)
+        const saved = await updateAdminClient(editing.accountId, { ...draft, payoutDestinations: destinations, version: editing.version }, accessToken)
         setClients((current) => current.map((client) => client.accountId === saved.accountId ? saved : client))
         setEditing(saved)
+        setPayouts(payoutDestinationDrafts(saved.payoutDestinations))
         setMessage('Le compte client est à jour.')
       } else {
-        const created = await createAdminClient(draft, accessToken)
+        const created = await createAdminClient({ ...draft, payoutDestinations: destinations }, accessToken)
         setClients((current) => [...current, created.client].sort((a, b) => a.displayName.localeCompare(b.displayName, 'fr')))
         setEditing(created.client)
+        setPayouts(payoutDestinationDrafts(created.client.payoutDestinations))
         setTemporaryPassword(created.temporaryPassword)
       }
     } catch (error) { setMessage(errorMessage(error)) }
@@ -212,6 +233,10 @@ export function AdminClientsPanel({ accessToken, onExpressCreated }: {
                 <label><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /><span><strong>Compte actif</strong><small>Le client peut se connecter.</small></span></label>
                 <label><input type="checkbox" checked={draft.expressDeliveryEnabled} onChange={(event) => setDraft({ ...draft, expressDeliveryEnabled: event.target.checked })} /><span><strong>Demandes expresses</strong><small>Autorise la création depuis son espace.</small></span></label>
               </div>
+              <section className="client-priority-card client-priority-card--payouts admin-client-payouts" aria-labelledby="admin-client-payouts-title">
+                <header><h3 id="admin-client-payouts-title">Numéros de versement</h3><p>La priorité 1 est utilisée en premier. Les numéros suivants servent d’alternatives.</p></header>
+                <ClientPayoutDestinationsEditor items={payouts} onChange={setPayouts} disabled={saving} defaultOperator="MVola" defaultAccountHolder={draft.displayName.trim()} />
+              </section>
               {temporaryPassword && <div className="admin-temporary-password"><KeyRound /><div><small>Mot de passe temporaire</small><strong>{temporaryPassword}</strong><span>Copiez-le maintenant : il ne sera plus affiché ensuite.</span></div></div>}
               {message && <p className="admin-callout" role="status">{message}</p>}
             </div>

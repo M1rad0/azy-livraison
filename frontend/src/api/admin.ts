@@ -5,7 +5,7 @@ import type {
   StrategyMetrics,
 } from './optimization'
 import type { PricingDistanceMode } from './pricing'
-import type { CreateDeliveryPackageInput, DeliveryPricingOptions, DeliveryTimePreference } from './client'
+import type { ClientPayoutDestination, ClientPayoutDestinationInput, CreateDeliveryPackageInput, DeliveryPricingOptions, DeliveryTimePreference } from './client'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -125,6 +125,7 @@ export interface AdminClient {
   username: string
   displayName: string
   phone: string
+  payoutDestinations?: ClientPayoutDestination[]
   defaultPickup: {
     label: string
     destinationQuery?: string
@@ -140,6 +141,7 @@ export interface AdminClientInput {
   username: string
   displayName: string
   phone: string
+  payoutDestinations?: ClientPayoutDestinationInput[]
   enabled?: boolean
   expressDeliveryEnabled?: boolean
   temporaryPassword?: string

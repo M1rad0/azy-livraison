@@ -16,6 +16,7 @@ import {
   type ClientProfile,
 } from '../api/client'
 import './ClientContactPreferences.css'
+import { ClientPayoutDestinationsEditor } from './ClientPayoutDestinationsEditor'
 
 interface DraftContact extends ClientContactNumberInput {
   key: string
@@ -215,27 +216,7 @@ export function ClientContactPreferences({
           <span aria-hidden="true"><WalletCards /></span>
           <div><p className="eyebrow">Pour vos reversements</p><h2 id="client-payouts-title">Numéros de versement</h2><p>La priorité indique l’ordre suggéré. AZY confirme toujours le numéro réellement utilisé avant un versement.</p></div>
         </header>
-        <div className="client-priority-list">
-          {payouts.map((payout, index) => (
-            <article key={payout.key}>
-              <span className="client-priority-rank">Priorité {index + 1}</span>
-              <label className="client-field"><span>Opérateur</span><input value={payout.operator} maxLength={80} placeholder="Ex. MVola" disabled={payoutsLocked} onChange={(event) => editPayouts((current) => current.map((item) => item.key === payout.key ? { ...item, operator: event.target.value } : item))} /></label>
-              <label className="client-field"><span>Titulaire</span><input value={payout.accountHolder} maxLength={150} disabled={payoutsLocked} onChange={(event) => editPayouts((current) => current.map((item) => item.key === payout.key ? { ...item, accountHolder: event.target.value } : item))} /></label>
-              <label className="client-field"><span>Numéro</span><input value={payout.number} maxLength={50} inputMode="tel" disabled={payoutsLocked} onChange={(event) => editPayouts((current) => current.map((item) => item.key === payout.key ? { ...item, number: event.target.value } : item))} /></label>
-              <label className="client-priority-active"><input type="checkbox" checked={payout.active} disabled={payoutsLocked} onChange={(event) => editPayouts((current) => current.map((item) => item.key === payout.key ? { ...item, active: event.target.checked } : item))} /><span>Actif</span></label>
-              <div className="client-priority-actions">
-                <button type="button" disabled={payoutsLocked || index === 0} aria-label={`Monter ${payout.number || `le versement ${index + 1}`}`} onClick={() => editPayouts((current) => move(current, index, -1))}><ArrowUp aria-hidden="true" /></button>
-                <button type="button" disabled={payoutsLocked || index === payouts.length - 1} aria-label={`Descendre ${payout.number || `le versement ${index + 1}`}`} onClick={() => editPayouts((current) => move(current, index, 1))}><ArrowDown aria-hidden="true" /></button>
-                <button type="button" className="is-danger" disabled={payoutsLocked} aria-label={`Supprimer ${payout.number || `le versement ${index + 1}`}`} onClick={() => editPayouts((current) => normalizePriorities(current.filter((item) => item.key !== payout.key)))}><Trash2 aria-hidden="true" /></button>
-              </div>
-            </article>
-          ))}
-        </div>
-        {payouts.length === 0 && <p className="client-priority-empty">Aucun numéro de versement enregistré.</p>}
-        <footer>
-          <button className="button button--secondary" type="button" disabled={payoutsLocked} onClick={() => editPayouts((current) => [...current, { key: draftKey('payout'), operator: '', accountHolder: '', number: '', priority: current.length + 1, active: true }])}><Plus aria-hidden="true" />Ajouter un numéro</button>
-          <button className="button" type="button" disabled={payoutsLocked} onClick={() => void savePayouts()}><Save aria-hidden="true" />{busy === 'payouts' ? 'Enregistrement…' : 'Enregistrer les versements'}</button>
-        </footer>
+        <ClientPayoutDestinationsEditor items={payouts} disabled={payoutsLocked} onChange={(items) => editPayouts(() => items)} saveAction={<button className="button" type="button" disabled={payoutsLocked} onClick={() => void savePayouts()}><Save aria-hidden="true" />{busy === 'payouts' ? 'Enregistrement…' : 'Enregistrer les versements'}</button>} />
       </section>}
 
       {message && <p className="client-alert client-alert--success client-preferences-feedback" role="status">{message}</p>}
