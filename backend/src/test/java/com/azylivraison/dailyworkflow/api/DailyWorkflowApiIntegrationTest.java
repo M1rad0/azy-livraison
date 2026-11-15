@@ -61,6 +61,45 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void plannedCashPayoutsRejectNonIntegerMoneyAtTheRealHttpBoundary() throws Exception {
+        long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
+        long previousMovements = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class);
+        String body = """
+                {
+                  "planId": "%s",
+                  "idempotencyKey": "strict-http-integer",
+                  "expectedLedgerRevision": 0,
+                  "expectedBatchId": null,
+                  "transfers": [{"sellerAccountId": "%s", "courierAccountId": "%s", "amountAriary": %s}]
+                }
+                """;
+        UUID missingPlan = UUID.randomUUID();
+        for (String amount : List.of("1.5", "1.0", "\"1500\"", "null")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, amount)))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class))
+                .isEqualTo(previousMovements);
+
+        String integer = body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "1500");
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content(integer))
+                .andExpect(status().isConflict()); // Integer accepted; the missing dispatch is the business error.
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(client(CLIENT_ID)).contentType(MediaType.APPLICATION_JSON).content(integer))
+                .andExpect(status().isForbidden());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class))
+                .isEqualTo(previousMovements);
+    }
+
+    @Test
     void clientAndAdministratorCanCancelOnlyPendingOwnedPackagesAndCapacityIsFreed() throws Exception {
         jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);

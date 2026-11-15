@@ -5,6 +5,11 @@ import static com.azylivraison.finance.cash.briefing.CashBriefingModels.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +23,7 @@ import com.azylivraison.dispatch.repository.ManualDispatchDraftRepository;
 import com.azylivraison.finance.cash.CashLedgerModels;
 import com.azylivraison.finance.cash.CashLedgerService;
 import com.azylivraison.finance.service.FinanceConflictException;
+import com.azylivraison.finance.service.FinanceInputException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,19 +50,84 @@ public class CashBriefingService {
                 planId == null ? new Object[] {} : new Object[] {planId}).stream().map(this::read).toList();
     }
 
+    /** Global balances and the current plan only: GET never creates a payout proposal. */
+    @Transactional
+    public Planning planning(UUID planId) {
+        ledger.lock(); cleanup();
+        ManualDispatchDraft draft = activeDraft(planId);
+        UUID currentId = currentBatchId(planId);
+        Batch batch = currentId == null ? null : read(currentId);
+        var snapshot = ledger.getSnapshot();
+        Map<UUID, Long> sellerPlanned = new HashMap<>(), courierPlanned = new HashMap<>();
+        if (batch != null) for (Transfer transfer : batch.transfers()) {
+            if (!"PENDING".equals(transfer.status())) continue;
+            sellerPlanned.merge(transfer.sellerAccountId(), transfer.amountAriary(), Math::addExact);
+            courierPlanned.merge(transfer.courierAccountId(), transfer.amountAriary(), Math::addExact);
+        }
+        Map<UUID, Long> elsewhere = sellerReservations(currentId);
+        List<PlanningSeller> sellers = snapshot.accounts().stream().filter(a -> "SELLER".equals(a.type()))
+                .sorted(Comparator.comparing(CashLedgerModels.Account::name, String.CASE_INSENSITIVE_ORDER))
+                .map(a -> new PlanningSeller(a.entityId(), a.name(), a.payoutNumber(), a.balanceAriary(),
+                        sellerPlanned.getOrDefault(a.entityId(), 0L),
+                        Math.max(0L, a.balanceAriary() - elsewhere.getOrDefault(a.entityId(), 0L)))).toList();
+        Set<UUID> selected = new HashSet<>();
+        draft.couriers().forEach(c -> selected.add(c.courierId()));
+        Map<UUID, Long> ownReserved = ownReservations(currentId);
+        List<PlanningCourier> couriers = snapshot.accounts().stream()
+                .filter(a -> "COURIER".equals(a.type()) && selected.contains(a.entityId()))
+                .sorted(Comparator.comparing(CashLedgerModels.Account::name, String.CASE_INSENSITIVE_ORDER))
+                .map(a -> {
+                    long own = ownReserved.getOrDefault(a.entityId(), 0L);
+                    long capacity = Math.max(0L, Math.addExact(a.availableAriary(), own));
+                    long planned = courierPlanned.getOrDefault(a.entityId(), 0L);
+                    return new PlanningCourier(a.entityId(), a.name(), a.balanceAriary(),
+                            Math.max(0L, a.reservedAriary() - own), capacity, planned, capacity - planned);
+                }).toList();
+        return new Planning(planId, draft.serviceDate(), snapshot.revision(), batch, sellers, couriers);
+    }
+
+    @Transactional
+    public Batch manual(ManualRequest request, UUID actor) {
+        if (request == null || request.planId() == null || request.expectedLedgerRevision() == null
+                || request.transfers() == null || request.transfers().size() > 1000)
+            throw new FinanceInputException("Renseignez les versements à prévoir et la version des caisses.");
+        List<ManualTransfer> transfers = normalize(request.transfers());
+        String fingerprint = fingerprint("MANUAL", request.planId(), request.expectedLedgerRevision(),
+                request.expectedBatchId(), transfers);
+        ledger.lock(); cleanup();
+        UUID replay = replay(request.idempotencyKey(), actor, request.planId(), "MANUAL", fingerprint);
+        if (replay != null) return read(replay);
+        ManualDispatchDraft draft = activeDraft(request.planId());
+        checkExpected(request.planId(), request.expectedLedgerRevision(), request.expectedBatchId());
+        UUID previous = currentBatchId(request.planId());
+        if (previous != null) releaseBatch(previous);
+        CashLedgerModels.Snapshot snapshot = ledger.getSnapshot();
+        validateManual(draft, snapshot, transfers);
+        UUID id = insertBatch(draft, snapshot.revision(), actor, request.idempotencyKey(), "MANUAL", fingerprint);
+        Map<UUID, CashLedgerModels.Account> sellers = accounts(snapshot, "SELLER");
+        Map<UUID, CashLedgerModels.Account> couriers = accounts(snapshot, "COURIER");
+        for (ManualTransfer transfer : transfers) {
+            var seller = sellers.get(transfer.sellerAccountId());
+            var courier = couriers.get(transfer.courierAccountId());
+            insertTransfer(id, seller.entityId(), seller.name(), seller.payoutNumber(),
+                    courier.entityId(), courier.name(), transfer.amountAriary());
+        }
+        return read(id);
+    }
+
     @Transactional
     public Batch prepare(PrepareRequest request, UUID actor) {
         ledger.lock(); cleanup();
-        var replay = jdbc.query("SELECT id, plan_id FROM cash_briefing_batch WHERE actor_account_id = ? AND idempotency_key = ?",
-                (rs, n) -> new UUID[] {rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)}, actor, request.idempotencyKey());
-        if (!replay.isEmpty()) {
-            if (!replay.getFirst()[1].equals(request.planId())) conflict("Cette clé de préparation a déjà été utilisée pour un autre plan.");
-            return read(replay.getFirst()[0]);
-        }
+        String hash = request.replaceExisting() ? fingerprint("AUTO", request.planId(), request.expectedLedgerRevision(),
+                request.expectedBatchId(), true) : null;
+        UUID replayId = replay(request.idempotencyKey(), actor, request.planId(), "AUTO", hash);
+        if (replayId != null) return read(replayId);
         ManualDispatchDraft draft = activeDraft(request.planId());
-        var existing = jdbc.query("SELECT id FROM cash_briefing_batch WHERE plan_id = ? AND status = 'ACTIVE'",
-                (rs, n) -> rs.getObject(1, UUID.class), request.planId());
-        if (!existing.isEmpty()) return read(existing.getFirst());
+        UUID existing = currentBatchId(request.planId());
+        if (request.replaceExisting()) {
+            checkExpected(request.planId(), request.expectedLedgerRevision(), request.expectedBatchId());
+            if (existing != null) releaseBatch(existing);
+        } else if (existing != null) return read(existing);
         CashLedgerModels.Snapshot snapshot = ledger.getSnapshot();
         List<CashPayoutOptimizer.Courier> couriers = couriers(draft, snapshot);
         Set<UUID> reservedSellers = new HashSet<>(jdbc.query("""
@@ -73,25 +144,10 @@ public class CashBriefingService {
                 .map(a -> new CashPayoutOptimizer.Seller(a.entityId(), a.name(), a.payoutNumber(), a.balanceAriary(),
                         oldest.getOrDefault(a.entityId(), LocalDate.MAX))).toList();
         List<CashPayoutOptimizer.Allocation> allocations = optimizer.optimize(sellers, couriers);
-        UUID id = UUID.randomUUID();
-        // A proposal lasts until local end-of-day, never beyond the operating day's closure.
-        LocalDate today = LocalDate.now(ZoneId.of("Indian/Antananarivo"));
-        Instant expires = (draft.serviceDate().isBefore(today) ? today : draft.serviceDate())
-                .plusDays(1).atStartOfDay(ZoneId.of("Indian/Antananarivo")).toInstant();
-        jdbc.update("""
-                INSERT INTO cash_briefing_batch (id, plan_id, service_date, ledger_revision, status,
-                    actor_account_id, idempotency_key, expires_at) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
-                """, id, draft.finalPlanId(), draft.serviceDate(), snapshot.revision(), actor,
-                request.idempotencyKey(), java.sql.Timestamp.from(expires));
+        UUID id = insertBatch(draft, snapshot.revision(), actor, request.idempotencyKey(), "AUTO", hash);
         for (var allocation : allocations) {
-            UUID transferId = UUID.randomUUID();
-            jdbc.update("""
-                    INSERT INTO cash_briefing_transfer (id, batch_id, seller_account_id, seller_name,
-                        seller_payout_number, courier_account_id, courier_name, amount_ariary, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
-                    """, transferId, id, allocation.seller().id(), allocation.seller().name(),
-                    allocation.seller().payoutNumber(), allocation.courier().id(), allocation.courier().name(), allocation.amount());
-            reserve(transferId, allocation.courier().id(), allocation.amount());
+            insertTransfer(id, allocation.seller().id(), allocation.seller().name(), allocation.seller().payoutNumber(),
+                    allocation.courier().id(), allocation.courier().name(), allocation.amount());
         }
         return read(id);
     }
@@ -101,8 +157,7 @@ public class CashBriefingService {
         ledger.lock(); cleanup();
         Batch batch = read(id);
         if ("ACTIVE".equals(batch.status()) || "STALE".equals(batch.status())) {
-            jdbc.update("UPDATE cash_briefing_batch SET status = 'RELEASED' WHERE id = ?", id);
-            releaseReservations(id);
+            releaseBatch(id);
         }
         return read(id);
     }
@@ -130,8 +185,14 @@ public class CashBriefingService {
             available.put(transfer.courierAccountId(), left);
             promised.merge(transfer.sellerAccountId(), transfer.amountAriary(), Math::addExact);
         }
+        Map<UUID, Long> reservedSellers = sellerReservations(id);
         for (var entry : promised.entrySet()) {
-            if (!Objects.equals(entry.getValue(), sellerDebt.getOrDefault(entry.getKey(), 0L)))
+            long debt = sellerDebt.getOrDefault(entry.getKey(), 0L);
+            long elsewhere = reservedSellers.getOrDefault(entry.getKey(), 0L);
+            boolean valid = "MANUAL".equals(batch.mode())
+                    ? entry.getValue() <= Math.max(0L, debt - elsewhere)
+                    : entry.getValue() == debt && elsewhere == 0;
+            if (!valid)
                 conflict("Le solde d'un vendeur a changé. Libérez puis préparez une nouvelle proposition.");
             if (!payoutNumbers.containsKey(entry.getKey()) || payoutNumbers.get(entry.getKey()).isBlank())
                 conflict("Un vendeur n'a plus de numéro de versement. Renseignez-le avant de revalider.");
@@ -178,6 +239,152 @@ public class CashBriefingService {
         return snapshot.accounts().stream().filter(a -> "COURIER".equals(a.type()) && ids.contains(a.entityId()))
                 .filter(a -> a.availableAriary() > 0)
                 .map(a -> new CashPayoutOptimizer.Courier(a.entityId(), a.name(), a.availableAriary())).toList();
+    }
+
+    private Map<UUID, CashLedgerModels.Account> accounts(CashLedgerModels.Snapshot snapshot, String type) {
+        Map<UUID, CashLedgerModels.Account> result = new HashMap<>();
+        snapshot.accounts().stream().filter(a -> type.equals(a.type())).forEach(a -> result.put(a.entityId(), a));
+        return result;
+    }
+
+    private Map<UUID, Long> sellerReservations(UUID excludedBatch) {
+        Map<UUID, Long> result = new HashMap<>();
+        jdbc.query("""
+                SELECT t.seller_account_id, t.amount_ariary FROM cash_briefing_transfer t
+                JOIN cash_briefing_batch b ON b.id = t.batch_id
+                WHERE b.status = 'ACTIVE' AND t.status = 'PENDING'
+                """ + (excludedBatch == null ? "" : " AND b.id <> ?"), rs -> {
+            result.merge(rs.getObject(1, UUID.class), rs.getLong(2), Math::addExact);
+        }, excludedBatch == null ? new Object[] {} : new Object[] {excludedBatch});
+        return result;
+    }
+
+    private Map<UUID, Long> ownReservations(UUID batchId) {
+        Map<UUID, Long> result = new HashMap<>();
+        if (batchId == null) return result;
+        jdbc.query("""
+                SELECT t.courier_account_id, r.amount_ariary FROM cash_ledger_reservation r
+                JOIN cash_briefing_transfer t ON t.id = r.proposal_id
+                WHERE t.batch_id = ? AND r.status = 'ACTIVE'
+                """, rs -> { result.merge(rs.getObject(1, UUID.class), rs.getLong(2), Math::addExact); }, batchId);
+        return result;
+    }
+
+    private void validateManual(ManualDispatchDraft draft, CashLedgerModels.Snapshot snapshot,
+            List<ManualTransfer> transfers) {
+        Map<UUID, CashLedgerModels.Account> sellers = accounts(snapshot, "SELLER");
+        Map<UUID, CashLedgerModels.Account> couriers = accounts(snapshot, "COURIER");
+        Set<UUID> selected = new HashSet<>();
+        draft.couriers().forEach(c -> selected.add(c.courierId()));
+        Map<UUID, Long> sellerTotals = new HashMap<>(), courierTotals = new HashMap<>();
+        for (ManualTransfer transfer : transfers) {
+            var seller = sellers.get(transfer.sellerAccountId());
+            var courier = couriers.get(transfer.courierAccountId());
+            if (seller == null) conflict("Ce vendeur n'existe plus.");
+            if (seller.payoutNumber() == null || seller.payoutNumber().isBlank())
+                conflict("Renseignez le numéro de versement du vendeur avant de prévoir son versement.");
+            if (courier == null || !selected.contains(transfer.courierAccountId()))
+                conflict("Choisissez un livreur actif dans ce dispatch.");
+            sellerTotals.merge(seller.entityId(), transfer.amountAriary(), this::safeTotal);
+            courierTotals.merge(courier.entityId(), transfer.amountAriary(), this::safeTotal);
+        }
+        Map<UUID, Long> reserved = sellerReservations(null);
+        for (var entry : sellerTotals.entrySet()) {
+            long available = Math.max(0L, sellers.get(entry.getKey()).balanceAriary() - reserved.getOrDefault(entry.getKey(), 0L));
+            if (entry.getValue() > available) conflict("Les versements prévus dépassent le solde disponible d'un vendeur.");
+        }
+        for (var entry : courierTotals.entrySet())
+            if (entry.getValue() > Math.max(0L, couriers.get(entry.getKey()).availableAriary()))
+                conflict("La caisse disponible d'un livreur ne couvre pas les versements prévus.");
+    }
+
+    private List<ManualTransfer> normalize(List<ManualTransfer> input) {
+        record Pair(UUID seller, UUID courier) {}
+        Map<Pair, Long> totals = new HashMap<>();
+        for (ManualTransfer transfer : input) {
+            if (transfer == null || transfer.sellerAccountId() == null || transfer.courierAccountId() == null
+                    || transfer.amountAriary() <= 0 || transfer.amountAriary() > CashLedgerService.MAX_SAFE_ARIARY)
+                throw new FinanceInputException("Chaque versement doit être un montant entier positif valide.");
+            Pair key = new Pair(transfer.sellerAccountId(), transfer.courierAccountId());
+            long amount = safeTotal(totals.getOrDefault(key, 0L), transfer.amountAriary());
+            totals.put(key, amount);
+        }
+        return totals.entrySet().stream().map(e -> new ManualTransfer(e.getKey().seller(), e.getKey().courier(), e.getValue()))
+                .sorted(Comparator.comparing((ManualTransfer t) -> t.sellerAccountId().toString())
+                        .thenComparing(t -> t.courierAccountId().toString())).toList();
+    }
+
+    private long safeTotal(long left, long right) {
+        try {
+            long total = Math.addExact(left, right);
+            if (total > CashLedgerService.MAX_SAFE_ARIARY) throw new ArithmeticException("Amount too large");
+            return total;
+        } catch (ArithmeticException exception) {
+            throw new FinanceInputException("Le montant total des versements est trop élevé.");
+        }
+    }
+
+    private UUID currentBatchId(UUID planId) {
+        return jdbc.query("SELECT id FROM cash_briefing_batch WHERE plan_id = ? AND status = 'ACTIVE'",
+                (rs, n) -> rs.getObject(1, UUID.class), planId).stream().findFirst().orElse(null);
+    }
+
+    private void checkExpected(UUID planId, Long expectedRevision, UUID expectedBatch) {
+        if (expectedRevision == null || expectedRevision != ledger.revision())
+            conflict("Les caisses ont changé. Actualisez avant d'enregistrer les versements prévus.");
+        if (!Objects.equals(currentBatchId(planId), expectedBatch))
+            conflict("Les versements prévus ont été modifiés. Actualisez avant de continuer.");
+    }
+
+    private UUID replay(String key, UUID actor, UUID planId, String mode, String fingerprint) {
+        if (key == null || key.isBlank() || key.length() > 100)
+            throw new FinanceInputException("La clé d'enregistrement des versements est invalide.");
+        return jdbc.query("""
+                SELECT id, plan_id, planning_mode, request_fingerprint FROM cash_briefing_batch
+                WHERE actor_account_id = ? AND idempotency_key = ?
+                """, (rs, n) -> {
+            if (!planId.equals(rs.getObject("plan_id", UUID.class)) || !mode.equals(rs.getString("planning_mode"))
+                    || !Objects.equals(fingerprint, rs.getString("request_fingerprint")))
+                conflict("Cette clé d'enregistrement a déjà été utilisée pour d'autres versements.");
+            return rs.getObject("id", UUID.class);
+        }, actor, key).stream().findFirst().orElse(null);
+    }
+
+    private static String fingerprint(Object... values) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(java.util.Arrays.toString(values).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+    }
+
+    private void releaseBatch(UUID id) {
+        jdbc.update("UPDATE cash_briefing_batch SET status = 'RELEASED' WHERE id = ?", id);
+        releaseReservations(id);
+    }
+
+    private UUID insertBatch(ManualDispatchDraft draft, long revision, UUID actor, String key, String mode, String fingerprint) {
+        UUID id = UUID.randomUUID();
+        LocalDate today = LocalDate.now(ZoneId.of("Indian/Antananarivo"));
+        Instant expires = (draft.serviceDate().isBefore(today) ? today : draft.serviceDate())
+                .plusDays(1).atStartOfDay(ZoneId.of("Indian/Antananarivo")).toInstant();
+        jdbc.update("""
+                INSERT INTO cash_briefing_batch (id, plan_id, service_date, ledger_revision, status,
+                    actor_account_id, idempotency_key, expires_at, planning_mode, request_fingerprint)
+                VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?)
+                """, id, draft.finalPlanId(), draft.serviceDate(), revision, actor, key,
+                java.sql.Timestamp.from(expires), mode, fingerprint);
+        return id;
+    }
+
+    private void insertTransfer(UUID batchId, UUID sellerId, String sellerName, String payoutNumber,
+            UUID courierId, String courierName, long amount) {
+        UUID transferId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO cash_briefing_transfer (id, batch_id, seller_account_id, seller_name,
+                    seller_payout_number, courier_account_id, courier_name, amount_ariary, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+                """, transferId, batchId, sellerId, sellerName, payoutNumber, courierId, courierName, amount);
+        reserve(transferId, courierId, amount);
     }
 
     private ManualDispatchDraft activeDraft(UUID planId) {
@@ -237,12 +444,14 @@ public class CashBriefingService {
         return jdbc.query("SELECT * FROM cash_briefing_batch WHERE id = ?", (rs, n) -> {
             String status = rs.getString("status");
             if ("ACTIVE".equals(status) && (rs.getLong("ledger_revision") != ledger.revision() || payoutChanged)) status = "STALE";
+            String mode = rs.getString("planning_mode");
             String message = "STALE".equals(status) ? "Les caisses ou les coordonnées de versement ont changé : revalidez avant de transmettre le briefing."
+                    : transfers.isEmpty() && "MANUAL".equals(mode) ? "Aucun versement prévu."
                     : transfers.isEmpty() ? "Aucun vendeur ne peut être soldé intégralement avec les caisses disponibles et un numéro de versement renseigné."
                     : "Proposition uniquement. Confirmez chaque versement réel dans Finance.";
             return new Batch(id, rs.getObject("plan_id", UUID.class), rs.getObject("service_date", LocalDate.class), status,
                     rs.getLong("ledger_revision"), rs.getTimestamp("expires_at").toInstant(), CashPayoutOptimizer.ALGORITHM,
-                    transfers, balances, message);
+                    transfers, balances, message, mode);
         }, id).stream().findFirst().orElseThrow(() -> new FinanceConflictException("Cette proposition n'existe plus."));
     }
 

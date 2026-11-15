@@ -16,6 +16,10 @@ public class CashBriefingController {
     private final CashBriefingService service;
     public CashBriefingController(CashBriefingService service) { this.service = service; }
     @GetMapping public List<Batch> list(@RequestParam(required = false) UUID planId) { return service.list(planId); }
+    @GetMapping("/planning") public Planning planning(@RequestParam UUID planId) { return service.planning(planId); }
+    @PostMapping("/manual") public Batch manual(@Valid @RequestBody ManualRequest request, @AuthenticationPrincipal Jwt jwt) {
+        return service.manual(request, UUID.fromString(jwt.getClaimAsString("accountId")));
+    }
     @PostMapping("/prepare") public Batch prepare(@Valid @RequestBody PrepareRequest request, @AuthenticationPrincipal Jwt jwt) {
         return service.prepare(request, UUID.fromString(jwt.getClaimAsString("accountId")));
     }
