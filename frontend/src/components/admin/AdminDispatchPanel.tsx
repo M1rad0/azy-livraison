@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRightLeft,
   Bike,
@@ -8,6 +8,7 @@ import {
   History,
   LoaderCircle,
   MapPin,
+  MessageSquareText,
   PackageCheck,
   Route,
   Sparkles,
@@ -24,13 +25,14 @@ import {
   type DispatchPlanSummary,
   type OperationalSettings,
 } from '../../api/admin'
-import { createManualDraft, editManualPlan, getActiveManualDraft, getManualDraftForPlan, type ManualDispatchDraft } from '../../api/manualDispatch'
+import { createManualDraft, editManualPlan, getActiveManualDraft, type ManualDispatchDraft } from '../../api/manualDispatch'
 import type { Location } from '../../api/csvImports'
 import type { CourierRoute, RouteStop } from '../../api/optimization'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { LocationPicker } from '../LocationPicker'
+import { Button } from '../Button'
 import { AdminPlanControls } from './AdminPlanControls'
-import { ManualDispatchReview, ManualDispatchWorkspace } from './ManualDispatchWorkspace'
+import { ManualDispatchWorkspace } from './ManualDispatchWorkspace'
 import { dispatchPlaceText } from './manualDispatchPresentation'
 import {
   asConfirmedLocation,
@@ -55,6 +57,7 @@ interface AdminDispatchPanelProps {
   onRefresh?: () => void
   onDateChange: (date: string) => void
   onCreated: (plan: DispatchPlan) => void
+  onOpenBriefing?: () => void
 }
 
 export function collectionMatrixUsage(
@@ -219,23 +222,16 @@ export function DispatchResult({ plan, couriers }: { plan: DispatchPlan; courier
   )
 }
 
-function ManualPlanResult({ plan, accessToken, onEdited, onChanged }: {
+function ManualPlanResult({ plan, accessToken, onEdited, onChanged, onOpenBriefing }: {
   plan: DispatchPlan
   accessToken: string
   onEdited: (draft: ManualDispatchDraft) => void
   onChanged: (plan: DispatchPlan) => void
+  onOpenBriefing?: () => void
 }) {
-  const [snapshot, setSnapshot] = useState<ManualDispatchDraft>()
   const [message, setMessage] = useState<string>()
   const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    const controller = new AbortController()
-    setSnapshot(undefined); setMessage(undefined)
-    getManualDraftForPlan(plan.plan.id, accessToken, controller.signal).then(setSnapshot).catch((error) => {
-      if (!controller.signal.aborted) setMessage(errorMessage(error))
-    })
-    return () => controller.abort()
-  }, [plan.plan.id, accessToken])
+  const active = plan.plan.status === 'READY' || plan.plan.status === 'READY_WITH_WARNINGS'
 
   async function edit() {
     if (!window.confirm('Rouvrir ce plan ? Les colis reviendront en préparation jusqu’à sa prochaine validation.')) return
@@ -251,13 +247,15 @@ function ManualPlanResult({ plan, accessToken, onEdited, onChanged }: {
     catch (error) { setMessage(errorMessage(error)) }
     finally { setBusy(false) }
   }
-  return <section className="admin-dispatch-result"><header><div><p className="admin-eyebrow">Plan manuel · {formatDate(plan.plan.serviceDate)}</p><h3>Répartition des récupérations et livraisons</h3></div>
+  return <section className="admin-dispatch-result"><header><div><p className="admin-eyebrow">Plan manuel · {formatDate(plan.plan.serviceDate)}</p><h3>{active ? 'Dispatch validé' : 'Ancien dispatch'}</h3></div>
     <span className={`admin-chip admin-chip--${plan.plan.status.toLowerCase()}`}>{dispatchStatusLabel(plan.plan.status)}</span></header>
     {message && <p role="alert" className="admin-callout admin-callout--error">{message}</p>}
-    {snapshot && <ManualDispatchReview draft={snapshot} />}
-    {!snapshot && !message && <p role="status">Chargement du plan…</p>}
-    {plan.plan.editable && <div className="admin-toolbar"><button type="button" className="admin-button" disabled={busy} onClick={() => void edit()}>Modifier les affectations</button>
-      <button type="button" className="admin-button admin-button--ghost" disabled={busy} onClick={() => void cancel()}>Annuler le dispatch</button></div>}
+    <p className="admin-muted">{active ? 'Les récupérations, les échanges et les colis à livrer sont regroupés dans l’onglet Briefing.' : 'Ce plan n’est plus actif. Le briefing utilise uniquement la répartition validée en cours.'}</p>
+    <div className="admin-toolbar">
+      {onOpenBriefing && active && <Button tone="admin" disabled={busy} onClick={onOpenBriefing}><MessageSquareText aria-hidden="true" />Ouvrir le briefing</Button>}
+      {plan.plan.editable && <><Button tone="admin" variant="secondary" disabled={busy} onClick={() => void edit()}>Modifier les affectations</Button>
+        <Button tone="admin" variant="secondary" disabled={busy} onClick={() => void cancel()}>Annuler le dispatch</Button></>}
+    </div>
   </section>
 }
 
@@ -272,6 +270,7 @@ export function AdminDispatchPanel({
   onRefresh,
   onDateChange,
   onCreated,
+  onOpenBriefing,
 }: AdminDispatchPanelProps) {
   const activeCouriers = couriers.filter((courier) => courier.active)
   const currentQueue = queue?.date === date ? queue : undefined
@@ -292,13 +291,16 @@ export function AdminDispatchPanel({
   const [draft, setDraft] = useState<ManualDispatchDraft>()
   const [loadingDraft, setLoadingDraft] = useState(true)
   const [workspaceOpen, setWorkspaceOpen] = useState(true)
+  const historyLoadId = useRef(0)
 
   useEffect(() => {
     setCourierIds((current) => new Set([...current].filter((id) => activeCouriers.some((courier) => courier.id === id))))
   }, [couriers])
 
   useEffect(() => {
+    ++historyLoadId.current
     setVisiblePlan(undefined)
+    setLoadingPlanId(undefined)
     setMessage(undefined)
     setDraft(undefined)
     setWorkspaceOpen(true)
@@ -309,7 +311,7 @@ export function AdminDispatchPanel({
     }).catch((error) => {
       if (!controller.signal.aborted) setMessage(errorMessage(error))
     }).finally(() => { if (!controller.signal.aborted) setLoadingDraft(false) })
-    return () => controller.abort()
+    return () => { controller.abort(); ++historyLoadId.current }
   }, [date, accessToken])
 
   async function create() {
@@ -354,19 +356,21 @@ export function AdminDispatchPanel({
   }
 
   async function openHistory(planId: string) {
+    const loadId = ++historyLoadId.current
     setLoadingPlanId(planId)
     setMessage(undefined)
     try {
-      setVisiblePlan(await getDispatchPlan(planId, accessToken))
+      const plan = await getDispatchPlan(planId, accessToken)
+      if (loadId === historyLoadId.current) setVisiblePlan(plan)
     } catch (error) {
-      setMessage(errorMessage(error))
+      if (loadId === historyLoadId.current) setMessage(errorMessage(error))
     } finally {
-      setLoadingPlanId(undefined)
+      if (loadId === historyLoadId.current) setLoadingPlanId(undefined)
     }
   }
 
   if (draft && workspaceOpen) return <ManualDispatchWorkspace key={draft.id} accessToken={accessToken} draft={draft} onDraftChange={setDraft}
-    onFinalized={(plan) => { setDraft(undefined); setVisiblePlan(plan); onCreated(plan) }}
+    onFinalized={(plan) => { setDraft(undefined); setVisiblePlan(plan); onCreated(plan); onOpenBriefing?.() }}
     onClose={() => setWorkspaceOpen(false)}
     onCancelled={() => { setDraft(undefined); onRefresh?.() }} />
 
@@ -469,7 +473,7 @@ export function AdminDispatchPanel({
         </aside>
       </div>
 
-      {visiblePlan && visiblePlan.plan.strategy === 'MANUAL' ? <ManualPlanResult plan={visiblePlan} accessToken={accessToken} onEdited={(nextDraft) => { setDraft(nextDraft); setWorkspaceOpen(true); setVisiblePlan(undefined); onRefresh?.() }} onChanged={(plan) => { setVisiblePlan(plan); onCreated(plan) }} /> : visiblePlan && (
+      {visiblePlan && visiblePlan.plan.strategy === 'MANUAL' ? <ManualPlanResult key={visiblePlan.plan.id} plan={visiblePlan} accessToken={accessToken} onOpenBriefing={onOpenBriefing} onEdited={(nextDraft) => { setDraft(nextDraft); setWorkspaceOpen(true); setVisiblePlan(undefined); onRefresh?.() }} onChanged={(plan) => { setVisiblePlan(plan); onCreated(plan) }} /> : visiblePlan && (
         <>
           <DispatchResult plan={visiblePlan} couriers={couriers} />
           <AdminPlanControls

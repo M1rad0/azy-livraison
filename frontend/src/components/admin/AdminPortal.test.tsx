@@ -1,9 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DispatchPlan } from '../../api/admin'
-import { collectionMatrixUsage, DispatchResult } from './AdminDispatchPanel'
+import { AdminDispatchPanel, collectionMatrixUsage, DispatchResult } from './AdminDispatchPanel'
 import { AdminPortal } from './AdminPortal'
 import { antananarivoToday } from './adminHelpers'
+import { PortalShell } from '../PortalShell'
+import { draftFixture } from './manualDispatch.fixtures'
+import type { ManualDispatchDraft } from '../../api/manualDispatch'
 
 function jsonResponse(payload: unknown) {
   return { ok: true, status: 200, json: async () => payload }
@@ -117,11 +120,32 @@ function portalFetchMock(
   })
 }
 
+function manualPlanFixture(editable = true): DispatchPlan {
+  return {
+    plan: {
+      id: 'manual-plan-1', serviceDate: TEST_TODAY, status: 'READY', strategy: 'MANUAL',
+      hub: { label: 'Ralliement', latitude: -18.9, longitude: 47.52 }, selectedPackageCount: 1,
+      assignedPackageCount: 1, selectedCourierCount: 1, usedCourierCount: 1,
+      editable, version: 3, createdAt: `${TEST_TODAY}T06:00:00+03:00`,
+    },
+    packages: [],
+  }
+}
+
+function completeDraftFixture(): ManualDispatchDraft {
+  return {
+    ...draftFixture(), serviceDate: TEST_TODAY, step: 'REVIEW',
+    collections: [{ pickupId: 'r1', courierId: 'c1', order: 0 }, { pickupId: 'r2', courierId: 'c2', order: 0 }],
+    deliveries: [{ packageId: 'p1', courierId: 'c1', order: 0 }, { packageId: 'p2', courierId: 'c1', order: 1 }, { packageId: 'p3', courierId: 'c2', order: 0 }],
+  }
+}
+
 describe('AdminPortal', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    window.history.replaceState(null, '', '/')
   })
 
   it('présente la file métier puis le dispatch manuel', async () => {
@@ -259,6 +283,150 @@ describe('AdminPortal', () => {
     expect(activityDate).toHaveValue('2099-12-30')
     expect(fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/admin/delivery-requests')))
       .toHaveLength(1)
+  })
+
+  it('place Briefing juste après Dispatch dans la navigation autonome et dans la sidebar', async () => {
+    vi.stubGlobal('fetch', portalFetchMock())
+    const portal = render(<AdminPortal accessToken="admin-token" />)
+    await screen.findByText('Boutique Rado')
+    const fallbackButtons = within(screen.getByRole('navigation', { name: 'Sections de l’administration' })).getAllByRole('button')
+    const dispatchIndex = fallbackButtons.findIndex((button) => button.textContent?.startsWith('Dispatch'))
+    expect(fallbackButtons[dispatchIndex + 1]).toHaveTextContent('Briefing')
+    expect(fallbackButtons[dispatchIndex + 2]).toHaveTextContent('Compte rendu')
+    portal.unmount()
+
+    render(<PortalShell account={{ id: 'admin', username: 'admin', role: 'ADMIN', displayName: 'Administration', phone: null }} onLogout={async () => {}}><div>Contenu</div></PortalShell>)
+    const links = within(screen.getByRole('navigation', { name: 'Sections principales' })).getAllByRole('link')
+    const sidebarDispatchIndex = links.findIndex((link) => link.getAttribute('href') === '#/admin/dispatch')
+    expect(links[sidebarDispatchIndex + 1]).toHaveAttribute('href', '#/admin/briefing')
+    expect(links[sidebarDispatchIndex + 2]).toHaveAttribute('href', '#/admin/day')
+  })
+
+  it('partage la date d’activité entre Dispatch et Briefing et permet de revenir au dispatch', async () => {
+    const fetchMock = portalFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AdminPortal accessToken="admin-token" />)
+    await screen.findByText('Boutique Rado')
+    fireEvent.click(screen.getByRole('button', { name: /Dispatch/ }))
+    fireEvent.change(await screen.findByLabelText('Date d’activité'), { target: { value: '2099-12-30' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/dispatch-plans?date=2099-12-30', expect.anything()))
+    fireEvent.click(screen.getByRole('button', { name: /Briefing/ }))
+    expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-30')
+    fireEvent.change(screen.getByLabelText('Date d’activité'), { target: { value: '2099-12-29' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/dispatch-plans?date=2099-12-29', expect.anything()))
+    fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir Dispatch' }))
+    expect(await screen.findByRole('heading', { name: 'Préparer le dispatch' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-29')
+  })
+
+  it('ouvre le briefing depuis le dispatch validé sans recharger son ancien résumé', async () => {
+    const plan = manualPlanFixture()
+    const fetchMock = portalFetchMock([], [], [plan.plan])
+    fetchMock.mockImplementation((input: string) => {
+      if (input === '/api/admin/dispatch-plans/manual-plan-1') return Promise.resolve(jsonResponse(plan))
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(new Response(null, { status: 204 }))
+      return Promise.reject(new Error(`URL inattendue: ${input}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const openBriefing = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[plan.plan]} busy={false} onCreated={vi.fn()} onDateChange={vi.fn()} onOpenBriefing={openBriefing} />)
+    fireEvent.click(screen.getByRole('button', { name: /1 \/ 1 colis affectés/ }))
+    expect(await screen.findByRole('heading', { name: 'Dispatch validé' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Répartition des récupérations et livraisons' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/for-plan/'))).toBe(false)
+    expect(screen.getByRole('button', { name: 'Modifier les affectations' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Annuler le dispatch' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir le briefing' }))
+    expect(openBriefing).toHaveBeenCalledOnce()
+  })
+
+  it('conserve les protections de modification et annulation du dispatch renseigné', async () => {
+    const plan = manualPlanFixture(false)
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/admin/dispatch-plans/manual-plan-1') return Promise.resolve(jsonResponse(plan))
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(new Response(null, { status: 204 }))
+      return Promise.reject(new Error(`URL inattendue: ${input}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[plan.plan]} busy={false} onCreated={vi.fn()} onDateChange={vi.fn()} onOpenBriefing={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /1 \/ 1 colis affectés/ }))
+    await screen.findByRole('heading', { name: 'Dispatch validé' })
+    expect(screen.queryByRole('button', { name: 'Modifier les affectations' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Annuler le dispatch' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ouvrir le briefing' })).toBeEnabled()
+  })
+
+  it('ignore un ancien plan dont le chargement termine après le changement de date', async () => {
+    const plan = manualPlanFixture()
+    let resolvePlan: (value: ReturnType<typeof jsonResponse>) => void = () => {}
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/admin/dispatch-plans/manual-plan-1') return new Promise<ReturnType<typeof jsonResponse>>((resolve) => { resolvePlan = resolve })
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(new Response(null, { status: 204 }))
+      return Promise.reject(new Error(`URL inattendue: ${input}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const common = { accessToken: 'admin-token', couriers: [], busy: false, onCreated: vi.fn(), onDateChange: vi.fn(), onOpenBriefing: vi.fn() }
+    const view = render(<AdminDispatchPanel {...common} date={TEST_TODAY} history={[plan.plan]} />)
+    fireEvent.click(screen.getByRole('button', { name: /1 \/ 1 colis affectés/ }))
+    view.rerender(<AdminDispatchPanel {...common} date="2099-12-30" history={[]} />)
+    await act(async () => { resolvePlan(jsonResponse(plan)) })
+    expect(screen.queryByRole('heading', { name: 'Dispatch validé' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ouvrir le briefing' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-30')
+  })
+
+  it('ouvre le briefing seulement après validation manuelle réussie et notification du plan créé', async () => {
+    const draft = completeDraftFixture()
+    const plan = manualPlanFixture()
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(jsonResponse(draft))
+      if (input === '/api/admin/manual-dispatch-drafts/draft-1/finalize') return Promise.resolve(jsonResponse(plan))
+      return Promise.reject(new Error(`URL inattendue: ${input}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const created = vi.fn()
+    const openBriefing = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} onOpenBriefing={openBriefing} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Valider le dispatch' }))
+    await waitFor(() => expect(openBriefing).toHaveBeenCalledOnce())
+    expect(created).toHaveBeenCalledWith(plan)
+    expect(created.mock.invocationCallOrder[0]).toBeLessThan(openBriefing.mock.invocationCallOrder[0])
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/manual-dispatch-drafts/draft-1/finalize', expect.objectContaining({ method: 'POST', body: JSON.stringify({ expectedVersion: draft.version }) }))
+  })
+
+  it('reste dans le dispatch en cas de conflit de validation, sans ouvrir un faux briefing', async () => {
+    const draft = completeDraftFixture()
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(jsonResponse(draft))
+      if (input === '/api/admin/manual-dispatch-drafts/draft-1/finalize') return Promise.resolve({ ok: false, status: 409, json: async () => ({ message: 'Rechargez le dispatch avant de le valider.' }) })
+      return Promise.reject(new Error(`URL inattendue: ${input}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const created = vi.fn()
+    const openBriefing = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} onOpenBriefing={openBriefing} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Valider le dispatch' }))
+    expect(await screen.findByText('Rechargez le dispatch avant de le valider.')).toBeInTheDocument()
+    expect(created).not.toHaveBeenCalled()
+    expect(openBriefing).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Organiser la journée' })).toBeInTheDocument()
+  })
+
+  it('garde le résultat validé visible lorsque la navigation Briefing n’est pas fournie', async () => {
+    const draft = completeDraftFixture()
+    const plan = manualPlanFixture()
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(jsonResponse(draft))
+      if (input === '/api/admin/manual-dispatch-drafts/draft-1/finalize') return Promise.resolve(jsonResponse(plan))
+      return Promise.reject(new Error(`URL inattendue: ${input}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const created = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Valider le dispatch' }))
+    expect(await screen.findByRole('heading', { name: 'Dispatch validé' })).toBeInTheDocument()
+    expect(created).toHaveBeenCalledWith(plan)
+    expect(screen.queryByRole('button', { name: 'Ouvrir le briefing' })).not.toBeInTheDocument()
   })
 
   it('ouvre un espace séparé pour reprogrammer les colis reportés', async () => {
