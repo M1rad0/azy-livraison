@@ -37,6 +37,8 @@ export interface DispatchBriefing {
   warnings: string[]
 }
 
+export type BriefingLanguage = 'fr' | 'mg'
+
 function text(value?: string | null) {
   return value?.trim().replace(/\s+/g, ' ') ?? ''
 }
@@ -176,9 +178,35 @@ export function buildDispatchBriefing(draft: ManualDispatchDraft): DispatchBrief
   }
 }
 
-function packageDescription(item: ManualPackage) {
+const BRIEFING_LABELS = {
+  fr: {
+    header: 'Briefing du', courierUnknown: 'Livreur sans nom',
+    pickups: 'Récupérations :', noPickups: 'Aucune récupération.',
+    sellerUnknown: 'Vendeur non renseigné', sellerContact: 'contact vendeur :',
+    sellerContactMissing: 'contact vendeur non renseigné', sellerContactUnavailable: 'contact vendeur indisponible',
+    packages: 'colis.', exchanges: 'Échanges :', noExchanges: 'Aucun échange de colis.',
+    meet: 'Rencontre avec', and: ' et ', give: 'Donner à', take: 'Prendre chez',
+    deliveries: 'Ta liste finale de colis :', noDeliveries: 'Aucune livraison.',
+    contact: 'contact :', contactMissing: 'contact non renseigné',
+    collect: 'à encaisser :', window: 'créneau :',
+  },
+  mg: {
+    header: 'Toromarika ny', courierUnknown: 'Mpanatitra tsy voatondro',
+    pickups: 'Entana alaina :', noPickups: 'Tsy misy entana alaina.',
+    sellerUnknown: 'Mpivarotra tsy voatondro', sellerContact: "laharan'ny mpivarotra :",
+    sellerContactMissing: "laharan'ny mpivarotra tsy voatondro", sellerContactUnavailable: "laharan'ny mpivarotra tsy azo alaina",
+    packages: 'entana.', exchanges: 'Fifanakalozana entana :', noExchanges: 'Tsy misy fifanakalozana entana.',
+    meet: "Miona amin'i", and: ' sy ', give: "Omena an'i", take: "Alaina any amin'i",
+    deliveries: 'Ireto avy ny livraisons ataonao :', noDeliveries: 'Tsy misy livraison.',
+    contact: 'laharana :', contactMissing: 'laharana tsy voatondro',
+    collect: 'vola alaina :', window: 'fotoana :',
+  },
+} as const
+
+function packageDescription(item: ManualPackage, language: BriefingLanguage) {
+  const labels = BRIEFING_LABELS[language]
   const contact = text(item.contact)
-  return `${text(dispatchPlaceText(item.destination))} — ${contact ? `contact : ${contact}` : 'contact non renseigné'}`
+  return `${text(dispatchPlaceText(item.destination))} — ${contact ? `${labels.contact} ${contact}` : labels.contactMissing}`
 }
 
 function displayDate(value: string) {
@@ -191,9 +219,11 @@ export function generateCourierBriefing(
   briefing: CourierBriefing,
   serviceDate: string,
   sellerContacts?: Readonly<Record<string, string | null | undefined>>,
+  language: BriefingLanguage = 'fr',
 ): string {
-  const lines = [`Briefing du ${displayDate(serviceDate)} — ${text(briefing.courier.name) || 'Livreur sans nom'}`, '', 'Récupérations :']
-  if (briefing.pickups.length === 0) lines.push('Aucune récupération.')
+  const labels = BRIEFING_LABELS[language]
+  const lines = [`${labels.header} ${displayDate(serviceDate)} — ${text(briefing.courier.name) || labels.courierUnknown}`, '', labels.pickups]
+  if (briefing.pickups.length === 0) lines.push(labels.noPickups)
   briefing.pickups.forEach(({ pickup, packages }, index) => {
     const sellers = new Map<string, ManualPackage>()
     for (const item of packages) {
@@ -203,36 +233,41 @@ export function generateCourierBriefing(
       const available = sellerContacts && Object.hasOwn(sellerContacts, item.ownerAccountId)
       const contact = available ? text(sellerContacts[item.ownerAccountId]) : ''
       const contactLabel = available
-        ? contact ? `contact vendeur : ${contact}` : 'contact vendeur non renseigné'
-        : 'contact vendeur indisponible'
-      return `${sender(item)} — ${contactLabel}`
+        ? contact ? `${labels.sellerContact} ${contact}` : labels.sellerContactMissing
+        : labels.sellerContactUnavailable
+      return `${text(item.serviceClientName) || labels.sellerUnknown} — ${contactLabel}`
     })
-    lines.push(`${index + 1}. ${text(dispatchPlaceText(pickup.location))} — ${contacts.join(' ; ') || 'Vendeur non renseigné — contact vendeur indisponible'} — ${packages.length} colis.`)
+    lines.push(`${index + 1}. ${text(dispatchPlaceText(pickup.location))} — ${contacts.join(' ; ') || `${labels.sellerUnknown} — ${labels.sellerContactUnavailable}`} — ${packages.length} ${labels.packages}`)
   })
 
-  lines.push('', 'Échanges :')
+  lines.push('', labels.exchanges)
   const peers = new Map([...briefing.give, ...briefing.take].map((exchange) => [exchange.courierId, exchange.courierName]))
-  if (peers.size === 0) lines.push('Aucun échange de colis.')
+  if (peers.size === 0) lines.push(labels.noExchanges)
   else {
-    lines.push(`Rencontre avec ${[...peers.values()].join(' et ')}.`)
+    lines.push(`${labels.meet} ${[...peers.values()].join(labels.and)}.`)
     for (const exchange of briefing.give) {
-      lines.push(`Donner à ${exchange.courierName} :`)
-      exchange.packages.forEach((item) => lines.push(`- ${packageDescription(item)}`))
+      lines.push(`${labels.give} ${exchange.courierName} :`)
+      exchange.packages.forEach((item) => lines.push(`- ${packageDescription(item, language)}`))
     }
     for (const exchange of briefing.take) {
-      lines.push(`Prendre chez ${exchange.courierName} :`)
-      exchange.packages.forEach((item) => lines.push(`- ${packageDescription(item)}`))
+      lines.push(`${labels.take} ${exchange.courierName} :`)
+      exchange.packages.forEach((item) => lines.push(`- ${packageDescription(item, language)}`))
     }
   }
 
-  lines.push('', 'Ta liste finale de colis :')
-  if (briefing.deliveries.length === 0) lines.push('Aucune livraison.')
+  lines.push('', labels.deliveries)
+  if (briefing.deliveries.length === 0) lines.push(labels.noDeliveries)
   briefing.deliveries.forEach((item, index) => {
-    const window = formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference)
+    const formattedWindow = formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference)
+    const window = language === 'mg'
+      ? formattedWindow === 'Matin' ? 'Maraina'
+        : formattedWindow === 'Soir' ? 'Hariva'
+          : formattedWindow?.replace(/\(lendemain\)$/, '(ny ampitso)')
+      : formattedWindow
     const details = [
-      packageDescription(item),
-      `à encaisser : ${new Intl.NumberFormat('fr-FR', { useGrouping: false }).format(item.amountToCollectAriary)} Ar`,
-      window ? `créneau : ${window}` : undefined,
+      packageDescription(item, language),
+      `${labels.collect} ${new Intl.NumberFormat('fr-FR', { useGrouping: false }).format(item.amountToCollectAriary)} Ar`,
+      window ? `${labels.window} ${window}` : undefined,
     ].filter(Boolean)
     lines.push(`${index + 1}. ${details.join(' — ')}`)
   })

@@ -210,4 +210,89 @@ describe('dispatch briefing model', () => {
     expect(finalText).toContain('Destination 1 — contact non renseigné — à encaisser : 5000 Ar')
     expect(finalText).not.toContain('Destinataire 1')
   })
+
+  it('preserves the complete existing French output and uses French when no language is specified', () => {
+    const draft = allocatedFixture()
+    const courier = buildDispatchBriefing(draft).couriers[1]
+    const sellerContacts = { client: '034 99 999 99' }
+    const expected = [
+      'Briefing du 15/11/2026 — Jean',
+      '',
+      'Récupérations :',
+      '1. Retrait sud — Boutique — contact vendeur : 034 99 999 99 — 1 colis.',
+      '',
+      'Échanges :',
+      'Rencontre avec Marie et Baptiste.',
+      'Donner à Marie :',
+      '- Destination 3 — contact : 034',
+      'Prendre chez Baptiste :',
+      '- Destination 2 — contact : 034',
+      '',
+      'Ta liste finale de colis :',
+      '1. Destination 2 — contact : 034 — à encaisser : 5000 Ar',
+    ].join('\n')
+    expect(generateCourierBriefing(courier, '2026-11-15', sellerContacts)).toBe(expected)
+    expect(generateCourierBriefing(courier, '2026-11-15', sellerContacts, 'fr')).toBe(expected)
+  })
+
+  it('generates an independent Malagasy briefing using the requested section and exchange wording', () => {
+    const draft = allocatedFixture()
+    draft.packages[1].destination = { label: 'Gare\n routière', query: 'Ambodivona, Antananarivo, Analamanga, Madagascar', latitude: -18.9, longitude: 47.52 }
+    draft.packages[1].contact = ' 034 22\n222 22 '
+    draft.packages[1].desiredDeliveryTime = '08:30:00'
+    draft.packages[1].desiredDeliveryEndTime = '10:45:00'
+    draft.packages[1].deliveryTimePreference = 'CUSTOM'
+    const courier = buildDispatchBriefing(draft).couriers[1]
+    const contacts = { client: ' 034 99\n999 99 ' }
+    const french = generateCourierBriefing(courier, '2026-11-15', contacts, 'fr')
+    const malagasy = generateCourierBriefing(courier, '2026-11-15', contacts, 'mg')
+    expect(malagasy).toContain('Toromarika ny 15/11/2026 — Jean')
+    expect(malagasy).toContain("Entana alaina :\n1. Retrait sud — Boutique — laharan'ny mpivarotra : 034 99 999 99 — 1 entana.")
+    expect(malagasy).toContain("Fifanakalozana entana :\nMiona amin'i Marie sy Baptiste.")
+    expect(malagasy).toContain("Omena an'i Marie :\n- Destination 3 — laharana : 034")
+    expect(malagasy).toContain("Alaina any amin'i Baptiste :\n- Gare routière · Ambodivona, Antananarivo — laharana : 034 22 222 22")
+    expect(malagasy).toContain('Ireto avy ny livraisons ataonao :\n1. Gare routière · Ambodivona, Antananarivo — laharana : 034 22 222 22 — vola alaina : 5000 Ar — fotoana : 08:30–10:45')
+    expect(malagasy.split('\n\nFifanakalozana entana :')[1]).not.toMatch(/Boutique|Destinataire|Analamanga|Madagascar/)
+    expect(malagasy).not.toMatch(/Récupérations :|Échanges :|Rencontre avec|Donner à|Prendre chez|Ta liste finale/)
+    expect(generateCourierBriefing(courier, '2026-11-15', contacts, 'fr')).toBe(french)
+    expect(generateCourierBriefing(courier, '2026-11-15', contacts)).toBe(french)
+  })
+
+  it('translates periods and next-day markers without changing place labels, times or amounts', () => {
+    const draft = allocatedFixture()
+    draft.packages[0].destination.label = 'Matin Soir (lendemain)'
+    draft.packages[0].deliveryTimePreference = 'MORNING'
+    draft.packages[1].deliveryTimePreference = 'AFTERNOON'
+    draft.packages[2].deliveryTimePreference = 'CUSTOM'
+    draft.packages[2].desiredDeliveryTime = '23:30:00'
+    draft.packages[2].desiredDeliveryEndTime = '01:15:00'
+    draft.packages[2].amountToCollectAriary = 15300
+    draft.deliveries = draft.packages.map((item, index) => ({ packageId: item.packageId, courierId: 'c2', order: index }))
+    const courier = buildDispatchBriefing(draft).couriers[1]
+    const malagasy = generateCourierBriefing(courier, draft.serviceDate, undefined, 'mg')
+    expect(malagasy).toContain('Matin Soir (lendemain) — laharana : 034 — vola alaina : 5000 Ar — fotoana : Maraina')
+    expect(malagasy).toContain('fotoana : Hariva')
+    expect(malagasy).toContain('vola alaina : 15300 Ar — fotoana : 23:30–01:15 (ny ampitso)')
+    const french = generateCourierBriefing(courier, draft.serviceDate)
+    expect(french).toContain('créneau : Matin')
+    expect(french).toContain('créneau : Soir')
+    expect(french).toContain('créneau : 23:30–01:15 (lendemain)')
+  })
+
+  it('translates empty missions and missing contacts in Malagasy without filling in invented information', () => {
+    const draft = allocatedFixture()
+    draft.deliveries = [{ packageId: 'p1', courierId: 'c1', order: 0 }, { packageId: 'p2', courierId: 'c1', order: 1 }, { packageId: 'p3', courierId: 'c2', order: 0 }]
+    const idle = buildDispatchBriefing(draft).couriers[2]
+    expect(generateCourierBriefing(idle, draft.serviceDate, undefined, 'mg')).toContain('Entana alaina :\nTsy misy entana alaina.\n\nFifanakalozana entana :\nTsy misy fifanakalozana entana.\n\nIreto avy ny livraisons ataonao :\nTsy misy livraison.')
+    draft.packages[0].contact = ' '
+    draft.packages[0].serviceClientName = ' '
+    draft.packages[1].serviceClientName = ' '
+    const courier = buildDispatchBriefing(draft).couriers[0]
+    const missing = generateCourierBriefing(courier, draft.serviceDate, { client: null }, 'mg')
+    expect(missing).toContain("Mpivarotra tsy voatondro — laharan'ny mpivarotra tsy voatondro")
+    expect(missing).toContain('Destination 1 — laharana tsy voatondro — vola alaina : 5000 Ar')
+    const unavailable = generateCourierBriefing(courier, draft.serviceDate, {}, 'mg')
+    expect(unavailable).toContain("laharan'ny mpivarotra tsy azo alaina")
+    expect(unavailable).not.toContain('contact non renseigné')
+  })
 })

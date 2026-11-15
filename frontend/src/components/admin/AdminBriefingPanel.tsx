@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRight, ArrowRightLeft, Bike, CalendarDays, Check, Copy, List, LoaderCircle, MapPin, MessageSquareText, PackageCheck, Phone, RefreshCw, TriangleAlert, Warehouse, X } from 'lucide-react'
+import { ArrowRight, ArrowRightLeft, Bike, CalendarDays, Check, ChevronLeft, ChevronRight, Copy, List, LoaderCircle, MapPin, MessageSquareText, PackageCheck, Phone, RefreshCw, TriangleAlert, Warehouse, X } from 'lucide-react'
 import { getDispatchPlan, listAdminClients, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft, type ManualPackage } from '../../api/manualDispatch'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { Button } from '../Button'
 import { CourierCombobox } from './CourierCombobox'
-import { buildDispatchBriefing, generateCourierBriefing, type BriefingPickup, type CourierBriefing } from './dispatchBriefing'
+import { buildDispatchBriefing, generateCourierBriefing, type BriefingLanguage, type BriefingPickup, type CourierBriefing } from './dispatchBriefing'
 import { manualDispatchCourierColor } from './manualDispatchGeography'
 import { dispatchPlace, dispatchPlaceText } from './manualDispatchPresentation'
 import { errorMessage, formatAriary, formatDate, formatTime } from './adminHelpers'
@@ -57,18 +57,28 @@ function PickupList({ pickups }: { pickups: BriefingPickup[] }) {
   })}</ol>
 }
 
-function CourierHeading({ briefing, allowMessages, onMessage }: { briefing: CourierBriefing; allowMessages: boolean; onMessage: () => void }) {
+function CourierHeading({ briefing }: { briefing: CourierBriefing }) {
   return <header className="briefing-courier-heading"><div><span style={{ background: manualDispatchCourierColor(briefing.courier.courierId) }} aria-hidden="true"><Bike /></span><strong>{briefing.courier.name}</strong></div>
-    {allowMessages && <Button tone="admin" variant="secondary" size="small" onClick={onMessage} aria-label={`Générer le briefing de ${briefing.courier.name}`}><MessageSquareText aria-hidden="true" />Briefing texte</Button>}
   </header>
 }
 
-function BriefingTextDialog({ courierName, text, onChange, onClose }: { courierName: string; text: string; onChange: (value: string) => void; onClose: () => void }) {
+function BriefingTextDialog({ courierName, text, language, onLanguageChange, onChange, onClose }: {
+  courierName: string
+  text: string
+  language: BriefingLanguage
+  onLanguageChange: (language: BriefingLanguage) => void
+  onChange: (value: string) => void
+  onClose: () => void
+}) {
   const titleId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const [copying, setCopying] = useState(false)
   const [copyMessage, setCopyMessage] = useState<string>()
+  const currentLanguage = useRef(language)
+  currentLanguage.current = language
+
+  useEffect(() => { setCopyMessage(undefined) }, [language])
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
@@ -79,6 +89,7 @@ function BriefingTextDialog({ courierName, text, onChange, onClose }: { courierN
       if (event.key === 'Escape') { event.preventDefault(); onClose() }
       if (event.key !== 'Tab') return
       const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea') ?? [])
+        .filter((control) => control.tabIndex >= 0)
         .sort((a, b) => a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
       if (!controls.length) return
       const first = controls[0], last = controls[controls.length - 1]
@@ -99,10 +110,10 @@ function BriefingTextDialog({ courierName, text, onChange, onClose }: { courierN
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(text)
-      if (textareaRef.current) setCopyMessage(textareaRef.current.value === text ? 'Texte copié.' : 'La version précédente du texte a été copiée.')
+      if (textareaRef.current && currentLanguage.current === language) setCopyMessage(textareaRef.current.value === text ? 'Texte copié.' : 'La version précédente du texte a été copiée.')
     } catch {
       const textarea = textareaRef.current
-      if (!textarea) return
+      if (!textarea || currentLanguage.current !== language) return
       textarea.focus(); textarea.select()
       let copied = false
       try { copied = typeof document.execCommand === 'function' && document.execCommand('copy') } catch { /* Manual selection remains available. */ }
@@ -113,8 +124,19 @@ function BriefingTextDialog({ courierName, text, onChange, onClose }: { courierN
   return createPortal(<div className="client-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="client-package-dialog briefing-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef}>
       <header className="client-modal-header"><div className="client-modal-title"><span><MessageSquareText aria-hidden="true" /></span><div><p className="eyebrow">Message au livreur</p><h2 id={titleId}>Briefing de {courierName}</h2></div></div><button type="button" className="admin-icon-button briefing-close" aria-label="Fermer le briefing texte" onClick={onClose}><X aria-hidden="true" /></button></header>
-      <div className="briefing-dialog__body"><p>Modifiez ce texte, puis copiez-le pour l’envoyer. Les retouches restent dans cet onglet, sans modifier le dispatch.</p>
-        <label htmlFor={`${titleId}-text`}>Texte du briefing</label><textarea id={`${titleId}-text`} ref={textareaRef} value={text} onChange={(event) => { setCopyMessage(undefined); onChange(event.target.value) }} />
+      <div className="briefing-dialog__body"><p>Modifiez puis copiez la version de votre choix. Les textes français et gasy restent indépendants, sans modifier le dispatch.</p>
+        <div className="admin-segmented briefing-language-tabs" role="tablist" aria-label="Langue du briefing">
+          {(['fr', 'mg'] as const).map((code) => <button key={code} id={`${titleId}-${code}`} type="button" role="tab" aria-label={code === 'fr' ? 'Français' : 'Malagasy'} aria-selected={language === code} aria-controls={`${titleId}-panel`} tabIndex={language === code ? 0 : -1} className={language === code ? 'is-active' : undefined} onClick={() => onLanguageChange(code)} onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const next = event.key === 'Home' ? 'fr' : event.key === 'End' ? 'mg' : code === 'fr' ? 'mg' : 'fr'
+            onLanguageChange(next)
+            document.getElementById(`${titleId}-${next}`)?.focus()
+          }}>{code.toUpperCase()}</button>)}
+        </div>
+        <div id={`${titleId}-panel`} className="briefing-language-panel" role="tabpanel" aria-labelledby={`${titleId}-${language}`}>
+          <label htmlFor={`${titleId}-text`}>Texte du briefing</label><textarea id={`${titleId}-text`} ref={textareaRef} lang={language} value={text} onChange={(event) => { setCopyMessage(undefined); onChange(event.target.value) }} />
+        </div>
         <div className="briefing-dialog__status"><small>{Array.from(text).length} caractères</small>{copyMessage && <span role="status">{copyMessage}</span>}</div>
       </div>
       <footer className="client-modal-footer"><Button variant="secondary" onClick={onClose}>Fermer</Button><Button disabled={copying || !text.trim()} onClick={() => void copy()}>{copying ? <LoaderCircle className="spin" aria-hidden="true" /> : copyMessage === 'Texte copié.' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}{copying ? 'Copie…' : 'Copier le texte'}</Button></footer>
@@ -129,17 +151,23 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
   sellerContacts?: Readonly<Record<string, string | null | undefined>>
 }) {
   const model = useMemo(() => buildDispatchBriefing(draft), [draft])
+  const couriers = useMemo(() => [...model.couriers].sort((a, b) => a.courier.name.localeCompare(b.courier.name, 'fr') || a.courier.courierId.localeCompare(b.courier.courierId)), [model.couriers])
   const [view, setView] = useState<'overview' | 'courier'>('overview')
-  const [courierId, setCourierId] = useState(model.couriers[0]?.courier.courierId ?? '')
+  const [courierId, setCourierId] = useState(couriers[0]?.courier.courierId ?? '')
   const [editing, setEditing] = useState<string>()
-  const [texts, setTexts] = useState<Record<string, string>>({})
+  const [language, setLanguage] = useState<BriefingLanguage>('fr')
+  const [texts, setTexts] = useState<Record<string, Record<BriefingLanguage, string>>>({})
   const closeEditor = useCallback(() => setEditing(undefined), [])
-  const selected = model.couriers.find((item) => item.courier.courierId === courierId) ?? model.couriers[0]
+  const selected = couriers.find((item) => item.courier.courierId === courierId) ?? couriers[0]
+  const selectedIndex = selected ? couriers.indexOf(selected) : -1
   const edited = model.couriers.find((item) => item.courier.courierId === editing)
   const canGenerate = allowMessages && draft.status === 'FINALIZED' && model.warnings.length === 0
   function openText(briefing: CourierBriefing) {
     const id = briefing.courier.courierId
-    setTexts((current) => current[id] === undefined ? { ...current, [id]: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts) } : current)
+    setTexts((current) => current[id] === undefined ? { ...current, [id]: {
+      fr: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts, 'fr'),
+      mg: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts, 'mg'),
+    } } : current)
     setEditing(id)
   }
   const collectionCouriers = model.couriers.filter((item) => item.pickups.length > 0)
@@ -148,7 +176,9 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
   return <div className="briefing-content">
     {model.warnings.length > 0 && <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Répartition à vérifier</strong><ul>{model.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div></div>}
     <div className="briefing-viewbar"><div className="admin-segmented" role="group" aria-label="Vue du briefing"><button type="button" className={view === 'overview' ? 'is-active' : undefined} aria-pressed={view === 'overview'} onClick={() => setView('overview')}><List aria-hidden="true" />Vue d’ensemble</button><button type="button" className={view === 'courier' ? 'is-active' : undefined} aria-pressed={view === 'courier'} onClick={() => setView('courier')}><Bike aria-hidden="true" />Par livreur</button></div><p>{draft.pickups.length} récupérations · {draft.packages.length} colis · {model.couriers.length} livreurs</p></div>
-    {view === 'courier' && <div className="briefing-courier-picker"><label htmlFor="briefing-courier">Livreur</label><CourierCombobox inputId="briefing-courier" ariaLabel="Livreur du briefing" value={selected?.courier.courierId ?? ''} couriers={model.couriers.map(({ courier }) => ({ id: courier.courierId, name: courier.name, contact: courier.contact, active: true }))} onChange={setCourierId} /></div>}
+    {view === 'courier' && <div className="briefing-courier-toolbar"><div className="briefing-courier-picker"><label htmlFor="briefing-courier">Livreur</label><CourierCombobox inputId="briefing-courier" ariaLabel="Livreur du briefing" value={selected?.courier.courierId ?? ''} couriers={couriers.map(({ courier }) => ({ id: courier.courierId, name: courier.name, contact: courier.contact, active: true }))} onChange={setCourierId} /></div>
+      <nav className="briefing-courier-navigation" aria-label="Parcourir les livreurs"><span aria-live="polite" aria-atomic="true">{selectedIndex + 1} / {couriers.length}</span><Button tone="admin" variant="secondary" aria-label="Livreur précédent" title="Livreur précédent" disabled={selectedIndex <= 0} onClick={() => setCourierId(couriers[selectedIndex - 1].courier.courierId)}><ChevronLeft aria-hidden="true" /></Button><Button tone="admin" variant="secondary" aria-label="Livreur suivant" title="Livreur suivant" disabled={selectedIndex < 0 || selectedIndex >= couriers.length - 1} onClick={() => setCourierId(couriers[selectedIndex + 1].courier.courierId)}><ChevronRight aria-hidden="true" /></Button></nav>
+    </div>}
     {view === 'courier' && selected ? <div className="briefing-personal">
       <div className="briefing-personal__heading"><div><p className="admin-eyebrow">Tournée du {formatDate(draft.serviceDate)}</p><h3>{selected.courier.name}</h3><p><MapPin aria-hidden="true" /><span>Départ : {dispatchPlaceText(selected.courier.departure)} · {formatTime(selected.courier.departureAt)}{selected.courier.contact ? ` · ${selected.courier.contact}` : ''}</span></p></div>{canGenerate && <Button tone="admin" onClick={() => openText(selected)}><MessageSquareText aria-hidden="true" />Générer le briefing</Button>}</div>
       <BriefingSection number={1} title="Récupérations" icon={<Warehouse aria-hidden="true" />}>{selected.pickups.length ? <PickupList pickups={selected.pickups} /> : <p className="briefing-empty">Aucune récupération pour ce livreur.</p>}</BriefingSection>
@@ -157,11 +187,11 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
       </BriefingSection>
       <BriefingSection number={3} title="Colis à livrer" icon={<PackageCheck aria-hidden="true" />}>{selected.deliveries.length ? <PackageList packages={selected.deliveries} financial /> : <p className="briefing-empty">Aucun colis à livrer pour ce livreur.</p>}</BriefingSection>
     </div> : <>
-      <BriefingSection number={1} title="Récupérations" icon={<Warehouse aria-hidden="true" />}><div className="briefing-courier-grid">{collectionCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} allowMessages={canGenerate} onMessage={() => openText(briefing)} /><PickupList pickups={briefing.pickups} /></article>)}</div>{collectionCouriers.length === 0 && <p className="briefing-empty">Aucune récupération affectée.</p>}</BriefingSection>
+      <BriefingSection number={1} title="Récupérations" icon={<Warehouse aria-hidden="true" />}><div className="briefing-courier-grid">{collectionCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} /><PickupList pickups={briefing.pickups} /></article>)}</div>{collectionCouriers.length === 0 && <p className="briefing-empty">Aucune récupération affectée.</p>}</BriefingSection>
       <BriefingSection number={2} title="Échanges" icon={<ArrowRightLeft aria-hidden="true" />}>{model.transfers.length ? <div className="briefing-exchange-grid">{model.transfers.map((transfer) => <article key={`${transfer.fromCourierId}:${transfer.toCourierId}`} className="briefing-exchange"><header><strong>{transfer.fromCourierName} → {transfer.toCourierName}</strong><small>{transfer.packages.length} colis à transmettre</small></header><PackageList packages={transfer.packages} /></article>)}</div> : <p className="briefing-empty">Aucun échange : chaque livreur conserve les colis qu’il récupère.</p>}</BriefingSection>
-      <BriefingSection number={3} title="Colis à livrer" icon={<PackageCheck aria-hidden="true" />}><div className="briefing-courier-grid">{deliveryCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} allowMessages={canGenerate} onMessage={() => openText(briefing)} /><PackageList packages={briefing.deliveries} financial /></article>)}</div>{deliveryCouriers.length === 0 && <p className="briefing-empty">Aucun colis affecté à la livraison.</p>}</BriefingSection>
+      <BriefingSection number={3} title="Colis à livrer" icon={<PackageCheck aria-hidden="true" />}><div className="briefing-courier-grid">{deliveryCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} /><PackageList packages={briefing.deliveries} financial /></article>)}</div>{deliveryCouriers.length === 0 && <p className="briefing-empty">Aucun colis affecté à la livraison.</p>}</BriefingSection>
     </>}
-    {canGenerate && edited && <BriefingTextDialog courierName={edited.courier.name} text={texts[edited.courier.courierId] ?? ''} onChange={(value) => setTexts((current) => ({ ...current, [edited.courier.courierId]: value }))} onClose={closeEditor} />}
+    {canGenerate && edited && <BriefingTextDialog courierName={edited.courier.name} language={language} onLanguageChange={setLanguage} text={texts[edited.courier.courierId]?.[language] ?? ''} onChange={(value) => setTexts((current) => ({ ...current, [edited.courier.courierId]: { ...current[edited.courier.courierId], [language]: value } }))} onClose={closeEditor} />}
   </div>
 }
 
