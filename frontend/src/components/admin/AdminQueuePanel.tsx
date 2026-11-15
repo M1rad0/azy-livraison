@@ -19,6 +19,7 @@ import {
 import type { DeliveryPackage, DeliveryRequest } from '../../api/admin'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { Button } from '../Button'
 import { ExistingPackageActions, type EditablePackageContext } from '../ExistingPackageActions'
 import {
   antananarivoToday,
@@ -117,14 +118,14 @@ export function AdminQueuePanel({
           <p>Retrouvez tous les colis encore à dispatcher, quelle que soit leur date demandée.</p>
         </div>
         <div className="admin-toolbar">
-          <button className="admin-button" type="button" onClick={onOpenDispatch}>Préparer la journée</button>
+          <Button tone="admin" onClick={onOpenDispatch}>Préparer la journée</Button>
           <button className="admin-icon-button" type="button" onClick={onReload} disabled={busy} aria-label="Actualiser les livraisons en attente">
             <RefreshCw className={busy ? 'admin-spin' : undefined} aria-hidden="true" />
           </button>
         </div>
       </header>
 
-      <form className="admin-queue-filters" onSubmit={applyFilters}>
+      <form className={`admin-queue-filters${draft.scope === 'PERIOD' ? ' admin-queue-filters--period' : ''}`} onSubmit={applyFilters}>
         <div className="admin-queue-filters__scope">
           <span><Filter aria-hidden="true" />Dates demandées</span>
           <div className="admin-segmented" role="group" aria-label="Période des livraisons">
@@ -143,8 +144,8 @@ export function AdminQueuePanel({
           <input type="search" value={draft.client} maxLength={100} placeholder="Nom, identifiant ou téléphone" onChange={(event) => setDraft((current) => ({ ...current, client: event.target.value }))} />
         </label>
         <div className="admin-queue-filters__actions">
-          {hasActiveFilters && <button className="admin-button admin-button--ghost" type="button" onClick={clearFilters}>Tout afficher</button>}
-          <button className="admin-button" type="submit" disabled={busy}><Search aria-hidden="true" />Appliquer</button>
+          {hasActiveFilters && <Button tone="admin" variant="secondary" onClick={clearFilters}>Tout afficher</Button>}
+          <Button tone="admin" type="submit" disabled={busy}><Search aria-hidden="true" />Appliquer</Button>
         </div>
         {filterError && <p className="admin-queue-filters__error" role="alert">{filterError}</p>}
       </form>
@@ -208,13 +209,13 @@ export function AdminQueuePanel({
 
                 <div className="admin-package-table" role="table" aria-label={`Colis de ${request.ownerDisplayName}`}>
                   <div className="admin-package-row admin-package-row--header" role="row">
-                    <span role="columnheader">Action</span>
                     <span role="columnheader">Destinataire</span>
                     <span role="columnheader">Destination</span>
                     <span role="columnheader">Contact</span>
                     <span role="columnheader">À récupérer</span>
                     <span role="columnheader">Paiement</span>
                     <span role="columnheader">État</span>
+                    <span role="columnheader" className="admin-package-actions-heading">Actions</span>
                   </div>
                   {request.packages.filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome).map((deliveryPackage) => {
                     const cancellable = deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome
@@ -226,6 +227,15 @@ export function AdminQueuePanel({
                     )
                     return (
                       <div className="admin-package-row" role="row" key={deliveryPackage.id}>
+                        <span role="cell" className="admin-package-recipient"><strong>{deliveryPackage.recipientName}</strong>{deliveryPackage.faritra && <small>Faritra</small>}</span>
+                        <span role="cell" className="admin-package-destination"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}<small>{deliveryPackage.pricingZoneName ? `Zone ${deliveryPackage.pricingZoneName}` : 'Tarif non disponible'}{deliveryWindow ? ` · créneau ${deliveryWindow}` : ''}</small></span></span>
+                        <span role="cell">{deliveryPackage.contact || '—'}</span>
+                        <span role="cell" className="admin-package-amount"><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong><small>{deliveryPackage.deliveryFeeAriary != null ? `dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : 'Tarif indisponible'}</small></span>
+                        <span role="cell" className="admin-package-payment">
+                          <CircleDollarSign aria-hidden="true" />
+                          <span>À encaisser{deliveryPackage.mobileMoneyPaid && <small><Smartphone aria-hidden="true" />Mobile Money signalé</small>}</span>
+                        </span>
+                        <span role="cell"><i className={`admin-status-dot admin-status-dot--${deliveryPackage.status.toLowerCase()}`} />{packageStatusLabel(deliveryPackage.status)}</span>
                         <span role="cell" className="admin-package-actions">
                           {deliveryPackage.canEdit && accessToken && <>
                             <button className="admin-table-action" type="button" aria-label={`Modifier le colis de ${deliveryPackage.recipientName}`} title="Modifier"
@@ -241,15 +251,6 @@ export function AdminQueuePanel({
                             onClick={() => setPackageToCancel(deliveryPackage)}
                           ><Ban aria-hidden="true" /></button>
                         </span>
-                        <span role="cell"><strong>{deliveryPackage.recipientName}</strong>{deliveryPackage.faritra && <small>Faritra</small>}</span>
-                        <span role="cell"><MapPin aria-hidden="true" /><span>{locationLabel(deliveryPackage.destination)}<small>{deliveryPackage.pricingZoneName ? `Zone ${deliveryPackage.pricingZoneName}` : 'Tarif non disponible'}{deliveryWindow ? ` · créneau ${deliveryWindow}` : ''}</small></span></span>
-                        <span role="cell">{deliveryPackage.contact || '—'}</span>
-                        <span role="cell"><strong>{formatAriary(deliveryPackage.amountToCollectAriary)}</strong><small>{deliveryPackage.deliveryFeeAriary != null ? `dont ${formatAriary(deliveryPackage.deliveryFeeAriary)} de livraison` : 'Tarif indisponible'}</small></span>
-                        <span role="cell">
-                          <CircleDollarSign aria-hidden="true" />
-                          <span>À encaisser{deliveryPackage.mobileMoneyPaid && <small><Smartphone aria-hidden="true" />Mobile Money signalé</small>}</span>
-                        </span>
-                        <span role="cell"><i className={`admin-status-dot admin-status-dot--${deliveryPackage.status.toLowerCase()}`} />{packageStatusLabel(deliveryPackage.status)}</span>
                       </div>
                     )
                   })}

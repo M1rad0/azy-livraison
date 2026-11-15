@@ -10,6 +10,7 @@ import {
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ExistingPackageActions, type EditablePackageContext } from '../ExistingPackageActions'
+import { Button } from '../Button'
 import { errorMessage, formatAriary } from './adminHelpers'
 
 const statusLabel = { PENDING: 'En attente', CONFIRMED: 'Confirmée', COMPLETED: 'Terminée' } as const
@@ -95,8 +96,8 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
               <article key={request.id} className={`admin-express-card is-${request.expressStatus?.toLowerCase()}`}>
                 <header><span className="admin-express-card__icon"><Zap /></span><div><small>{new Date(request.createdAt).toLocaleString('fr-MG')}</small><h3>{request.ownerDisplayName}</h3><p>{request.pickup.label} · {request.packages.length} colis · {delivery.totalWeightKg.toLocaleString('fr-MG')} kg</p></div><span className="admin-express-status">{statusLabel[request.expressStatus ?? 'PENDING']}</span></header>
                 <div className="admin-express-packages">{request.packages.map((item) => <span key={item.id}><strong>{item.recipientName}</strong><small>{item.destination.label} · {formatAriary(item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0)}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay, item.deliveryTimePreference) ? ` · créneau ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay, item.deliveryTimePreference)}` : ''}</small>
-                  {item.canEdit && <div className="admin-toolbar"><button className="admin-button admin-button--ghost" type="button" onClick={() => setPackageAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: 'EXPRESS', action: 'EDIT' })}><Pencil aria-hidden="true" />Modifier</button>
-                    <button className="admin-button admin-button--ghost" type="button" onClick={() => setPackageAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: 'EXPRESS', action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" />Reprogrammer</button></div>}
+                  {item.canEdit && <div className="admin-toolbar admin-express-packages__actions"><Button tone="admin" variant="secondary" size="small" onClick={() => setPackageAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: 'EXPRESS', action: 'EDIT' })}><Pencil aria-hidden="true" />Modifier</Button>
+                    <Button tone="admin" variant="secondary" size="small" onClick={() => setPackageAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: 'EXPRESS', action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" />Reprogrammer</Button></div>}
                 </span>)}</div>
                 {request.expressStatus === 'PENDING' && (
                   <div className="admin-express-assignment">
