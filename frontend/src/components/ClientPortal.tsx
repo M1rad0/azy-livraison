@@ -40,6 +40,7 @@ import { LocationPicker } from './LocationPicker'
 import { usePortalNavigation } from './PortalShell'
 import { PricingTransparencyPanel } from './PricingTransparencyPanel'
 import { ExistingPackageActions, type EditablePackageContext } from './ExistingPackageActions'
+import { Button } from './Button'
 import './ClientPortal.css'
 
 type ClientView = 'history' | 'new-request' | 'express' | 'pricing' | 'reports' | 'profile'
@@ -146,6 +147,7 @@ function RequestHistory({
               )}
               <div className="client-history-packages" role="list">
                 {request.packages.map((item) => {
+                  const canCancel = item.status === 'PENDING' && !item.finalOutcome
                   const applicableFee = item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0
                   const finalAmount = item.finalOutcome === 'DELIVERED'
                     ? (item.actualCollectedAriary ?? item.amountToCollectAriary)
@@ -172,14 +174,18 @@ function RequestHistory({
                       {item.finalOutcome === 'RETURN_TO_SENDER' && (
                         <small>{item.returnCompletedAt ? 'Remis à l’expéditeur' : 'Retour en attente'}</small>
                       )}
-                      {item.canEdit && <>
-                        <button className="button button--secondary" type="button" onClick={() => onAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'EDIT' })}><PencilLine aria-hidden="true" />Modifier</button>
-                        <button className="button button--secondary" type="button" onClick={() => onAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" />Reprogrammer</button>
-                      </>}
-                      {item.status === 'PENDING' && !item.finalOutcome && (
-                        <button className="client-cancel-package" type="button" onClick={() => onCancel(item)}>
-                          <Ban aria-hidden="true" />Annuler
-                        </button>
+                      {(item.canEdit || canCancel) && (
+                        <div className="client-history-packages__actions" role="group" aria-label={`Actions pour ${item.recipientName}`}>
+                          {item.canEdit && <>
+                            <Button variant="secondary" size="small" onClick={() => onAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'EDIT' })}><PencilLine aria-hidden="true" />Modifier</Button>
+                            <Button variant="secondary" size="small" onClick={() => onAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" />Reprogrammer</Button>
+                          </>}
+                          {canCancel && (
+                            <button className="client-cancel-package" type="button" onClick={() => onCancel(item)}>
+                              <Ban aria-hidden="true" />Annuler
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </article>

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quoteDeliveryPrice } from '../api/client'
 import { endOfOneHourWindow } from '../deliveryWindows'
@@ -89,6 +89,22 @@ describe('ClientPackageDialog', () => {
     expect(end).not.toHaveAttribute('readonly')
     fireEvent.change(end, { target: { value: '18:00' } })
     expect(end).toHaveValue('18:00')
+  })
+
+  it('regroupe montant et poids séparément du créneau sans changer leurs valeurs', () => {
+    const initialValue = { ...emptyClientPackage('amounts'), amountToCollectAriary: '25000', weightKg: '2.5' }
+    render(<ClientPackageDialog accessToken="token" initialValue={initialValue} packageNumber={1} onSave={vi.fn()} onClose={vi.fn()} />)
+    const values = screen.getByRole('group', { name: 'Montant et poids' })
+    expect(within(values).getByLabelText('Total à récupérer (Ar)')).toHaveValue(25000)
+    expect(within(values).getByLabelText('Poids (kg) · facultatif')).toHaveValue(2.5)
+    expect(within(values).queryByLabelText('Début du créneau')).not.toBeInTheDocument()
+    const schedule = screen.getByRole('group', { name: 'Créneau de livraison · facultatif' })
+    expect(within(schedule).getByLabelText('Début du créneau')).toBeInTheDocument()
+    fireEvent.change(within(values).getByLabelText('Total à récupérer (Ar)'), { target: { value: '30000' } })
+    fireEvent.change(within(values).getByLabelText('Poids (kg) · facultatif'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Matin' }))
+    expect(within(values).getByLabelText('Total à récupérer (Ar)')).toHaveValue(30000)
+    expect(within(values).getByLabelText('Poids (kg) · facultatif')).toHaveValue(3)
   })
 
   it('affiche le tarif convenu sans une décomposition qui ne correspond plus au montant', async () => {

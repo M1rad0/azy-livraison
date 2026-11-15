@@ -6,6 +6,7 @@ import type { Location } from '../api/csvImports'
 import { formatPricingDistanceSummary } from '../api/pricing'
 import { endOfOneHourWindow } from '../deliveryWindows'
 import { LocationPicker } from './LocationPicker'
+import { Button } from './Button'
 
 export interface ClientPackageDraft {
   localId: string
@@ -336,20 +337,34 @@ export function ClientPackageDialog({
             )}
           </div>
 
-          <div className="client-form-grid client-form-grid--three">
-            <label className="client-field client-field--icon">
-              <span>Total à récupérer (Ar)</span>
-              <div><Banknote aria-hidden="true" /><input
-                value={value.amountToCollectAriary}
-                type="number"
-                min="0"
-                step="1"
-                inputMode="numeric"
-                onChange={(event) => setValue({ ...value, amountToCollectAriary: event.target.value })}
-              /></div>
-            </label>
+          <div className="client-package-details">
+            <div className="client-package-details__values client-package-details__section" role="group" aria-label="Montant et poids">
+              <label className="client-field client-field--icon">
+                <span>Total à récupérer (Ar)</span>
+                <div><Banknote aria-hidden="true" /><input
+                  value={value.amountToCollectAriary}
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  onChange={(event) => setValue({ ...value, amountToCollectAriary: event.target.value })}
+                /></div>
+              </label>
+              <label className="client-field client-field--icon">
+                <span>Poids (kg) · facultatif</span>
+                <div><Scale aria-hidden="true" /><input
+                  value={value.weightKg}
+                  type="number"
+                  min="0.001"
+                  step="0.1"
+                  inputMode="decimal"
+                  placeholder="Valeur par défaut"
+                  onChange={(event) => setValue({ ...value, weightKg: event.target.value })}
+                /></div>
+              </label>
+            </div>
             <div
-              className="client-field client-field--time-window"
+              className="client-field client-field--time-window client-package-details__section"
               role="group"
               aria-labelledby={`${titleId}-delivery-window-label`}
             >
@@ -386,18 +401,6 @@ export function ClientPackageDialog({
                   : 'Aucun nouveau créneau ne peut commencer avant minuit.'
                 : 'Choisissez librement le début et la fin, ou laissez les heures vides.'}{!preset && value.desiredDeliveryTime && desiredDeliveryEndTime < value.desiredDeliveryTime ? ' La fin se situe le lendemain.' : ''}</small>
             </div>
-            <label className="client-field client-field--icon">
-              <span>Poids (kg) · facultatif</span>
-              <div><Scale aria-hidden="true" /><input
-                value={value.weightKg}
-                type="number"
-                min="0.001"
-                step="0.1"
-                inputMode="decimal"
-                placeholder="Valeur par défaut"
-                onChange={(event) => setValue({ ...value, weightKg: event.target.value })}
-              /></div>
-            </label>
             <div className="client-choice-stack">
               <label className="client-check-card">
                 <input type="checkbox" checked={value.faritra} onChange={(event) => setValue({ ...value, faritra: event.target.checked })} />
@@ -414,8 +417,8 @@ export function ClientPackageDialog({
         </fieldset>
 
         <footer className="client-modal-footer">
-          <button className="button button--secondary" type="button" disabled={saving} onClick={onClose}>Annuler</button>
-          <button className="button" type="button" disabled={saving || quoteBusy || (confirmed(value.destination) && !value.pricingQuote)} onClick={() => void save()}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Check aria-hidden="true" />}{saving ? 'Enregistrement…' : 'Enregistrer le colis'}</button>
+          <Button variant="secondary" disabled={saving} onClick={onClose}>Annuler</Button>
+          <Button disabled={saving || quoteBusy || (confirmed(value.destination) && !value.pricingQuote)} onClick={() => void save()}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Check aria-hidden="true" />}{saving ? 'Enregistrement…' : 'Enregistrer le colis'}</Button>
         </footer>
       </section>
     </div>,

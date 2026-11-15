@@ -559,6 +559,17 @@
   text-align: right;
 }
 
+.client-history-packages__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-self: end;
+  justify-content: flex-end;
+  align-items: center;
+  max-width: 15rem;
+  gap: .35rem;
+  margin-top: .25rem;
+}
+
 .client-cancel-package {
   display: inline-flex;
   align-items: center;
@@ -677,6 +688,7 @@
 
 .client-field {
   display: grid;
+  align-content: start;
   min-width: 0;
   gap: 0.42rem;
   margin-top: 0.85rem;
@@ -721,6 +733,7 @@
 
 .client-field--icon > div {
   position: relative;
+  display: flex;
 }
 
 .client-field--icon > div > svg {
@@ -738,6 +751,42 @@
 
 .client-field--time-window {
   grid-column: span 2;
+}
+
+.client-package-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: .9rem;
+  padding-top: 1rem;
+}
+
+.client-package-details__section {
+  min-width: 0;
+  padding: .9rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: .9rem;
+}
+
+.client-package-details__values {
+  display: grid;
+  align-content: start;
+  gap: .85rem;
+}
+
+.client-package-details .client-field {
+  margin-top: 0;
+}
+
+.client-package-details > .client-field--time-window {
+  grid-column: auto;
+}
+
+.client-package-details > .client-choice-stack {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .client-time-window {
@@ -1597,7 +1646,8 @@
   }
 
   .client-profile-layout,
-  .client-form-grid--three {
+  .client-form-grid--three,
+  .client-package-details {
     grid-template-columns: 1fr;
   }
 
@@ -1635,6 +1685,14 @@
 }
 
 @media (max-width: 600px) {
+  .client-package-details > .client-choice-stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .client-package-details__section {
+    padding: .8rem;
+  }
+
   .client-portal,
   .client-request-builder,
   .client-profile-page {
@@ -1701,6 +1759,10 @@
     grid-row: auto;
     align-items: start;
     justify-items: start;
+  }
+
+  .client-history-packages__actions {
+    width: 100%;
   }
 
   .client-section-heading--actions {

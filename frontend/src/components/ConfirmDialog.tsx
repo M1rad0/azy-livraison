@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
+import { Button } from './Button'
 
 export function ConfirmDialog({
   title,
@@ -40,8 +41,8 @@ export function ConfirmDialog({
         </header>
         <div className="confirm-dialog__content">{children}</div>
         <footer>
-          <button className="button button--secondary" type="button" disabled={busy} onClick={onClose}>{cancelLabel}</button>
-          <button className={`button${danger ? ' button--danger' : ''}`} type="button" disabled={busy} onClick={onConfirm}>{busy ? 'Enregistrement…' : confirmLabel}</button>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>{cancelLabel}</Button>
+          <Button variant={danger ? 'danger' : 'primary'} disabled={busy} onClick={onConfirm}>{busy ? 'Enregistrement…' : confirmLabel}</Button>
         </footer>
       </section>
     </div>
