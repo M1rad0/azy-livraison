@@ -26,6 +26,7 @@ import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
 import com.azylivraison.delivery.service.ExpressOutcomesFinalizedEvent;
 import com.azylivraison.finance.service.FinancialSettlementService;
+import com.azylivraison.finance.cash.CashLedgerService;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -39,18 +40,21 @@ public class DailyWorkflowService {
     private final ExpressDeliveryRepository expressDeliveries;
     private final ApplicationEventPublisher events;
     private final ClientClosureService clientClosures;
+    private final CashLedgerService cashLedger;
 
     public DailyWorkflowService(
             DailyWorkflowRepository repository,
             FinancialSettlementService financialSettlementService,
             ExpressDeliveryRepository expressDeliveries,
             ApplicationEventPublisher events,
-            ClientClosureService clientClosures) {
+            ClientClosureService clientClosures,
+            CashLedgerService cashLedger) {
         this.repository = repository;
         this.financialSettlementService = financialSettlementService;
         this.expressDeliveries = expressDeliveries;
         this.events = events;
         this.clientClosures = clientClosures;
+        this.cashLedger = cashLedger;
     }
 
     @Transactional(readOnly = true)
@@ -195,6 +199,9 @@ public class DailyWorkflowService {
                 normalizeNullable(note),
                 actorAccountId,
                 Instant.now());
+        // The money follows the actual collector, never the dispatch assignment.
+        // Recording/correcting a result and its ledger delta commit together.
+        cashLedger.syncCollection(packageId, actualCourierId, recovered == null ? 0 : recovered, actorAccountId);
         if (deliveryPackage.requestKind() == DeliveryRequestKind.EXPRESS) {
             expressDeliveries.completeIfFinal(deliveryPackage.deliveryRequestId());
             events.publishEvent(new ExpressOutcomesFinalizedEvent(deliveryPackage.deliveryRequestId()));

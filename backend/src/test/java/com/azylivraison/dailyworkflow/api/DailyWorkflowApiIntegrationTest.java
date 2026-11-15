@@ -700,6 +700,67 @@ class DailyWorkflowApiIntegrationTest {
                         "Aucun tarif calculé n'est disponible pour ce colis. Indiquez un tarif manuel."));
     }
 
+    @Test
+    void followsActualCashWithoutCommissionAndPaysTheSellerThroughTheNewRegister() throws Exception {
+        UUID packageId = packageId(createRequest(CLIENT_ID, SERVICE_DATE, 1), 0);
+        jdbcTemplate.update("""
+                UPDATE delivery_package SET amount_to_collect_ariary = 30000,
+                    delivery_fee_ariary = 5000, final_delivery_fee_ariary = 5000 WHERE id = ?
+                """, packageId);
+        installPlan(SERVICE_DATE, List.of(packageId));
+        updateOutcome(packageId, "DELIVERED", 30_000L, 1);
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(30_000);
+        assertThat(cashBalance("COURIER:" + PLANNED_COURIER_ID)).isZero();
+        updateOutcome(packageId, "DELIVERED", 30_000L, 2);
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(30_000);
+        closeClient(CLIENT_ID, 0);
+        assertThat(cashBalance("SELLER:" + CLIENT_ID)).isEqualTo(25_000);
+
+        String transfer = objectMapper.writeValueAsString(java.util.Map.of(
+                "idempotencyKey", "workflow-cash-" + packageId,
+                "fromKey", "COURIER:" + ACTUAL_COURIER_ID,
+                "toKey", "SELLER:" + CLIENT_ID,
+                "amountAriary", 25_000,
+                "paymentMethod", "MVOLA"));
+        MvcResult paid = mockMvc.perform(post("/api/admin/cash-ledger/transfers").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(transfer))
+                .andExpect(status().is2xxSuccessful()).andReturn();
+        UUID movementId = UUID.fromString(objectMapper.readTree(paid.getResponse().getContentAsString()).path("id").asText());
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(5_000);
+        assertThat(cashBalance("SELLER:" + CLIENT_ID)).isZero();
+        assertThat(cashBalance("AZY")).isZero();
+        mockMvc.perform(get("/api/client/finance").with(client(CLIENT_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.netBalanceAriary").value(0))
+                .andExpect(jsonPath("$.totalConfirmedSignedPaymentsAriary").value(25_000));
+        mockMvc.perform(get("/api/client/finance/payments/{id}/proof", movementId).with(client(OTHER_CLIENT_ID)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/admin/finance/delivery-days/{date}/clients/{id}/courier-compensations/finalize", SERVICE_DATE, CLIENT_ID)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content("{\"closureRevision\":1,\"overrides\":[]}"))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM courier_earning", Long.class)).isZero();
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/clients/{id}/reopen", SERVICE_DATE, CLIENT_ID)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content("{\"version\":0,\"reason\":\"Correction\"}"))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/admin/cash-ledger/movements/{id}/void", movementId).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Versement non réalisé\"}"))
+                .andExpect(status().isOk());
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(30_000);
+        assertThat(cashBalance("SELLER:" + CLIENT_ID)).isEqualTo(25_000);
+        mockMvc.perform(get("/api/client/finance").with(client(CLIENT_ID)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.netBalanceAriary").value(25_000));
+    }
+
+    private long cashBalance(String accountKey) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/admin/cash-ledger").with(admin()))
+                .andExpect(status().isOk()).andReturn();
+        for (JsonNode account : objectMapper.readTree(result.getResponse().getContentAsString()).path("accounts")) {
+            if (accountKey.equals(account.path("key").asText())) return account.path("balanceAriary").asLong();
+        }
+        throw new AssertionError("Compte de caisse absent : " + accountKey);
+    }
+
     private MvcResult updateOutcome(UUID packageId, String outcome, Long actual, long version) throws Exception {
         String actualJson = actual == null ? "null" : actual.toString();
         String courierJson = "POSTPONED".equals(outcome)

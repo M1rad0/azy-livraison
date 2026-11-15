@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
-@RestControllerAdvice(assignableTypes = {AdminFinanceController.class, ClientFinanceController.class})
+@RestControllerAdvice(basePackages = "com.azylivraison.finance")
 public class FinanceExceptionHandler {
 
     @ExceptionHandler(FinanceNotFoundException.class)

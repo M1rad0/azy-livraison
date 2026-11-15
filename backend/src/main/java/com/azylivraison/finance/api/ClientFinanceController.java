@@ -6,7 +6,7 @@ import static com.azylivraison.finance.domain.FinanceModels.*;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-import com.azylivraison.finance.service.FinancialSettlementService;
+import com.azylivraison.finance.service.CashClientFinanceService;
 
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -23,22 +23,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/client/finance")
 public class ClientFinanceController {
 
-    private final FinancialSettlementService service;
+    private final CashClientFinanceService service;
 
-    public ClientFinanceController(FinancialSettlementService service) {
+    public ClientFinanceController(CashClientFinanceService service) {
         this.service = service;
     }
 
     @GetMapping
     public ClientFinanceResponse finance(@AuthenticationPrincipal Jwt jwt) {
-        return ClientFinanceResponse.from(service.getClientFinance(accountId(jwt)));
+        return ClientFinanceResponse.from(service.finance(accountId(jwt)));
     }
 
     @GetMapping("/payments/{paymentId}/proof")
     public ResponseEntity<byte[]> paymentProof(
             @PathVariable UUID paymentId,
             @AuthenticationPrincipal Jwt jwt) {
-        ProofDownload proof = service.getClientPaymentProof(paymentId, accountId(jwt));
+        ProofDownload proof = service.proof(paymentId, accountId(jwt));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(proof.contentType()))
                 .contentLength(proof.content().length)

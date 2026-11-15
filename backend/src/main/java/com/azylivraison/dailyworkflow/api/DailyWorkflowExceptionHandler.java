@@ -8,6 +8,9 @@ import com.azylivraison.dailyworkflow.service.DailyWorkflowInputException;
 import com.azylivraison.dailyworkflow.service.DailyWorkflowNotFoundException;
 import com.azylivraison.delivery.service.DailyCapacityExceededException;
 import com.azylivraison.delivery.service.DeliveryDateClosedException;
+import com.azylivraison.finance.service.FinanceConflictException;
+import com.azylivraison.finance.service.FinanceInputException;
+import com.azylivraison.finance.service.FinanceNotFoundException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,20 +26,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 })
 public class DailyWorkflowExceptionHandler {
 
-    @ExceptionHandler(DailyWorkflowNotFoundException.class)
-    ResponseEntity<DailyWorkflowErrorResponse> notFound(DailyWorkflowNotFoundException exception) {
+    @ExceptionHandler({DailyWorkflowNotFoundException.class, FinanceNotFoundException.class})
+    ResponseEntity<DailyWorkflowErrorResponse> notFound(RuntimeException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                 DailyWorkflowErrorResponse.of("DAILY_WORKFLOW_NOT_FOUND", exception.getMessage()));
     }
 
-    @ExceptionHandler(DailyWorkflowConflictException.class)
-    ResponseEntity<DailyWorkflowErrorResponse> conflict(DailyWorkflowConflictException exception) {
+    @ExceptionHandler({DailyWorkflowConflictException.class, FinanceConflictException.class})
+    ResponseEntity<DailyWorkflowErrorResponse> conflict(RuntimeException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(
                 DailyWorkflowErrorResponse.of("DAILY_WORKFLOW_CONFLICT", exception.getMessage()));
     }
 
-    @ExceptionHandler(DailyWorkflowInputException.class)
-    ResponseEntity<DailyWorkflowErrorResponse> invalid(DailyWorkflowInputException exception) {
+    @ExceptionHandler({DailyWorkflowInputException.class, FinanceInputException.class})
+    ResponseEntity<DailyWorkflowErrorResponse> invalid(RuntimeException exception) {
         return ResponseEntity.unprocessableEntity().body(
                 DailyWorkflowErrorResponse.of("DAILY_WORKFLOW_INVALID", exception.getMessage()));
     }

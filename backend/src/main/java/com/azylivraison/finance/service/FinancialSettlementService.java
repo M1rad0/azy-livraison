@@ -48,6 +48,7 @@ public class FinancialSettlementService {
     private final CourierStatementPdfRenderer courierStatementPdfRenderer;
     private final CourierStatementXlsxRenderer courierStatementXlsxRenderer;
     private final ExpressFuelService expressFuelService;
+    private final LegacyFinancePolicy legacyFinancePolicy;
 
     @Autowired
     public FinancialSettlementService(
@@ -57,7 +58,8 @@ public class FinancialSettlementService {
             PaymentProofStorage proofStorage,
             CourierStatementPdfRenderer courierStatementPdfRenderer,
             CourierStatementXlsxRenderer courierStatementXlsxRenderer,
-            ExpressFuelService expressFuelService) {
+            ExpressFuelService expressFuelService,
+            LegacyFinancePolicy legacyFinancePolicy) {
         this.repository = repository;
         this.dailyReportService = dailyReportService;
         this.accountRepository = accountRepository;
@@ -65,6 +67,24 @@ public class FinancialSettlementService {
         this.courierStatementPdfRenderer = courierStatementPdfRenderer;
         this.courierStatementXlsxRenderer = courierStatementXlsxRenderer;
         this.expressFuelService = expressFuelService;
+        this.legacyFinancePolicy = legacyFinancePolicy;
+    }
+
+    // Explicit legacy adapter retained for the historical-domain unit tests.
+    FinancialSettlementService(FinanceRepository repository, DailyReportService dailyReportService,
+            AccountRepository accountRepository, PaymentProofStorage proofStorage,
+            CourierStatementPdfRenderer pdf, CourierStatementXlsxRenderer xlsx,
+            ExpressFuelService expressFuelService) {
+        this(repository, dailyReportService, accountRepository, proofStorage, pdf, xlsx,
+                expressFuelService, new LegacyFinancePolicy(true));
+    }
+
+    public boolean legacyAccrualsEnabled() { return legacyFinancePolicy.accrualsEnabled(); }
+
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> cashManagedSettlementIds(ClientFinance finance) {
+        return finance.settlements().stream().map(ClientDailySettlement::id)
+                .filter(repository::isCashLedgerReport).collect(java.util.stream.Collectors.toSet());
     }
 
     FinancialSettlementService(
@@ -158,6 +178,9 @@ public class FinancialSettlementService {
         PaymentDestination normalizedDestination = normalizeDestination(destination);
         ClientDailySettlement settlement = repository.lockSettlement(settlementId)
                 .orElseThrow(() -> new FinanceNotFoundException("Ce rapport client est introuvable."));
+        if (repository.isCashLedgerReport(settlementId)) {
+            throw new FinanceConflictException("Enregistrez ce versement dans Finances, onglet Caisses.");
+        }
         // Serialize payment confirmation with both client-level and day-level
         // reopening. Once this lock is granted, the active-settlement check
         // necessarily sees the definitive closure state.
@@ -261,6 +284,7 @@ public class FinancialSettlementService {
             UUID clientAccountId,
             List<CompensationOverride> requestedOverrides,
             UUID actorAccountId) {
+        legacyFinancePolicy.requireAccrualsEnabled();
         ClosedDay day = repository.lockDay(serviceDate)
                 .orElseThrow(() -> new FinanceNotFoundException("Cette journée est introuvable."));
         int activeRevision;
@@ -494,6 +518,10 @@ public class FinancialSettlementService {
 
     private CourierCompensationPreview livePreview(
             LocalDate serviceDate, int closureRevision, UUID clientAccountId) {
+        if (!legacyFinancePolicy.accrualsEnabled()) {
+            return new CourierCompensationPreview(serviceDate, closureRevision, false, null, null,
+                    0, 0, 0, 0, 0, 0, 0, 0, List.of(), List.of(), List.of());
+        }
         List<CompensationLine> lines = new ArrayList<>();
         long totalSuggestedCommission = 0;
         int pendingReturns = 0;

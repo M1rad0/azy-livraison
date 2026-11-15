@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
@@ -98,14 +99,19 @@ public final class FinanceApiModels {
             long confirmedSignedPaymentsAriary,
             long remainingAriary,
             SettlementStatus status,
-            Instant createdAt) {
+            Instant createdAt,
+            boolean cashLedgerManaged) {
 
         static ClientSettlementResponse from(ClientDailySettlement settlement) {
+            return from(settlement, false);
+        }
+
+        static ClientSettlementResponse from(ClientDailySettlement settlement, boolean cashLedgerManaged) {
             return new ClientSettlementResponse(
                     settlement.id(), settlement.reportId(), settlement.serviceDate(),
                     settlement.closureRevision(), settlement.clientDisplayName(),
                     settlement.amountDueAriary(), settlement.confirmedSignedPaymentsAriary(),
-                    settlement.remainingAriary(), settlement.status(), settlement.createdAt());
+                    settlement.remainingAriary(), settlement.status(), settlement.createdAt(), cashLedgerManaged);
         }
     }
 
@@ -152,11 +158,16 @@ public final class FinanceApiModels {
             List<ClientPaymentResponse> payments) {
 
         static ClientFinanceResponse from(ClientFinance finance) {
+            return from(finance, Set.of());
+        }
+
+        static ClientFinanceResponse from(ClientFinance finance, Set<UUID> cashLedgerManaged) {
             return new ClientFinanceResponse(
                     finance.clientAccountId(), finance.preferredPayoutDestination(), finance.totalDueAriary(),
                     finance.totalConfirmedSignedPaymentsAriary(), finance.netBalanceAriary(),
                     finance.amountOwedToClientAriary(), finance.amountOwedByClientAriary(),
-                    finance.settlements().stream().map(ClientSettlementResponse::from).toList(),
+                    finance.settlements().stream().map(settlement -> ClientSettlementResponse.from(
+                            settlement, cashLedgerManaged.contains(settlement.id()))).toList(),
                     finance.payments().stream().map(ClientPaymentResponse::from).toList());
         }
     }
@@ -205,9 +216,10 @@ public final class FinanceApiModels {
             int unresolvedFuelCalculationCount,
             List<CompensationLineResponse> lines,
             List<FuelCompensationLineResponse> fuelLines,
-            List<ExpressFuelResponse> fuelCalculations) {
+            List<ExpressFuelResponse> fuelCalculations,
+            boolean newAccrualsEnabled) {
 
-        static CourierCompensationResponse from(CourierCompensationPreview preview) {
+        static CourierCompensationResponse from(CourierCompensationPreview preview, boolean newAccrualsEnabled) {
             return new CourierCompensationResponse(
                     preview.serviceDate(), preview.closureRevision(), preview.finalized(),
                     preview.finalizedAt(), preview.finalizedByAccountId(),
@@ -217,7 +229,7 @@ public final class FinanceApiModels {
                     preview.pendingReturnCount(), preview.unresolvedFuelCalculationCount(),
                     preview.lines().stream().map(CompensationLineResponse::from).toList(),
                     preview.fuelLines().stream().map(FuelCompensationLineResponse::from).toList(),
-                    preview.fuelCalculations().stream().map(ExpressFuelResponse::from).toList());
+                    preview.fuelCalculations().stream().map(ExpressFuelResponse::from).toList(), newAccrualsEnabled);
         }
     }
 
