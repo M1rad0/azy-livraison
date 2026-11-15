@@ -2,6 +2,7 @@ import { AdminApiError } from './admin'
 
 export interface CashBriefingTransfer {
   id: string; sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null
+  sellerPayoutNumberOverride?: boolean
   courierAccountId: string; courierName: string; amountAriary: number
   status: 'PENDING' | 'CONFIRMED' | 'REPLACED'; movementId?: string | null
 }
@@ -19,7 +20,7 @@ export interface CashBriefingPlanning {
 }
 export interface ManualCashBriefingInput {
   planId: string; idempotencyKey: string; expectedLedgerRevision: number; expectedBatchId?: string | null
-  transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number }[]
+  transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number; sellerPayoutNumber?: string }[]
 }
 const BASE = `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/admin/cash-briefings`
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {

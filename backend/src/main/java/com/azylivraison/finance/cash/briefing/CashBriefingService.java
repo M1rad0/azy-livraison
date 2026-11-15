@@ -93,7 +93,7 @@ public class CashBriefingService {
             throw new FinanceInputException("Renseignez les versements à prévoir et la version des caisses.");
         List<ManualTransfer> transfers = normalize(request.transfers());
         String fingerprint = fingerprint("MANUAL", request.planId(), request.expectedLedgerRevision(),
-                request.expectedBatchId(), transfers);
+                request.expectedBatchId(), transfers.stream().map(this::fingerprintTransfer).toList());
         ledger.lock(); cleanup();
         UUID replay = replay(request.idempotencyKey(), actor, request.planId(), "MANUAL", fingerprint);
         if (replay != null) return read(replay);
@@ -109,8 +109,8 @@ public class CashBriefingService {
         for (ManualTransfer transfer : transfers) {
             var seller = sellers.get(transfer.sellerAccountId());
             var courier = couriers.get(transfer.courierAccountId());
-            insertTransfer(id, seller.entityId(), seller.name(), seller.payoutNumber(),
-                    courier.entityId(), courier.name(), transfer.amountAriary());
+            insertTransfer(id, seller.entityId(), seller.name(), payoutNumber(transfer, seller),
+                    courier.entityId(), courier.name(), transfer.amountAriary(), transfer.sellerPayoutNumber() != null);
         }
         return read(id);
     }
@@ -147,7 +147,7 @@ public class CashBriefingService {
         UUID id = insertBatch(draft, snapshot.revision(), actor, request.idempotencyKey(), "AUTO", hash);
         for (var allocation : allocations) {
             insertTransfer(id, allocation.seller().id(), allocation.seller().name(), allocation.seller().payoutNumber(),
-                    allocation.courier().id(), allocation.courier().name(), allocation.amount());
+                    allocation.courier().id(), allocation.courier().name(), allocation.amount(), false);
         }
         return read(id);
     }
@@ -194,12 +194,18 @@ public class CashBriefingService {
                     : entry.getValue() == debt && elsewhere == 0;
             if (!valid)
                 conflict("Le solde d'un vendeur a changé. Libérez puis préparez une nouvelle proposition.");
-            if (!payoutNumbers.containsKey(entry.getKey()) || payoutNumbers.get(entry.getKey()).isBlank())
-                conflict("Un vendeur n'a plus de numéro de versement. Renseignez-le avant de revalider.");
         }
         for (Transfer transfer : batch.transfers()) if ("PENDING".equals(transfer.status())) {
-            jdbc.update("UPDATE cash_briefing_transfer SET seller_payout_number = ? WHERE id = ?",
-                    payoutNumbers.get(transfer.sellerAccountId()), transfer.id());
+            if (transfer.sellerPayoutNumberOverride()) {
+                if (!validPayoutNumber(transfer.sellerPayoutNumber()))
+                    conflict("Renseignez un numéro de versement valide avant de revalider.");
+            } else {
+                String number = payoutNumbers.get(transfer.sellerAccountId());
+                if (!validPayoutNumber(number))
+                    conflict("Un vendeur n'a plus de numéro de versement. Renseignez-le avant de revalider.");
+                jdbc.update("UPDATE cash_briefing_transfer SET seller_payout_number = ? WHERE id = ?",
+                        number, transfer.id());
+            }
             reserve(transfer.id(), transfer.courierAccountId(), transfer.amountAriary());
         }
         jdbc.update("UPDATE cash_briefing_batch SET ledger_revision = ? WHERE id = ?", snapshot.revision(), id);
@@ -219,6 +225,8 @@ public class CashBriefingService {
             conflict("Les caisses ont changé. Revalidez la proposition avant de confirmer un versement.");
         activeDraft(batch.planId());
         if (!"PENDING".equals(transfer.status())) conflict("Ce versement n'est plus proposé.");
+        if (!validPayoutNumber(transfer.sellerPayoutNumber()))
+            conflict("Renseignez un numéro de versement valide avant de confirmer.");
         int released = jdbc.update("UPDATE cash_ledger_reservation SET status = 'CONFIRMED' WHERE proposal_id = ? AND status = 'ACTIVE'", transferId);
         if (released != 1) conflict("La réservation n'est plus valide. Revalidez la proposition.");
         var movement = ledger.confirmTransferInternal(new CashLedgerModels.TransferRequest("briefing-transfer:" + transferId,
@@ -281,8 +289,7 @@ public class CashBriefingService {
             var seller = sellers.get(transfer.sellerAccountId());
             var courier = couriers.get(transfer.courierAccountId());
             if (seller == null) conflict("Ce vendeur n'existe plus.");
-            if (seller.payoutNumber() == null || seller.payoutNumber().isBlank())
-                conflict("Renseignez le numéro de versement du vendeur avant de prévoir son versement.");
+            payoutNumber(transfer, seller);
             if (courier == null || !selected.contains(transfer.courierAccountId()))
                 conflict("Choisissez un livreur actif dans ce dispatch.");
             sellerTotals.merge(seller.entityId(), transfer.amountAriary(), this::safeTotal);
@@ -299,19 +306,47 @@ public class CashBriefingService {
     }
 
     private List<ManualTransfer> normalize(List<ManualTransfer> input) {
-        record Pair(UUID seller, UUID courier) {}
+        record Pair(UUID seller, UUID courier, String payoutNumber) {}
         Map<Pair, Long> totals = new HashMap<>();
         for (ManualTransfer transfer : input) {
             if (transfer == null || transfer.sellerAccountId() == null || transfer.courierAccountId() == null
                     || transfer.amountAriary() <= 0 || transfer.amountAriary() > CashLedgerService.MAX_SAFE_ARIARY)
                 throw new FinanceInputException("Chaque versement doit être un montant entier positif valide.");
-            Pair key = new Pair(transfer.sellerAccountId(), transfer.courierAccountId());
+            String number = transfer.sellerPayoutNumber();
+            if (number != null) {
+                if (!validPayoutNumber(number))
+                    throw new FinanceInputException("Renseignez un numéro de versement valide (100 caractères maximum).");
+                number = number.trim();
+            }
+            Pair key = new Pair(transfer.sellerAccountId(), transfer.courierAccountId(), number);
             long amount = safeTotal(totals.getOrDefault(key, 0L), transfer.amountAriary());
             totals.put(key, amount);
         }
-        return totals.entrySet().stream().map(e -> new ManualTransfer(e.getKey().seller(), e.getKey().courier(), e.getValue()))
+        return totals.entrySet().stream().map(e -> new ManualTransfer(e.getKey().seller(), e.getKey().courier(),
+                        e.getValue(), e.getKey().payoutNumber()))
                 .sorted(Comparator.comparing((ManualTransfer t) -> t.sellerAccountId().toString())
-                        .thenComparing(t -> t.courierAccountId().toString())).toList();
+                        .thenComparing(t -> t.courierAccountId().toString())
+                        .thenComparing(ManualTransfer::sellerPayoutNumber, Comparator.nullsFirst(Comparator.naturalOrder()))).toList();
+    }
+
+    private String payoutNumber(ManualTransfer transfer, CashLedgerModels.Account seller) {
+        String number = transfer.sellerPayoutNumber() == null ? seller.payoutNumber() : transfer.sellerPayoutNumber();
+        if (!validPayoutNumber(number))
+            conflict("Renseignez le numéro de versement du vendeur avant de prévoir son versement.");
+        return number;
+    }
+
+    private static boolean validPayoutNumber(String number) {
+        return number != null && !number.isBlank() && number.length() <= 100
+                && number.codePoints().noneMatch(Character::isISOControl);
+    }
+
+    /** Keep old idempotency fingerprints stable when callers omit the new optional number. */
+    private String fingerprintTransfer(ManualTransfer transfer) {
+        return transfer.sellerPayoutNumber() == null
+                ? "ManualTransfer[sellerAccountId=" + transfer.sellerAccountId() + ", courierAccountId="
+                        + transfer.courierAccountId() + ", amountAriary=" + transfer.amountAriary() + "]"
+                : transfer.toString();
     }
 
     private long safeTotal(long left, long right) {
@@ -377,13 +412,13 @@ public class CashBriefingService {
     }
 
     private void insertTransfer(UUID batchId, UUID sellerId, String sellerName, String payoutNumber,
-            UUID courierId, String courierName, long amount) {
+            UUID courierId, String courierName, long amount, boolean payoutNumberOverride) {
         UUID transferId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO cash_briefing_transfer (id, batch_id, seller_account_id, seller_name,
-                    seller_payout_number, courier_account_id, courier_name, amount_ariary, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
-                """, transferId, batchId, sellerId, sellerName, payoutNumber, courierId, courierName, amount);
+                    seller_payout_number, courier_account_id, courier_name, amount_ariary, status, seller_payout_number_override)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                """, transferId, batchId, sellerId, sellerName, payoutNumber, courierId, courierName, amount, payoutNumberOverride);
         reserve(transferId, courierId, amount);
     }
 
@@ -432,12 +467,14 @@ public class CashBriefingService {
         List<Transfer> transfers = jdbc.query("SELECT * FROM cash_briefing_transfer WHERE batch_id = ? ORDER BY seller_name, courier_name, id", (rs, n) ->
                 new Transfer(rs.getObject("id", UUID.class), rs.getObject("seller_account_id", UUID.class), rs.getString("seller_name"),
                         rs.getString("seller_payout_number"), rs.getObject("courier_account_id", UUID.class), rs.getString("courier_name"),
-                        rs.getLong("amount_ariary"), rs.getString("status"), rs.getObject("movement_id", UUID.class)), id);
+                        rs.getLong("amount_ariary"), rs.getString("status"), rs.getObject("movement_id", UUID.class),
+                        rs.getBoolean("seller_payout_number_override")), id);
         List<CashLedgerModels.Account> accounts = ledger.getSnapshot().accounts();
         Map<UUID, String> payoutNumbers = new HashMap<>();
         accounts.stream().filter(a -> "SELLER".equals(a.type())).forEach(a -> payoutNumbers.put(a.entityId(), a.payoutNumber()));
         boolean payoutChanged = transfers.stream().anyMatch(t -> "PENDING".equals(t.status())
-                && !Objects.equals(t.sellerPayoutNumber(), payoutNumbers.get(t.sellerAccountId())));
+                && (!validPayoutNumber(t.sellerPayoutNumber()) || (!t.sellerPayoutNumberOverride()
+                        && !Objects.equals(t.sellerPayoutNumber(), payoutNumbers.get(t.sellerAccountId())))));
         List<Balance> balances = accounts.stream()
                 .filter(a -> transfers.stream().anyMatch(t -> t.courierAccountId().equals(a.entityId())))
                 .map(a -> new Balance(a.entityId(), a.name(), a.balanceAriary(), a.availableAriary(), a.reservedAriary())).toList();

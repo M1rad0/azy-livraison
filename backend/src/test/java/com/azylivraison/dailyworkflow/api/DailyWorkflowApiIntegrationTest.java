@@ -100,6 +100,32 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void payoutNumberOverridesAreValidatedAtTheHttpBoundaryAndRemainOptional() throws Exception {
+        long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
+        String body = """
+                {"planId":"%s","idempotencyKey":"http-payout-number","expectedLedgerRevision":0,
+                 "transfers":[{"sellerAccountId":"%s","courierAccountId":"%s","amountAriary":1500,
+                 "sellerPayoutNumber":%s}]}
+                """;
+        UUID missingPlan = UUID.randomUUID();
+        for (String number : List.of("", " ", "0".repeat(101), "034\n1111111", "\t0341111111")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID,
+                                    objectMapper.writeValueAsString(number))))
+                    .andExpect(status().is(number.length() > 100 ? 400 : 422));
+        }
+        for (String numberJson : List.of("null", "\"032 11 111 11\"")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, numberJson)))
+                    .andExpect(status().isConflict()); // Valid input reaches the missing-dispatch guard.
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+    }
+
+    @Test
     void clientAndAdministratorCanCancelOnlyPendingOwnedPackagesAndCapacityIsFreed() throws Exception {
         jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);

@@ -38,11 +38,54 @@ describe('payout planning and shared cash proposals', () => {
     render(<CashBriefingPanel accessToken="token" planId="plan" />)
     await screen.findByText('Boutique Soa')
     expect(getCashBriefingPlanning).toHaveBeenCalledWith('plan', 'token', expect.any(AbortSignal))
-    expect(screen.getByText('Vendeur sans solde')).toBeInTheDocument()
+    expect(screen.queryByText('Vendeur sans solde')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Baptiste' })).toBeInTheDocument()
     expect(prepareCashBriefing).not.toHaveBeenCalled()
     expect(saveManualCashBriefing).not.toHaveBeenCalled()
     expect(confirmCashBriefingTransfer).not.toHaveBeenCalled()
+  })
+
+  it('hides sellers without available debt from both the balance table and manual selection', async () => {
+    const state = planning()
+    state.sellers.push(
+      { sellerAccountId: 'negative', sellerName: 'Vendeur débiteur', balanceAriary: -5000, plannedAriary: 0, availableAriary: -5000 },
+      { sellerAccountId: 'reserved', sellerName: 'Vendeur réservé ailleurs', balanceAriary: 8000, plannedAriary: 0, availableAriary: 0 },
+    )
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(state)
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await screen.findByText('Boutique Soa')
+    expect(screen.queryByText('Vendeur sans solde')).not.toBeInTheDocument()
+    expect(screen.queryByText('Vendeur débiteur')).not.toBeInTheDocument()
+    expect(screen.queryByText('Vendeur réservé ailleurs')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un versement' }))
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Vendeur du versement 1' }))
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option', { name: /Boutique Soa/ })).toBeInTheDocument()
+  })
+
+  it('keeps fully planned sellers visible and preserves stale rows for correction', async () => {
+    const state = planning(batch('STALE'))
+    state.sellers[0].balanceAriary = 0
+    state.sellers[0].availableAriary = 0
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(state)
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await screen.findByRole('spinbutton')
+    expect(screen.getByRole('table')).toHaveTextContent('Boutique Soa')
+    expect(screen.getByRole('combobox', { name: 'Vendeur du versement 1' })).toHaveValue('Boutique Soa')
+    fireEvent.click(screen.getByRole('button', { name: 'Retirer le versement 1' }))
+    expect(screen.getByText('Aucun versement à prévoir.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeEnabled()
+  })
+
+  it('distinguishes no payable balance from a search with no match', async () => {
+    const state = planning()
+    state.sellers = [state.sellers[1]]
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(state)
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await screen.findByText('Aucun versement à prévoir.')
+    expect(screen.getByRole('button', { name: 'Ajouter un versement' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rechercher un vendeur' }), { target: { value: 'inconnu' } })
+    expect(screen.getByText('Aucun vendeur ne correspond à cette recherche.')).toBeInTheDocument()
   })
 
   it('explicitly generates an automatic proposal with optimistic guards', async () => {
@@ -61,6 +104,67 @@ describe('payout planning and shared cash proposals', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
     await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith({ planId: 'plan', expectedLedgerRevision: 7, expectedBatchId: null, idempotencyKey: expect.any(String), transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000 }] }, 'token'))
     expect(confirmCashBriefingTransfer).not.toHaveBeenCalled()
+  })
+
+  it('prefills the account number and saves a one-off number without modifying the seller account', async () => {
+    const initial = planning()
+    const saved = batch()
+    saved.transfers[0].sellerPayoutNumber = '034 99 999 99'
+    saved.transfers[0].sellerPayoutNumberOverride = true
+    vi.mocked(getCashBriefingPlanning).mockResolvedValueOnce(initial).mockResolvedValue(planning(saved))
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await addManual()
+    const number = screen.getByRole('textbox', { name: 'Numéro du versement 1' })
+    expect(number).toHaveValue('034 00 000 00')
+    fireEvent.change(number, { target: { value: '034 99 999 99' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
+    await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutNumber: '034 99 999 99' }],
+    }), 'token'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled())
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 99 999 99')
+    expect(initial.sellers[0].sellerPayoutNumber).toBe('034 00 000 00')
+  })
+
+  it('can restore the default account number instead of retaining a one-off override', async () => {
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await addManual()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Numéro du versement 1' }), { target: { value: '034 99 999 99' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Utiliser le numéro du compte pour le versement 1' }))
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 00 000 00')
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
+    await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000 }],
+    }), 'token'))
+  })
+
+  it('allows a specific number when the seller account has no number but blocks a blank value', async () => {
+    const state = planning()
+    state.sellers[0].sellerPayoutNumber = null
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(state)
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await addManual()
+    expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Numéro du versement 1' }), { target: { value: '034 99 999 99' } })
+    expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
+    await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutNumber: '034 99 999 99' }],
+    }), 'token'))
+  })
+
+  it('retains a saved override while editing amounts even if the account default changed', async () => {
+    const current = batch()
+    current.transfers[0].sellerPayoutNumber = '034 99 999 99'
+    current.transfers[0].sellerPayoutNumberOverride = true
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(planning(current))
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    expect(await screen.findByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 99 999 99')
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '10000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
+    await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 10000, sellerPayoutNumber: '034 99 999 99' }],
+    }), 'token'))
   })
 
   it('blocks cash and seller debt over-allocation before saving', async () => {

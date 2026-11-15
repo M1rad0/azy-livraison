@@ -416,6 +416,116 @@ class CashBriefingServiceTest {
         assertThat(corrected.transfers()).singleElement().extracting(Transfer::amountAriary).isEqualTo(5000L);
     }
 
+    @Test void aSpecificPayoutNumberIsIndependentFromTheProfileAndRemainsImmutableAfterConfirmation() {
+        adjust("SELLER:" + seller1, 10000); adjust("COURIER:" + courier1, 10000);
+        UUID plan = plan(date);
+        Batch batch = manual(plan, null, new ManualTransfer(seller1, courier1, 4000, " 032 11 111 11 "));
+        assertThat(batch.status()).isEqualTo("ACTIVE");
+        assertThat(batch.transfers()).singleElement().satisfies(transfer -> {
+            assertThat(transfer.sellerPayoutNumber()).isEqualTo("032 11 111 11");
+            assertThat(transfer.sellerPayoutNumberOverride()).isTrue();
+        });
+        assertThat(jdbc.queryForObject("SELECT number FROM client_payout_destination WHERE account_id = ?",
+                String.class, seller1)).isEqualTo("034 00 000 00");
+        jdbc.update("UPDATE client_payout_destination SET number = '034 99 999 99' WHERE account_id = ?", seller1);
+        assertThat(tx(() -> briefing.list(plan)).getFirst().status()).isEqualTo("ACTIVE");
+        jdbc.update("DELETE FROM client_payout_destination WHERE account_id = ?", seller1);
+        assertThat(tx(() -> briefing.list(plan)).getFirst().status()).isEqualTo("ACTIVE");
+        adjust("AZY", 1);
+        assertThat(tx(() -> briefing.list(plan)).getFirst().status()).isEqualTo("STALE");
+        Batch revalidated = tx(() -> briefing.revalidate(batch.id()));
+        assertThat(revalidated.status()).isEqualTo("ACTIVE");
+        assertThat(revalidated.transfers().getFirst().sellerPayoutNumber()).isEqualTo("032 11 111 11");
+        Batch confirmed = tx(() -> briefing.confirm(revalidated.transfers().getFirst().id(),
+                new ConfirmRequest("MVola", null, null, revalidated.ledgerRevision()), actor, null));
+        assertThat(confirmed.status()).isEqualTo("COMPLETED");
+        assertThat(confirmed.transfers()).singleElement().satisfies(transfer -> {
+            assertThat(transfer.status()).isEqualTo("CONFIRMED");
+            assertThat(transfer.sellerPayoutNumber()).isEqualTo("032 11 111 11");
+            assertThat(transfer.sellerPayoutNumberOverride()).isTrue();
+        });
+        tx(() -> briefing.confirm(confirmed.transfers().getFirst().id(),
+                new ConfirmRequest("MVola", null, null, revalidated.ledgerRevision()), actor, null));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement WHERE kind = 'TRANSFER'", Long.class)).isOne();
+    }
+
+    @Test void revalidationRefreshesOnlyProfileBackedNumbersEvenWithinTheSameSellerAndCourier() {
+        adjust("SELLER:" + seller1, 10000); adjust("COURIER:" + courier1, 10000);
+        UUID plan = plan(date);
+        Batch batch = manual(plan, null, new ManualTransfer(seller1, courier1, 3000),
+                new ManualTransfer(seller1, courier1, 2000, "032 11 111 11"));
+        assertThat(batch.transfers()).hasSize(2);
+        jdbc.update("UPDATE client_payout_destination SET number = '034 99 999 99' WHERE account_id = ?", seller1);
+        assertThat(tx(() -> briefing.list(plan)).getFirst().status()).isEqualTo("STALE");
+        Batch valid = tx(() -> briefing.revalidate(batch.id()));
+        assertThat(valid.status()).isEqualTo("ACTIVE");
+        assertThat(valid.transfers()).filteredOn(Transfer::sellerPayoutNumberOverride).singleElement()
+                .extracting(Transfer::sellerPayoutNumber).isEqualTo("032 11 111 11");
+        assertThat(valid.transfers()).filteredOn(t -> !t.sellerPayoutNumberOverride()).singleElement()
+                .extracting(Transfer::sellerPayoutNumber).isEqualTo("034 99 999 99");
+    }
+
+    @Test void aSpecificPayoutNumberCanReplaceAMissingProfileNumberButBlankOrInvalidOverridesCannot() {
+        adjust("SELLER:" + seller1, 10000); adjust("COURIER:" + courier1, 10000);
+        UUID plan = plan(date);
+        jdbc.update("DELETE FROM client_payout_destination WHERE account_id = ?", seller1);
+        assertThatThrownBy(() -> manual(plan, null, new ManualTransfer(seller1, courier1, 1000)))
+                .isInstanceOf(FinanceConflictException.class);
+        for (String invalid : List.of("", " ", "0".repeat(101), "034\n1111111", "\t0341111111", "034\u00001111111")) {
+            assertThatThrownBy(() -> manual(plan, null, new ManualTransfer(seller1, courier1, 1000, invalid)))
+                    .isInstanceOf(FinanceInputException.class);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class)).isZero();
+        Batch valid = manual(plan, null, new ManualTransfer(seller1, courier1, 1000, "+261 34 11 111 11"));
+        assertThat(valid.transfers()).singleElement().extracting(Transfer::sellerPayoutNumber)
+                .isEqualTo("+261 34 11 111 11");
+        jdbc.update("UPDATE cash_briefing_transfer SET seller_payout_number = '' WHERE id = ?", valid.transfers().getFirst().id());
+        assertThat(tx(() -> briefing.list(plan)).getFirst().status()).isEqualTo("STALE");
+        assertThatThrownBy(() -> tx(() -> briefing.revalidate(valid.id()))).isInstanceOf(FinanceConflictException.class);
+        assertThatThrownBy(() -> tx(() -> briefing.confirm(valid.transfers().getFirst().id(),
+                new ConfirmRequest("MVola", null, null, valid.ledgerRevision()), actor, null)))
+                .isInstanceOf(FinanceConflictException.class);
+    }
+
+    @Test void specificNumbersArePartOfIdempotencyAndOnlyIdenticalNormalizedDestinationsAreCombined() {
+        adjust("SELLER:" + seller1, 10000); adjust("COURIER:" + courier1, 10000);
+        UUID plan = plan(date);
+        long revision = tx(ledger::revision);
+        ManualRequest request = new ManualRequest(plan, "numbers-idempotency", revision, null, List.of(
+                new ManualTransfer(seller1, courier1, 1000, " 032 11 111 11 "),
+                new ManualTransfer(seller1, courier1, 2000, "032 11 111 11"),
+                new ManualTransfer(seller1, courier1, 4000, "034 22 222 22")));
+        Batch first = tx(() -> briefing.manual(request, actor));
+        assertThat(first.transfers()).hasSize(2);
+        assertThat(first.transfers()).filteredOn(t -> t.sellerPayoutNumber().equals("032 11 111 11"))
+                .singleElement().extracting(Transfer::amountAriary).isEqualTo(3000L);
+        Batch replay = tx(() -> briefing.manual(new ManualRequest(plan, "numbers-idempotency", revision, null, List.of(
+                new ManualTransfer(seller1, courier1, 4000, "034 22 222 22"),
+                new ManualTransfer(seller1, courier1, 3000, "032 11 111 11"))), actor));
+        assertThat(replay.id()).isEqualTo(first.id());
+        assertThatThrownBy(() -> tx(() -> briefing.manual(new ManualRequest(plan, "numbers-idempotency", revision, null,
+                List.of(new ManualTransfer(seller1, courier1, 7000, "034 33 333 33"))), actor)))
+                .isInstanceOf(FinanceConflictException.class);
+    }
+
+    @Test void callersOmittingNumbersRetainTheirPreOverrideIdempotencyFingerprint() throws Exception {
+        adjust("SELLER:" + seller1, 10000); adjust("COURIER:" + courier1, 10000);
+        UUID plan = plan(date);
+        long revision = tx(ledger::revision);
+        Batch batch = tx(() -> briefing.manual(new ManualRequest(plan, "old-fingerprint", revision, null,
+                List.of(new ManualTransfer(seller1, courier1, 1000))), actor));
+        String oldTransfer = "ManualTransfer[sellerAccountId=" + seller1 + ", courierAccountId=" + courier1 + ", amountAriary=1000]";
+        String oldInput = java.util.Arrays.toString(new Object[] { "MANUAL", plan, revision, null, List.of(oldTransfer) });
+        String expected = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(oldInput.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(jdbc.queryForObject("SELECT request_fingerprint FROM cash_briefing_batch WHERE id = ?",
+                String.class, batch.id())).isEqualTo(expected);
+        assertThat(batch.transfers()).singleElement().satisfies(transfer -> {
+            assertThat(transfer.sellerPayoutNumber()).isEqualTo("034 00 000 00");
+            assertThat(transfer.sellerPayoutNumberOverride()).isFalse();
+        });
+    }
+
     @Test void manualAmountsRejectDecimalsUnsafeRowsDuplicateSumsAndEntityTotals() throws Exception {
         String json = "{\"sellerAccountId\":\"" + seller1 + "\",\"courierAccountId\":\"" + courier1 + "\",\"amountAriary\":1.5}";
         assertThatThrownBy(() -> JsonMapper.builder().build().readValue(json, ManualTransfer.class)).isInstanceOf(JacksonException.class);

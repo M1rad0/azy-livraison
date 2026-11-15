@@ -25,14 +25,26 @@ public final class CashBriefingModels {
         public PrepareRequest(UUID planId, String idempotencyKey) { this(planId, idempotencyKey, null, null, false); }
     }
     public record ManualTransfer(@NotNull UUID sellerAccountId, @NotNull UUID courierAccountId,
-            @Positive @JsonDeserialize(using = WholeAriaryDeserializer.class) long amountAriary) {}
+            @Positive @JsonDeserialize(using = WholeAriaryDeserializer.class) long amountAriary,
+            @Size(max = 100) String sellerPayoutNumber) {
+        public ManualTransfer(UUID sellerAccountId, UUID courierAccountId, long amountAriary) {
+            this(sellerAccountId, courierAccountId, amountAriary, null);
+        }
+    }
     public record ManualRequest(@NotNull UUID planId, @NotBlank @Size(max = 100) String idempotencyKey,
             @NotNull Long expectedLedgerRevision, UUID expectedBatchId,
             @NotNull @Size(max = 1000) List<@Valid ManualTransfer> transfers) {}
     public record ConfirmRequest(@NotBlank String paymentMethod, String reference, String note,
             @NotNull Long expectedLedgerRevision) {}
     public record Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
-            UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId) {}
+            UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId,
+            boolean sellerPayoutNumberOverride) {
+        public Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
+                UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId) {
+            this(id, sellerAccountId, sellerName, sellerPayoutNumber, courierAccountId, courierName,
+                    amountAriary, status, movementId, false);
+        }
+    }
     public record Balance(UUID courierAccountId, String courierName, long balanceAriary,
             long availableAriary, long reservedAriary) {}
     public record Batch(UUID id, UUID planId, LocalDate serviceDate, String status, long ledgerRevision,

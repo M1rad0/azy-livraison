@@ -31,6 +31,10 @@ Le parcours est **Dispatch → Versements → Briefing**. L'étape Versements af
 
 Les versements peuvent être saisis manuellement (vendeur, livreur, montant) ou proposés par le bouton de répartition automatique. La saisie manuelle autorise un règlement partiel, sans dépasser le solde disponible du vendeur ni l'argent réellement disponible chez le livreur. La génération automatique conserve les priorités et la règle de règlement intégral ci-dessous. Aucun calcul automatique n'est lancé à l'ouverture de l'écran.
 
+La liste et la sélection des vendeurs masquent les comptes sans solde disponible à verser. Les lignes déjà prévues restent accessibles pour correction si leur solde a changé. Les numéros de versement du compte vendeur sont administrables à la création et à la modification, avec les mêmes priorités que dans le profil client.
+
+Chaque versement reprend par défaut le premier numéro actif du compte vendeur. L'administrateur peut saisir un autre numéro pour ce seul versement, sans modifier le compte, puis revenir au numéro du compte. Ce choix est conservé dans le briefing et l'historique. Une modification du numéro du compte rend les prévisions utilisant ce défaut à revalider ; elle ne remplace pas un numéro spécifique choisi explicitement. La migration additive V26 distingue ces deux cas et conserve tous les anciens versements.
+
 Un enregistrement ou une nouvelle génération remplace atomiquement les prévisions précédentes, jamais les versements déjà confirmés. Si le calcul ou la validation échoue, la préparation précédente reste intacte. Une clé d'idempotence, la révision des caisses et l'identifiant de la préparation empêchent les doubles enregistrements et les écrasements concurrents.
 
 La préparation crée un lot global commun à tous les livreurs et aux langues FR/MG. Elle ne crée aucun versement confirmé et ne s'appuie jamais sur les recettes prévisionnelles du plan. Seule la caisse déjà disponible des livreurs du plan peut financer les propositions ; aucun déplacement n'est ajouté, les transferts étant prévus par MVola.
