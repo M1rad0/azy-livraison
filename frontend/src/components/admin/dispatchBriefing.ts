@@ -274,9 +274,8 @@ export function generateCourierBriefing(
   })
   const pending = payouts.filter((payout) => payout.courierAccountId === briefing.courier.courierId && payout.status === 'PENDING')
   if (pending.length) {
-    lines.push('', language === 'mg' ? 'Vola halefa :' : 'Versements à effectuer :')
+    lines.push('', language === 'mg' ? 'Vola halefa :' : 'Versements à faire :')
     for (const payout of pending) lines.push(`- ${text(payout.sellerName)} — MVola : ${text(payout.sellerPayoutNumber)} — ${payout.amountAriary} Ar`)
-    lines.push(language === 'mg' ? 'Hamarinin’ny admin ao amin’ny Finance ny vola tena nalefa.' : 'Les versements réels doivent être confirmés par l’admin dans Finance.')
   }
   return lines.join('\n')
 }

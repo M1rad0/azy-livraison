@@ -87,7 +87,7 @@ describe('Briefing dispatch views and text', () => {
 
   it('orders recoveries, exchanges and deliveries and groups the current assignments', () => {
     const { container } = render(<DispatchBriefingView draft={finalized()} allowMessages />)
-    expect([...container.querySelectorAll('.briefing-section > header h3')].map((item) => item.textContent)).toEqual(['Récupérations', 'Échanges', 'Colis à livrer'])
+    expect([...container.querySelectorAll('.briefing-section > header h3')].map((item) => item.textContent)).toEqual(['Récupérations', 'Échanges', 'Colis à livrer', 'Versements à faire'])
     expect(within(screen.getByRole('region', { name: 'Échanges' })).getByText('Baptiste → Jean')).toBeInTheDocument()
     const recovery = screen.getByRole('region', { name: 'Récupérations' })
     expect(within(recovery).getByText('2 colis', { exact: false })).toBeInTheDocument()
@@ -316,6 +316,45 @@ describe('Briefing dispatch views and text', () => {
     expect(await screen.findByText('Baptiste → Jean')).toBeInTheDocument()
     expect(getDispatchPlan).toHaveBeenCalledWith('plan-1', 'token', expect.any(AbortSignal))
     expect(getManualDraftForPlan).toHaveBeenCalledWith('plan-1', 'token', expect.any(AbortSignal))
+  })
+
+  it('reads planned payouts without offering generation or mutation inside the briefing', async () => {
+    vi.mocked(listCashBriefings).mockResolvedValue([payoutBatch()])
+    const onOpenPayouts = vi.fn()
+    panel({ onOpenPayouts })
+    const payments = await screen.findByRole('region', { name: 'Versements à faire' })
+    expect(within(payments).getByText('Vendeur Soa')).toBeInTheDocument()
+    expect(within(payments).getByText('MVola : 034 99 999 99')).toBeInTheDocument()
+    expect(within(payments).getByText('Baptiste')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Générer automatiquement|Préparer les versements|Libérer la proposition|Enregistrer les versements/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier les versements' }))
+    expect(onOpenPayouts).toHaveBeenCalledOnce()
+    fireEvent.click(messageButton())
+    const text = (await screen.findByRole('textbox')) as HTMLTextAreaElement
+    expect(text.value).toContain('Versements à faire :\n- Vendeur Soa — MVola : 034 99 999 99 — 25000 Ar')
+    fireEvent.click(screen.getByRole('tab', { name: 'Malagasy' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Vola halefa :')
+  })
+
+  it('limits individual payout lists to this courier and excludes already confirmed transfers', () => {
+    const batch = payoutBatch()
+    batch.transfers.push({ ...batch.transfers[0], id: 'other', courierAccountId: 'c2', courierName: 'Jean', sellerName: 'Autre vendeur' })
+    batch.transfers.push({ ...batch.transfers[0], id: 'paid', sellerName: 'Déjà réglé', status: 'CONFIRMED' })
+    render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={batch} />)
+    fireEvent.click(messageButton())
+    const payments = screen.getByRole('region', { name: 'Versements à faire' })
+    expect(within(payments).getByText('Vendeur Soa')).toBeInTheDocument()
+    expect(within(payments).queryByText('Autre vendeur')).not.toBeInTheDocument()
+    expect(within(payments).queryByText('Déjà réglé')).not.toBeInTheDocument()
+  })
+
+  it('keeps routes visible but blocks text generation if planned payouts cannot be checked', async () => {
+    vi.mocked(listCashBriefings).mockRejectedValue(new Error('Versements indisponibles'))
+    panel()
+    expect(await screen.findByText('Baptiste → Jean')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Versements indisponibles')
+    fireEvent.click(screen.getByRole('button', { name: 'Par livreur' }))
+    expect(screen.queryByRole('button', { name: 'Générer le briefing' })).not.toBeInTheDocument()
   })
 
   it('loads the current seller contact for the text via the existing admin client API', async () => {

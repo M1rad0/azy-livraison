@@ -285,24 +285,26 @@ describe('AdminPortal', () => {
       .toHaveLength(1)
   })
 
-  it('place Briefing juste après Dispatch dans la navigation autonome et dans la sidebar', async () => {
+  it('place Versements entre Dispatch et Briefing dans la navigation autonome et dans la sidebar', async () => {
     vi.stubGlobal('fetch', portalFetchMock())
     const portal = render(<AdminPortal accessToken="admin-token" />)
     await screen.findByText('Boutique Rado')
     const fallbackButtons = within(screen.getByRole('navigation', { name: 'Sections de l’administration' })).getAllByRole('button')
     const dispatchIndex = fallbackButtons.findIndex((button) => button.textContent?.startsWith('Dispatch'))
-    expect(fallbackButtons[dispatchIndex + 1]).toHaveTextContent('Briefing')
-    expect(fallbackButtons[dispatchIndex + 2]).toHaveTextContent('Compte rendu')
+    expect(fallbackButtons[dispatchIndex + 1]).toHaveTextContent('Versements')
+    expect(fallbackButtons[dispatchIndex + 2]).toHaveTextContent('Briefing')
+    expect(fallbackButtons[dispatchIndex + 3]).toHaveTextContent('Compte rendu')
     portal.unmount()
 
     render(<PortalShell account={{ id: 'admin', username: 'admin', role: 'ADMIN', displayName: 'Administration', phone: null }} onLogout={async () => {}}><div>Contenu</div></PortalShell>)
     const links = within(screen.getByRole('navigation', { name: 'Sections principales' })).getAllByRole('link')
     const sidebarDispatchIndex = links.findIndex((link) => link.getAttribute('href') === '#/admin/dispatch')
-    expect(links[sidebarDispatchIndex + 1]).toHaveAttribute('href', '#/admin/briefing')
-    expect(links[sidebarDispatchIndex + 2]).toHaveAttribute('href', '#/admin/day')
+    expect(links[sidebarDispatchIndex + 1]).toHaveAttribute('href', '#/admin/payouts')
+    expect(links[sidebarDispatchIndex + 2]).toHaveAttribute('href', '#/admin/briefing')
+    expect(links[sidebarDispatchIndex + 3]).toHaveAttribute('href', '#/admin/day')
   })
 
-  it('partage la date d’activité entre Dispatch et Briefing et permet de revenir au dispatch', async () => {
+  it('partage la date d’activité entre Dispatch, Versements et Briefing', async () => {
     const fetchMock = portalFetchMock()
     vi.stubGlobal('fetch', fetchMock)
     render(<AdminPortal accessToken="admin-token" />)
@@ -310,16 +312,20 @@ describe('AdminPortal', () => {
     fireEvent.click(screen.getByRole('button', { name: /Dispatch/ }))
     fireEvent.change(await screen.findByLabelText('Date d’activité'), { target: { value: '2099-12-30' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/dispatch-plans?date=2099-12-30', expect.anything()))
-    fireEvent.click(screen.getByRole('button', { name: /Briefing/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Versements/ }))
     expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-30')
     fireEvent.change(screen.getByLabelText('Date d’activité'), { target: { value: '2099-12-29' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/dispatch-plans?date=2099-12-29', expect.anything()))
+    fireEvent.click(screen.getByRole('button', { name: /Briefing/ }))
+    expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-29')
+    fireEvent.change(screen.getByLabelText('Date d’activité'), { target: { value: '2099-12-28' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/dispatch-plans?date=2099-12-28', expect.anything()))
     fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir Dispatch' }))
     expect(await screen.findByRole('heading', { name: 'Préparer le dispatch' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-29')
+    expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-28')
   })
 
-  it('ouvre le briefing depuis le dispatch validé sans recharger son ancien résumé', async () => {
+  it('ouvre les versements depuis le dispatch validé sans recharger son ancien résumé', async () => {
     const plan = manualPlanFixture()
     const fetchMock = portalFetchMock([], [], [plan.plan])
     fetchMock.mockImplementation((input: string) => {
@@ -328,16 +334,16 @@ describe('AdminPortal', () => {
       return Promise.reject(new Error(`URL inattendue: ${input}`))
     })
     vi.stubGlobal('fetch', fetchMock)
-    const openBriefing = vi.fn()
-    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[plan.plan]} busy={false} onCreated={vi.fn()} onDateChange={vi.fn()} onOpenBriefing={openBriefing} />)
+    const openPayouts = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[plan.plan]} busy={false} onCreated={vi.fn()} onDateChange={vi.fn()} onOpenPayouts={openPayouts} />)
     fireEvent.click(screen.getByRole('button', { name: /1 \/ 1 colis affectés/ }))
     expect(await screen.findByRole('heading', { name: 'Dispatch validé' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Répartition des récupérations et livraisons' })).not.toBeInTheDocument()
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/for-plan/'))).toBe(false)
     expect(screen.getByRole('button', { name: 'Modifier les affectations' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Annuler le dispatch' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir le briefing' }))
-    expect(openBriefing).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Préparer les versements' }))
+    expect(openPayouts).toHaveBeenCalledOnce()
   })
 
   it('conserve les protections de modification et annulation du dispatch renseigné', async () => {
@@ -348,12 +354,12 @@ describe('AdminPortal', () => {
       return Promise.reject(new Error(`URL inattendue: ${input}`))
     })
     vi.stubGlobal('fetch', fetchMock)
-    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[plan.plan]} busy={false} onCreated={vi.fn()} onDateChange={vi.fn()} onOpenBriefing={vi.fn()} />)
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[plan.plan]} busy={false} onCreated={vi.fn()} onDateChange={vi.fn()} onOpenPayouts={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /1 \/ 1 colis affectés/ }))
     await screen.findByRole('heading', { name: 'Dispatch validé' })
     expect(screen.queryByRole('button', { name: 'Modifier les affectations' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Annuler le dispatch' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ouvrir le briefing' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Préparer les versements' })).toBeEnabled()
   })
 
   it('ignore un ancien plan dont le chargement termine après le changement de date', async () => {
@@ -365,17 +371,17 @@ describe('AdminPortal', () => {
       return Promise.reject(new Error(`URL inattendue: ${input}`))
     })
     vi.stubGlobal('fetch', fetchMock)
-    const common = { accessToken: 'admin-token', couriers: [], busy: false, onCreated: vi.fn(), onDateChange: vi.fn(), onOpenBriefing: vi.fn() }
+    const common = { accessToken: 'admin-token', couriers: [], busy: false, onCreated: vi.fn(), onDateChange: vi.fn(), onOpenPayouts: vi.fn() }
     const view = render(<AdminDispatchPanel {...common} date={TEST_TODAY} history={[plan.plan]} />)
     fireEvent.click(screen.getByRole('button', { name: /1 \/ 1 colis affectés/ }))
     view.rerender(<AdminDispatchPanel {...common} date="2099-12-30" history={[]} />)
     await act(async () => { resolvePlan(jsonResponse(plan)) })
     expect(screen.queryByRole('heading', { name: 'Dispatch validé' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Ouvrir le briefing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Préparer les versements' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Date d’activité')).toHaveValue('2099-12-30')
   })
 
-  it('ouvre le briefing seulement après validation manuelle réussie et notification du plan créé', async () => {
+  it('ouvre les versements seulement après validation manuelle réussie et notification du plan créé', async () => {
     const draft = completeDraftFixture()
     const plan = manualPlanFixture()
     const fetchMock = vi.fn().mockImplementation((input: string) => {
@@ -385,16 +391,16 @@ describe('AdminPortal', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const created = vi.fn()
-    const openBriefing = vi.fn()
-    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} onOpenBriefing={openBriefing} />)
+    const openPayouts = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} onOpenPayouts={openPayouts} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Valider le dispatch' }))
-    await waitFor(() => expect(openBriefing).toHaveBeenCalledOnce())
+    await waitFor(() => expect(openPayouts).toHaveBeenCalledOnce())
     expect(created).toHaveBeenCalledWith(plan)
-    expect(created.mock.invocationCallOrder[0]).toBeLessThan(openBriefing.mock.invocationCallOrder[0])
+    expect(created.mock.invocationCallOrder[0]).toBeLessThan(openPayouts.mock.invocationCallOrder[0])
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/manual-dispatch-drafts/draft-1/finalize', expect.objectContaining({ method: 'POST', body: JSON.stringify({ expectedVersion: draft.version }) }))
   })
 
-  it('reste dans le dispatch en cas de conflit de validation, sans ouvrir un faux briefing', async () => {
+  it('reste dans le dispatch en cas de conflit de validation sans ouvrir les versements', async () => {
     const draft = completeDraftFixture()
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.startsWith('/api/admin/manual-dispatch-drafts/active')) return Promise.resolve(jsonResponse(draft))
@@ -403,16 +409,16 @@ describe('AdminPortal', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const created = vi.fn()
-    const openBriefing = vi.fn()
-    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} onOpenBriefing={openBriefing} />)
+    const openPayouts = vi.fn()
+    render(<AdminDispatchPanel accessToken="admin-token" date={TEST_TODAY} couriers={[]} history={[]} busy={false} onCreated={created} onDateChange={vi.fn()} onOpenPayouts={openPayouts} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Valider le dispatch' }))
     expect(await screen.findByText('Rechargez le dispatch avant de le valider.')).toBeInTheDocument()
     expect(created).not.toHaveBeenCalled()
-    expect(openBriefing).not.toHaveBeenCalled()
+    expect(openPayouts).not.toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: 'Organiser la journée' })).toBeInTheDocument()
   })
 
-  it('garde le résultat validé visible lorsque la navigation Briefing n’est pas fournie', async () => {
+  it('garde le résultat validé visible lorsque la navigation Versements n’est pas fournie', async () => {
     const draft = completeDraftFixture()
     const plan = manualPlanFixture()
     const fetchMock = vi.fn().mockImplementation((input: string) => {
@@ -426,7 +432,7 @@ describe('AdminPortal', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Valider le dispatch' }))
     expect(await screen.findByRole('heading', { name: 'Dispatch validé' })).toBeInTheDocument()
     expect(created).toHaveBeenCalledWith(plan)
-    expect(screen.queryByRole('button', { name: 'Ouvrir le briefing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Préparer les versements' })).not.toBeInTheDocument()
   })
 
   it('ouvre un espace séparé pour reprogrammer les colis reportés', async () => {

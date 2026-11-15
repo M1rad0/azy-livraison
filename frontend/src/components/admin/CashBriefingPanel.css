@@ -11,3 +11,37 @@
 .cash-briefing-confirm label { display: grid; gap: .5rem; font-size: .875rem; }
 .cash-briefing-confirm input, .cash-briefing-confirm textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: .75rem; border: 1px solid #d8dde3; border-radius: .6rem; font: inherit; }
 @media(max-width: 640px) { .cash-briefing-panel li { align-items: flex-start; flex-wrap: wrap; } .cash-briefing-panel footer > button { flex: 1; } }
+.cash-planning-section { min-width: 0; margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid #edf0f3; }
+.cash-planning-section h4 { margin: 0; font-size: .95rem; color: #142e42; font-weight: 650; }
+.cash-planning-section h5 { margin: 0; font-size: .9rem; font-weight: 650; }
+.cash-planning-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+.cash-planning-heading p { margin-bottom: 0; }
+.cash-planning-search { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.cash-planning-search svg { width: 1rem; color: #72808e; flex: 0 0 auto; }
+.cash-planning-search input { min-width: 0; width: 100%; padding: .65rem .8rem; border: 1px solid #dce2e8; border-radius: .65rem; font: inherit; font-size: .875rem; }
+.cash-planning-table { max-height: 22rem; overflow: auto; border: 1px solid #e8ecf0; border-radius: .75rem; }
+.cash-planning-table table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.cash-planning-table th, .cash-planning-table td { padding: .85rem 1rem; text-align: right; border-bottom: 1px solid #edf0f3; white-space: nowrap; }
+.cash-planning-table th:first-child, .cash-planning-table td:first-child { text-align: left; white-space: normal; min-width: 10rem; }
+.cash-planning-table th { position: sticky; top: 0; z-index: 1; font-size: .78rem; font-weight: 600; background: #f6f8fa; color: #627180; }
+.cash-planning-table small { display: block; margin-top: .25rem; color: #6a7582; font-size: .78rem; }
+.cash-planning-couriers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1rem; margin-top: 1rem; }
+.cash-planning-couriers article { min-width: 0; padding: 1rem; border-radius: .8rem; background: #f7f9fb; border: 1px solid #e8edf1; }
+.cash-planning-couriers dl { display: grid; gap: .65rem; margin: 1rem 0 0; }
+.cash-planning-couriers dl > div { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; font-size: .85rem; }
+.cash-planning-couriers dt { color: #687684; }
+.cash-planning-couriers dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.cash-planning-couriers small { display: block; margin-top: .8rem; font-size: .75rem; color: #687684; }
+.cash-planning-rows { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 1rem; }
+.cash-planning-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(7rem, .7fr) auto; gap: .85rem; align-items: end; padding: 1rem; background: #f8fafb; border-radius: .8rem; }
+.cash-planning-row > label { min-width: 0; display: grid; gap: .5rem; font-size: .8rem; font-weight: 500; color: #526171; }
+.cash-planning-row > label > input { width: 100%; min-width: 0; box-sizing: border-box; height: 2.8rem; padding: .7rem .8rem; border: 1px solid #dce2e8; border-radius: .65rem; font: inherit; color: #172c40; background: #fff; }
+.cash-planning-row > button { min-height: 2.8rem; }
+.cash-planning-row .admin-courier-combobox { min-width: 0; font-size: .875rem; font-weight: 400; }
+.cash-planning-warning { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; padding: 1rem; background: #fff6e9; border-radius: .75rem; margin-top: 1rem; }
+.cash-planning-warning p { margin: 0; }
+.cash-planning-negative { color: #aa3d24 !important; }
+.cash-planning-empty { padding: .75rem 1rem; }
+.cash-planning-confirmed { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #edf0f3; }
+@media(max-width: 900px) { .cash-planning-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .cash-planning-row > button { justify-self: end; } }
+@media(max-width: 540px) { .cash-planning-row { grid-template-columns: minmax(0, 1fr); } .cash-planning-heading { align-items: stretch; } .cash-planning-search { width: 100%; } .cash-planning-heading > button { width: 100%; } .cash-briefing-panel footer > button { flex-basis: 100%; } }

@@ -11,6 +11,16 @@ function shell(role: AccountRole = 'ADMIN') {
 }
 describe('Routes financières non listées', () => {
   afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); vi.restoreAllMocks() })
+  it('place Versements entre Dispatch et Briefing et ouvre son URL dédiée', () => {
+    render(shell())
+    const links = Array.from(document.querySelectorAll('.portal-sidebar__nav a'))
+    const index = links.findIndex((link) => link.getAttribute('href') === '#/admin/dispatch')
+    expect(links[index + 1]).toHaveAttribute('href', '#/admin/payouts')
+    expect(links[index + 2]).toHaveAttribute('href', '#/admin/briefing')
+    fireEvent.click(screen.getByRole('link', { name: /^Versements/ }))
+    expect(screen.getByLabelText('Section ouverte')).toHaveTextContent(/^payouts$/)
+    expect(window.location.hash).toBe('#/admin/payouts')
+  })
   it.each(['finance-legacy-clients', 'finance-legacy-couriers'])('ouvre %s par URL sans lien dans la navigation', (route) => {
     window.history.replaceState(null, '', `/#/admin/${route}`)
     render(shell())

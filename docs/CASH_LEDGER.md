@@ -25,13 +25,21 @@ Les transferts manuels sont possibles entre tous les comptes distincts, y compri
 
 Une annulation conserve le mouvement et crée une contre-écriture motivée, y compris pour les affectations aux rapports. Les clés d'idempotence évitent les doubles enregistrements ; une clé réutilisée pour un autre contenu est refusée. Les écritures et réservations sont sérialisées par un verrou financier et une révision.
 
-## Versements dans le briefing
+## Préparer les versements avant le briefing
+
+Le parcours est **Dispatch → Versements → Briefing**. L'étape Versements affiche les soldes globaux des vendeurs et les caisses des livreurs sélectionnés pour la journée. Le disponible tient compte des réservations des autres plans ; les sommes déjà prévues dans le plan courant ne sont pas comptées deux fois.
+
+Les versements peuvent être saisis manuellement (vendeur, livreur, montant) ou proposés par le bouton de répartition automatique. La saisie manuelle autorise un règlement partiel, sans dépasser le solde disponible du vendeur ni l'argent réellement disponible chez le livreur. La génération automatique conserve les priorités et la règle de règlement intégral ci-dessous. Aucun calcul automatique n'est lancé à l'ouverture de l'écran.
+
+Un enregistrement ou une nouvelle génération remplace atomiquement les prévisions précédentes, jamais les versements déjà confirmés. Si le calcul ou la validation échoue, la préparation précédente reste intacte. Une clé d'idempotence, la révision des caisses et l'identifiant de la préparation empêchent les doubles enregistrements et les écrasements concurrents.
 
 La préparation crée un lot global commun à tous les livreurs et aux langues FR/MG. Elle ne crée aucun versement confirmé et ne s'appuie jamais sur les recettes prévisionnelles du plan. Seule la caisse déjà disponible des livreurs du plan peut financer les propositions ; aucun déplacement n'est ajouté, les transferts étant prévus par MVola.
 
-Un vendeur est proposé uniquement si son solde global peut être entièrement réglé, éventuellement par plusieurs livreurs. Priorités : nombre de vendeurs soldés, montant total, ancienneté, puis nombre de transferts. L'argent et les dettes proposés sont réservés pour éviter les doubles propositions. Une modification financière rend le lot à revalider ; les lots expirés, libérés ou liés à un plan devenu invalide ne peuvent pas être utilisés comme instructions valides.
+En mode automatique, un vendeur est proposé uniquement si son solde global peut être entièrement réglé, éventuellement par plusieurs livreurs. Priorités : nombre de vendeurs soldés, montant total, ancienneté, puis nombre de transferts. L'argent et les dettes proposés sont réservés pour éviter les doubles propositions. Une modification financière rend le lot à revalider ; les lots expirés, libérés ou liés à un plan devenu invalide ne peuvent pas être utilisés comme instructions valides.
 
-**Copier ou modifier un briefing ne confirme rien.** Seul l'administrateur confirme les versements réels dans Finance, avec justificatif facultatif. Un lot remplacé impose de renouveler les textes pour ne pas conserver d'anciennes instructions de paiement.
+Le briefing affiche ensuite une section **Versements à faire**, en vue globale et par livreur. Les textes FR/MG reprennent uniquement les versements enregistrés encore à faire, avec vendeur, numéro MVola et montant ; ni génération ni modification de la préparation ne se fait dans le briefing.
+
+**Copier ou modifier un briefing ne confirme rien.** Seul l'administrateur confirme les versements réels dans Finance, avec justificatif facultatif. Un lot remplacé impose de renouveler les textes pour ne pas conserver d'anciennes instructions de paiement. La migration V25 ajoute seulement le mode de préparation et son empreinte de requête ; elle conserve les préparations existantes.
 
 ## Rémunérations retirées du nouveau fonctionnement
 

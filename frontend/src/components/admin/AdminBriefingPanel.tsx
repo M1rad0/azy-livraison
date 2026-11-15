@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRight, ArrowRightLeft, Bike, CalendarDays, Check, ChevronLeft, ChevronRight, Copy, List, LoaderCircle, MapPin, MessageSquareText, PackageCheck, Phone, RefreshCw, TriangleAlert, Warehouse, X } from 'lucide-react'
+import { ArrowRight, ArrowRightLeft, Banknote, Bike, CalendarDays, Check, ChevronLeft, ChevronRight, Copy, List, LoaderCircle, MapPin, MessageSquareText, PackageCheck, Phone, RefreshCw, TriangleAlert, Warehouse, X } from 'lucide-react'
 import { getDispatchPlan, listAdminClients, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft, type ManualPackage } from '../../api/manualDispatch'
-import { listCashBriefings, type CashBriefingBatch } from '../../api/cashBriefing'
+import { listCashBriefings, type CashBriefingBatch, type CashBriefingTransfer } from '../../api/cashBriefing'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { Button } from '../Button'
 import { CourierCombobox } from './CourierCombobox'
-import { CashBriefingPanel } from './CashBriefingPanel'
 import { buildDispatchBriefing, generateCourierBriefing, type BriefingLanguage, type BriefingPickup, type CourierBriefing } from './dispatchBriefing'
 import { manualDispatchCourierColor } from './manualDispatchGeography'
 import { dispatchPlace, dispatchPlaceText } from './manualDispatchPresentation'
@@ -22,6 +21,7 @@ interface AdminBriefingPanelProps {
   busy?: boolean
   onDateChange: (date: string) => void
   onOpenDispatch: () => void
+  onOpenPayouts?: () => void
   onRefresh?: () => void
 }
 
@@ -62,6 +62,15 @@ function PickupList({ pickups }: { pickups: BriefingPickup[] }) {
 function CourierHeading({ briefing }: { briefing: CourierBriefing }) {
   return <header className="briefing-courier-heading"><div><span style={{ background: manualDispatchCourierColor(briefing.courier.courierId) }} aria-hidden="true"><Bike /></span><strong>{briefing.courier.name}</strong></div>
   </header>
+}
+
+function PayoutList({ transfers, stale = false }: { transfers: CashBriefingTransfer[]; stale?: boolean }) {
+  if (stale) return <p className="briefing-empty">Les versements sont à revalider dans l’étape Versements.</p>
+  if (!transfers.length) return <p className="briefing-empty">Aucun versement à faire.</p>
+  return <ul className="briefing-payouts">{transfers.map((transfer) => <li key={transfer.id}>
+    <div><strong>{transfer.sellerName}</strong><span>MVola : {transfer.sellerPayoutNumber || 'Numéro non renseigné'}</span></div>
+    <strong>{formatAriary(transfer.amountAriary)}</strong>
+  </li>)}</ul>
 }
 
 function BriefingTextDialog({ courierName, text, language, onLanguageChange, onChange, onClose, beforeCopy }: {
@@ -188,6 +197,8 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
   }
   const collectionCouriers = model.couriers.filter((item) => item.pickups.length > 0)
   const deliveryCouriers = model.couriers.filter((item) => item.deliveries.length > 0)
+  const payouts = cashBatch?.status === 'ACTIVE' ? cashBatch.transfers.filter((transfer) => transfer.status === 'PENDING') : []
+  const payoutCouriers = couriers.filter((item) => payouts.some((transfer) => transfer.courierAccountId === item.courier.courierId))
 
   return <div className="briefing-content">
     {model.warnings.length > 0 && <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Répartition à vérifier</strong><ul>{model.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div></div>}
@@ -207,13 +218,20 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
       <BriefingSection number={2} title="Échanges" icon={<ArrowRightLeft aria-hidden="true" />}>{model.transfers.length ? <div className="briefing-exchange-grid">{model.transfers.map((transfer) => <article key={`${transfer.fromCourierId}:${transfer.toCourierId}`} className="briefing-exchange"><header><strong>{transfer.fromCourierName} → {transfer.toCourierName}</strong><small>{transfer.packages.length} colis à transmettre</small></header><PackageList packages={transfer.packages} /></article>)}</div> : <p className="briefing-empty">Aucun échange : chaque livreur conserve les colis qu’il récupère.</p>}</BriefingSection>
       <BriefingSection number={3} title="Colis à livrer" icon={<PackageCheck aria-hidden="true" />}><div className="briefing-courier-grid">{deliveryCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} /><PackageList packages={briefing.deliveries} financial /></article>)}</div>{deliveryCouriers.length === 0 && <p className="briefing-empty">Aucun colis affecté à la livraison.</p>}</BriefingSection>
     </>}
+    {allowMessages && <BriefingSection number={4} title="Versements à faire" icon={<Banknote aria-hidden="true" />}>
+      {view === 'courier' && selected ? <PayoutList transfers={payouts.filter((transfer) => transfer.courierAccountId === selected.courier.courierId)} stale={cashBatch?.status === 'STALE'} />
+        : cashBatch?.status === 'STALE' ? <PayoutList transfers={[]} stale />
+          : payoutCouriers.length ? <div className="briefing-courier-grid">{payoutCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} /><PayoutList transfers={payouts.filter((transfer) => transfer.courierAccountId === briefing.courier.courierId)} /></article>)}</div>
+            : <PayoutList transfers={[]} />}
+    </BriefingSection>}
     {canGenerate && edited && <BriefingTextDialog courierName={edited.courier.name} language={language} onLanguageChange={setLanguage} text={texts[edited.courier.courierId]?.[language] ?? ''} onChange={(value) => setTexts((current) => ({ ...current, [edited.courier.courierId]: { ...current[edited.courier.courierId], [language]: value } }))} onClose={closeEditor} beforeCopy={validateCash} />}
   </div>
 }
 
-export function AdminBriefingPanel({ accessToken, date, history, busy = false, onDateChange, onOpenDispatch, onRefresh }: AdminBriefingPanelProps) {
+export function AdminBriefingPanel({ accessToken, date, history, busy = false, onDateChange, onOpenDispatch, onOpenPayouts, onRefresh }: AdminBriefingPanelProps) {
   const [cashBatch, setCashBatch] = useState<CashBriefingBatch>()
   const [cashMessage, setCashMessage] = useState<string>()
+  const [cashReady, setCashReady] = useState(false)
   const [snapshot, setSnapshot] = useState<{ planId: string; draft: ManualDispatchDraft; sellerContacts?: Readonly<Record<string, string | null>> }>()
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string>()
@@ -222,7 +240,6 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
     .sort((a, b) => (b.revision ?? 0) - (a.revision ?? 0) || b.createdAt.localeCompare(a.createdAt))[0]
   const planId = active?.id
   const version = active?.version
-  const acceptCashBatch = useCallback((batch: CashBriefingBatch | undefined) => { setCashBatch(batch); setCashMessage(undefined) }, [])
   async function validateCash() {
     if (!planId) return false
     try {
@@ -239,7 +256,7 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
   useEffect(() => {
     const controller = new AbortController()
     setSnapshot(undefined); setMessage(undefined)
-    setCashBatch(undefined); setCashMessage(undefined)
+    setCashBatch(undefined); setCashMessage(undefined); setCashReady(false)
     if (!planId) { setLoading(false); return () => controller.abort() }
     setLoading(true)
     void (async () => {
@@ -247,14 +264,20 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
       if (controller.signal.aborted) return
       if (plan.plan.serviceDate !== date || plan.plan.archivedAt || !['READY', 'READY_WITH_WARNINGS'].includes(plan.plan.status)) throw new Error('Ce dispatch n’est plus actif. Actualisez pour consulter la répartition en cours.')
       if (plan.plan.strategy !== 'MANUAL') throw new Error('Ce plan ancien ne possède pas de répartition manuelle. Consultez ses détails dans Dispatch.')
-      const [draft, clients] = await Promise.all([
+      const [draft, clients, batches] = await Promise.all([
         getManualDraftForPlan(planId, accessToken, controller.signal),
         // Contacts serve the text generator only; unavailable profiles must not hide the dispatch.
         listAdminClients(accessToken, controller.signal).catch(() => undefined),
+        listCashBriefings(accessToken, planId, controller.signal).catch((error: unknown) => {
+          if (!controller.signal.aborted) setCashMessage(errorMessage(error))
+          return undefined
+        }),
       ])
       if (controller.signal.aborted) return
       if (!draft || draft.serviceDate !== date || draft.status !== 'FINALIZED' || (draft.finalPlanId && draft.finalPlanId !== planId)) throw new Error('Le briefing de ce plan n’est pas disponible. Consultez Dispatch ou actualisez la journée.')
       setSnapshot({ planId, draft, sellerContacts: clients ? Object.fromEntries(clients.map((client) => [client.accountId, client.phone ?? null])) : undefined })
+      setCashBatch(batches?.find((batch) => ['ACTIVE', 'STALE', 'COMPLETED'].includes(batch.status)))
+      setCashReady(batches !== undefined)
     })().catch((error: unknown) => { if (!controller.signal.aborted) setMessage(errorMessage(error)) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -262,7 +285,7 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
 
   const ready = !busy && !loading && snapshot?.planId === planId ? snapshot?.draft : undefined
   return <section className="admin-panel admin-briefing" aria-labelledby="briefing-title">
-    <header className="admin-panel__heading"><div><p className="admin-eyebrow">Organisation de la journée</p><h2 id="briefing-title">Briefing</h2><p>Les récupérations, les échanges et la liste finale de colis de chaque livreur.</p></div><div className="admin-toolbar"><label className="admin-date-field"><CalendarDays aria-hidden="true" /><span>Date d’activité</span><input type="date" required value={date} onChange={(event) => { if (event.target.value) onDateChange(event.target.value) }} /></label><Button tone="admin" variant="secondary" disabled={busy || loading} onClick={() => { setReload((value) => value + 1); onRefresh?.() }}><RefreshCw aria-hidden="true" />Actualiser</Button></div></header>
-    {busy || loading ? <div className="admin-empty" role="status"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement du briefing…</strong></div> : message ? <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Briefing indisponible</strong><span>{message}</span><Button tone="admin" variant="secondary" size="small" onClick={onOpenDispatch}>Ouvrir Dispatch</Button></div></div> : ready ? <><CashBriefingPanel key={`${planId}:${reload}`} accessToken={accessToken} planId={planId!} onBatchChange={acceptCashBatch} />{cashMessage && <p role="alert" className="admin-callout admin-callout--warning">{cashMessage}</p>}<DispatchBriefingView key={`${planId}:${ready.id}:${ready.version}`} draft={ready} allowMessages sellerContacts={snapshot?.sellerContacts} cashBatch={cashBatch} validateCash={validateCash} /></> : <div className="admin-empty"><MessageSquareText aria-hidden="true" /><strong>Aucun dispatch validé pour le {formatDate(date)}</strong><span>Validez d’abord les affectations de cette journée pour préparer les briefings.</span><Button tone="admin" onClick={onOpenDispatch}>Ouvrir Dispatch<ArrowRight aria-hidden="true" /></Button></div>}
+    <header className="admin-panel__heading"><div><p className="admin-eyebrow">Organisation de la journée</p><h2 id="briefing-title">Briefing</h2><p>Les récupérations, les échanges, les colis et les versements à faire par livreur.</p></div><div className="admin-toolbar"><label className="admin-date-field"><CalendarDays aria-hidden="true" /><span>Date d’activité</span><input type="date" required value={date} onChange={(event) => { if (event.target.value) onDateChange(event.target.value) }} /></label>{onOpenPayouts && <Button tone="admin" variant="secondary" onClick={onOpenPayouts}><Banknote aria-hidden="true" />Modifier les versements</Button>}<Button tone="admin" variant="secondary" disabled={busy || loading} onClick={() => { setReload((value) => value + 1); onRefresh?.() }}><RefreshCw aria-hidden="true" />Actualiser</Button></div></header>
+    {busy || loading ? <div className="admin-empty" role="status"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement du briefing…</strong></div> : message ? <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Briefing indisponible</strong><span>{message}</span><Button tone="admin" variant="secondary" size="small" onClick={onOpenDispatch}>Ouvrir Dispatch</Button></div></div> : ready ? <>{cashMessage && <p role="alert" className="admin-callout admin-callout--warning">{cashMessage}</p>}<DispatchBriefingView key={`${planId}:${ready.id}:${ready.version}`} draft={ready} allowMessages={cashReady} sellerContacts={snapshot?.sellerContacts} cashBatch={cashBatch} validateCash={validateCash} /></> : <div className="admin-empty"><MessageSquareText aria-hidden="true" /><strong>Aucun dispatch validé pour le {formatDate(date)}</strong><span>Validez d’abord les affectations de cette journée pour préparer les briefings.</span><Button tone="admin" onClick={onOpenDispatch}>Ouvrir Dispatch<ArrowRight aria-hidden="true" /></Button></div>}
   </section>
 }

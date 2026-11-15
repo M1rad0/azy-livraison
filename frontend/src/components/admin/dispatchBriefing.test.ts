@@ -24,11 +24,11 @@ describe('dispatch briefing model', () => {
     ]
     const fr = generateCourierBriefing(courier, draft.serviceDate, undefined, 'fr', payouts)
     const mg = generateCourierBriefing(courier, draft.serviceDate, undefined, 'mg', payouts)
-    expect(fr).toContain('Versements à effectuer :')
+    expect(fr).toContain('Versements à faire :')
     expect(mg).toContain('Vola halefa :')
     for (const text of [fr, mg]) {
       expect(text).toContain('Vendeur Soa — MVola : 034 11 111 11 — 25000 Ar')
-      expect(text).toContain('Finance')
+      expect(text).not.toContain('Finance')
       expect(text).not.toContain('Autre vendeur')
       expect(text).not.toContain('Déjà réglé')
     }
@@ -38,7 +38,7 @@ describe('dispatch briefing model', () => {
   it('does not invent a payout section before an explicit proposal', () => {
     const draft = allocatedFixture()
     const courier = buildDispatchBriefing(draft).couriers[0]
-    expect(generateCourierBriefing(courier, draft.serviceDate)).not.toContain('Versements à effectuer')
+    expect(generateCourierBriefing(courier, draft.serviceDate)).not.toContain('Versements à faire')
     expect(generateCourierBriefing(courier, draft.serviceDate, undefined, 'mg')).not.toContain('Vola halefa')
   })
   it('handles collecting-only, delivering-only and mixed couriers without inventing routes', () => {

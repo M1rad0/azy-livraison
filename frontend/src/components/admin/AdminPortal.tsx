@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BadgeDollarSign, Bike, Boxes, CalendarClock, ClipboardCheck, MessageSquareText, Settings2, Sparkles, TriangleAlert, UsersRound, WalletCards, Zap } from 'lucide-react'
+import { BadgeDollarSign, Banknote, Bike, Boxes, CalendarClock, ClipboardCheck, MessageSquareText, Settings2, Sparkles, TriangleAlert, UsersRound, WalletCards, Zap } from 'lucide-react'
 import {
   cancelAdminDeliveryPackage,
   getAdminQueue,
@@ -20,6 +20,7 @@ import {
 import { AdminCouriersPanel } from './AdminCouriersPanel'
 import { AdminDispatchPanel } from './AdminDispatchPanel'
 import { AdminBriefingPanel } from './AdminBriefingPanel'
+import { AdminPayoutsPanel } from './AdminPayoutsPanel'
 import { AdminDailyOperationsPanel } from './AdminDailyOperationsPanel'
 import { AdminFinancePanel } from './AdminFinancePanel'
 import { LegacyFinancePanel } from './LegacyFinancePanel'
@@ -33,12 +34,13 @@ import { AdminPostponedPackagesPanel } from './AdminPostponedPackagesPanel'
 import { usePortalNavigation } from '../PortalShell'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'express' | 'dispatch' | 'briefing' | 'day' | 'postponed' | 'finance' | 'finance-legacy-clients' | 'finance-legacy-couriers' | 'clients' | 'couriers' | 'pricing' | 'settings'
+type AdminTab = 'queue' | 'express' | 'dispatch' | 'payouts' | 'briefing' | 'day' | 'postponed' | 'finance' | 'finance-legacy-clients' | 'finance-legacy-couriers' | 'clients' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
   { id: 'express', label: 'Express', detail: 'Traitement immédiat', icon: Zap },
   { id: 'dispatch', label: 'Dispatch', detail: 'Affectations et tournées', icon: Sparkles },
+  { id: 'payouts', label: 'Versements', detail: 'Préparer les versements', icon: Banknote },
   { id: 'briefing', label: 'Briefing', detail: 'Consignes des livreurs', icon: MessageSquareText },
   { id: 'day', label: 'Compte rendu', detail: 'Clôture et rapports', icon: ClipboardCheck },
   { id: 'postponed', label: 'Reportés', detail: 'Choisir une nouvelle date', icon: CalendarClock },
@@ -226,7 +228,19 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
             if (date) setDispatchDate(date)
           }}
           onCreated={dispatchCreated}
+          onOpenPayouts={() => openTab('payouts')}
+        />
+      )}
+      {tab === 'payouts' && (
+        <AdminPayoutsPanel
+          accessToken={accessToken}
+          date={dispatchDate}
+          history={currentHistory}
+          busy={dispatchBusy}
+          onDateChange={(date) => { if (date) setDispatchDate(date) }}
+          onOpenDispatch={() => openTab('dispatch')}
           onOpenBriefing={() => openTab('briefing')}
+          onRefresh={() => { void loadPending(); void loadDispatchDay() }}
         />
       )}
       {tab === 'briefing' && (
@@ -237,6 +251,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
           busy={dispatchBusy}
           onDateChange={(date) => { if (date) setDispatchDate(date) }}
           onOpenDispatch={() => openTab('dispatch')}
+          onOpenPayouts={() => openTab('payouts')}
           onRefresh={() => { void loadPending(); void loadDispatchDay() }}
         />
       )}

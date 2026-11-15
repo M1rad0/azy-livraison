@@ -1,40 +1,167 @@
-import { useEffect, useState } from 'react'
-import { Banknote, RefreshCw, X } from 'lucide-react'
-import { listCashBriefings, prepareCashBriefing, releaseCashBriefing, revalidateCashBriefing, type CashBriefingBatch } from '../../api/cashBriefing'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Banknote, Plus, RefreshCw, Save, Search, Sparkles, Trash2 } from 'lucide-react'
+import { getCashBriefingPlanning, prepareCashBriefing, revalidateCashBriefing, saveManualCashBriefing, type CashBriefingBatch, type CashBriefingPlanning } from '../../api/cashBriefing'
 import { Button } from '../Button'
+import { ConfirmDialog } from '../ConfirmDialog'
+import { CourierCombobox } from './CourierCombobox'
 import { errorMessage, formatAriary } from './adminHelpers'
 import './CashBriefingPanel.css'
 
-export function CashBriefingPanel({ accessToken, planId, onBatchChange }: { accessToken: string; planId: string; onBatchChange: (batch: CashBriefingBatch | undefined) => void }) {
-  const [batch, setBatch] = useState<CashBriefingBatch>()
+type DraftTransfer = { key: string; sellerAccountId: string; courierAccountId: string; amount: string }
+type Confirmation = 'refresh' | 'automatic'
+const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr')
+const editable = (batch?: CashBriefingBatch | null) => batch?.transfers.filter((transfer) => transfer.status === 'PENDING').map((transfer) => ({ key: transfer.id, sellerAccountId: transfer.sellerAccountId, courierAccountId: transfer.courierAccountId, amount: String(transfer.amountAriary) })) ?? []
+
+export function CashBriefingPanel({ accessToken, planId, onBatchChange, onDirtyChange, onBlockedChange }: { accessToken: string; planId: string; onBatchChange?: (batch: CashBriefingBatch | undefined) => void; onDirtyChange?: (dirty: boolean) => void; onBlockedChange?: (blocked: boolean) => void }) {
+  const [planning, setPlanning] = useState<CashBriefingPlanning>()
+  const [draft, setDraft] = useState<DraftTransfer[]>([])
+  const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string>()
-  const [reload, setReload] = useState(0)
+  const [notice, setNotice] = useState<string>()
+  const [uncertain, setUncertain] = useState(false)
+  const [search, setSearch] = useState('')
+  const [confirmation, setConfirmation] = useState<Confirmation>()
+  const callback = useRef(onBatchChange)
+  callback.current = onBatchChange
+  const saveAttempt = useRef<{ signature: string; key: string } | undefined>(undefined)
+  const autoAttempt = useRef<{ signature: string; key: string } | undefined>(undefined)
+  const batch = planning?.batch
+  const locked = busy || loading || !planning
+  const stale = batch?.status === 'STALE'
+
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => { onBlockedChange?.(locked || stale || uncertain) }, [locked, stale, uncertain, onBlockedChange])
+
+  function applyPlanning(result: CashBriefingPlanning) {
+    setPlanning(result); setDraft(editable(result.batch)); setDirty(false); setUncertain(false)
+    callback.current?.(result.batch ?? undefined)
+  }
+
   useEffect(() => {
     const controller = new AbortController()
-    setMessage(undefined); setBatch(undefined); onBatchChange(undefined)
-    void listCashBriefings(accessToken, planId, controller.signal).then((batches) => {
-      if (controller.signal.aborted) return
-      const current = batches.find((b) => ['ACTIVE', 'STALE', 'COMPLETED'].includes(b.status))
-      setBatch(current); onBatchChange(current)
+    setPlanning(undefined); setDraft([]); setDirty(false); setLoading(true); setMessage(undefined); setNotice(undefined); setUncertain(false)
+    saveAttempt.current = undefined; autoAttempt.current = undefined
+    callback.current?.(undefined)
+    void getCashBriefingPlanning(planId, accessToken, controller.signal).then((result) => {
+      if (!controller.signal.aborted) applyPlanning(result)
     }).catch((error) => { if (!controller.signal.aborted) setMessage(errorMessage(error)) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [accessToken, planId, onBatchChange, reload])
+  }, [accessToken, planId])
 
-  async function action(kind: 'prepare' | 'release' | 'revalidate') {
-    setBusy(true); setMessage(undefined)
+  async function refresh() {
+    setBusy(true); setMessage(undefined); setNotice(undefined)
+    try { applyPlanning(await getCashBriefingPlanning(planId, accessToken)) }
+    catch (error) { setMessage(errorMessage(error)); setUncertain(true) }
+    finally { setBusy(false); setConfirmation(undefined) }
+  }
+
+  function update(key: string, patch: Partial<DraftTransfer>) {
+    if (locked) return
+    setDraft((rows) => rows.map((row) => row.key === key ? { ...row, ...patch } : row)); setDirty(true); setNotice(undefined)
+  }
+
+  const totals = useMemo(() => {
+    const couriers = new Map<string, number>(), sellers = new Map<string, number>()
+    for (const row of draft) {
+      const amount = Number(row.amount)
+      if (Number.isSafeInteger(amount) && amount > 0) {
+        couriers.set(row.courierAccountId, (couriers.get(row.courierAccountId) ?? 0) + amount)
+        sellers.set(row.sellerAccountId, (sellers.get(row.sellerAccountId) ?? 0) + amount)
+      }
+    }
+    return { couriers, sellers }
+  }, [draft])
+  const validation = useMemo(() => {
+    if (!planning) return undefined
+    for (const row of draft) {
+      if (!planning.sellers.some((seller) => seller.sellerAccountId === row.sellerAccountId) || !planning.couriers.some((courier) => courier.courierAccountId === row.courierAccountId)) return 'Choisissez un vendeur et un livreur actif pour chaque versement.'
+      if (!planning.sellers.find((seller) => seller.sellerAccountId === row.sellerAccountId)?.sellerPayoutNumber?.trim()) return 'Ajoutez un numéro de versement au vendeur avant de préparer son versement.'
+      if (!Number.isSafeInteger(Number(row.amount)) || Number(row.amount) <= 0) return 'Chaque montant doit être un nombre entier supérieur à zéro.'
+    }
+    if (planning.couriers.some((courier) => (totals.couriers.get(courier.courierAccountId) ?? 0) > courier.capacityAriary)) return 'Les versements prévus dépassent la caisse disponible d’un livreur.'
+    if (planning.sellers.some((seller) => (totals.sellers.get(seller.sellerAccountId) ?? 0) > Math.max(0, seller.availableAriary))) return 'Les versements prévus dépassent le solde disponible à verser à un vendeur.'
+    return undefined
+  }, [draft, planning, totals])
+
+  async function save() {
+    if (!planning || validation) return
+    const input = { planId, expectedLedgerRevision: planning.ledgerRevision, expectedBatchId: batch?.id ?? null, transfers: draft.map((row) => ({ sellerAccountId: row.sellerAccountId, courierAccountId: row.courierAccountId, amountAriary: Number(row.amount) })) }
+    const signature = JSON.stringify(input)
+    if (saveAttempt.current?.signature !== signature) saveAttempt.current = { signature, key: crypto.randomUUID() }
+    setBusy(true); setMessage(undefined); setNotice(undefined)
     try {
-      const result = kind === 'prepare' ? await prepareCashBriefing(planId, accessToken)
-        : kind === 'release' ? await releaseCashBriefing(batch!.id, accessToken) : await revalidateCashBriefing(batch!.id, accessToken)
-      const current = kind === 'release' ? undefined : result
-      setBatch(current); onBatchChange(current)
-    } catch (error) { setMessage(errorMessage(error)); onBatchChange(undefined) }
+      const result = await saveManualCashBriefing({ ...input, idempotencyKey: saveAttempt.current.key }, accessToken)
+      callback.current?.(result)
+      applyPlanning(await getCashBriefingPlanning(planId, accessToken))
+      saveAttempt.current = undefined; setNotice('Les versements à faire sont enregistrés pour le briefing.')
+    } catch (error) { setMessage(errorMessage(error)); setUncertain(true) }
     finally { setBusy(false) }
   }
-  return <section className="cash-briefing-panel" aria-label="Versements du briefing">
-    <header><div><h3><Banknote aria-hidden="true" />Versements aux vendeurs</h3><p>Proposition commune à tous les livreurs, sur leur caisse déjà confirmée. Aucun versement n’est validé ici.</p></div><Button tone="admin" variant="secondary" disabled={busy} onClick={() => setReload((n) => n + 1)} aria-label="Actualiser les versements"><RefreshCw aria-hidden="true" /></Button></header>
+
+  async function automatic() {
+    if (!planning) return
+    setBusy(true); setMessage(undefined); setNotice(undefined)
+    try {
+      const replacement = { replaceExisting: true as const, expectedLedgerRevision: planning.ledgerRevision, expectedBatchId: batch?.id ?? null }
+      const signature = JSON.stringify({ planId, ...replacement })
+      if (autoAttempt.current?.signature !== signature) autoAttempt.current = { signature, key: crypto.randomUUID() }
+      const result = await prepareCashBriefing(planId, accessToken, autoAttempt.current.key, replacement)
+      callback.current?.(result)
+      applyPlanning(await getCashBriefingPlanning(planId, accessToken))
+      autoAttempt.current = undefined
+      setNotice('La répartition automatique est prête. Vous pouvez encore la modifier.')
+    } catch (error) { setMessage(errorMessage(error)); setUncertain(true) }
+    finally { setBusy(false); setConfirmation(undefined) }
+  }
+
+  async function revalidate() {
+    if (!batch || !planning) return
+    setBusy(true); setMessage(undefined)
+    try {
+      const result = await revalidateCashBriefing(batch.id, accessToken)
+      const latest = await getCashBriefingPlanning(planId, accessToken)
+      setPlanning(latest); setUncertain(false); callback.current?.(result)
+      if (!dirty) setDraft(editable(latest.batch))
+    } catch (error) { setMessage(errorMessage(error)); setUncertain(true) }
+    finally { setBusy(false) }
+  }
+
+  const visibleSellers = planning?.sellers.filter((seller) => normalize(`${seller.sellerName} ${seller.sellerPayoutNumber ?? ''}`).includes(normalize(search))) ?? []
+  return <section className="cash-briefing-panel" aria-label="Préparation des versements">
+    <header><div><h3><Banknote aria-hidden="true" />Versements à faire</h3><p>Préparez les versements des livreurs actifs avant d’envoyer leurs briefings.</p></div><Button tone="admin" variant="secondary" disabled={busy || loading} onClick={() => dirty ? setConfirmation('refresh') : void refresh()} aria-label="Actualiser les versements"><RefreshCw aria-hidden="true" /></Button></header>
+    {loading && <p role="status">Chargement des soldes…</p>}
     {message && <p role="alert" className="admin-callout admin-callout--warning">{message}</p>}
-    {batch && <><p role={batch.status === 'STALE' ? 'alert' : undefined}>{batch.message}</p>{batch.transfers.length > 0 && <ul>{batch.transfers.map((transfer) => <li key={transfer.id}><span><strong>{transfer.courierName}</strong> → {transfer.sellerName}{transfer.sellerPayoutNumber && <small>MVola : {transfer.sellerPayoutNumber}</small>}</span><span><strong>{formatAriary(transfer.amountAriary)}</strong><small>{transfer.status === 'CONFIRMED' ? 'Confirmé dans Finance' : 'À confirmer dans Finance'}</small></span></li>)}</ul>}</>}
-    <footer>{(!batch || batch.status === 'COMPLETED') && <Button tone="admin" disabled={busy} onClick={() => void action('prepare')}><Banknote aria-hidden="true" />Préparer les versements</Button>}{batch && ['ACTIVE', 'STALE'].includes(batch.status) && <><Button tone="admin" variant="secondary" disabled={busy} onClick={() => void action('release')}><X aria-hidden="true" />Libérer la proposition</Button>{batch.status === 'STALE' && <Button tone="admin" disabled={busy} onClick={() => void action('revalidate')}><RefreshCw aria-hidden="true" />Revalider les caisses</Button>}</>}</footer>
+    {notice && <p role="status" className="admin-callout">{notice}</p>}
+    {stale && <div className="cash-planning-warning" role="alert"><p>Les caisses ont changé. Revalidez les versements ou corrigez-les puis enregistrez-les avant d’envoyer le briefing.</p><Button tone="admin" variant="secondary" disabled={locked} onClick={() => void revalidate()}><RefreshCw aria-hidden="true" />Revalider les caisses</Button></div>}
+    {planning && <>
+      <section className="cash-planning-section" aria-labelledby="cash-planning-sellers">
+        <div className="cash-planning-heading"><h4 id="cash-planning-sellers">Soldes des vendeurs</h4><label className="cash-planning-search"><Search aria-hidden="true" /><input aria-label="Rechercher un vendeur" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un vendeur" /></label></div>
+        <div className="cash-planning-table"><table><thead><tr><th>Vendeur</th><th>Solde à verser</th><th>Prévu ici</th><th>Restant disponible</th></tr></thead><tbody>{visibleSellers.map((seller) => {
+          const planned = totals.sellers.get(seller.sellerAccountId) ?? 0
+          return <tr key={seller.sellerAccountId}><td><strong>{seller.sellerName}</strong>{seller.sellerPayoutNumber && <small>{seller.sellerPayoutNumber}</small>}</td><td>{formatAriary(seller.balanceAriary)}</td><td>{formatAriary(planned)}</td><td>{formatAriary(seller.availableAriary - planned)}</td></tr>
+        })}</tbody></table>{visibleSellers.length === 0 && <p className="cash-planning-empty">Aucun vendeur ne correspond à cette recherche.</p>}</div>
+      </section>
+      <section className="cash-planning-section" aria-labelledby="cash-planning-couriers"><h4 id="cash-planning-couriers">Caisses des livreurs actifs</h4><div className="cash-planning-couriers">{planning.couriers.map((courier) => {
+        const planned = totals.couriers.get(courier.courierAccountId) ?? 0
+        return <article key={courier.courierAccountId}><h5>{courier.courierName}</h5><dl><div><dt>Disponible</dt><dd>{formatAriary(courier.capacityAriary)}</dd></div><div><dt>Prévu ici</dt><dd>{formatAriary(planned)}</dd></div><div><dt>Restant</dt><dd className={courier.capacityAriary < planned ? 'cash-planning-negative' : undefined}>{formatAriary(courier.capacityAriary - planned)}</dd></div></dl>{courier.reservedElsewhereAriary > 0 && <small>{formatAriary(courier.reservedElsewhereAriary)} déjà réservé ailleurs</small>}</article>
+      })}{planning.couriers.length === 0 && <p>Aucun livreur actif dans ce dispatch.</p>}</div></section>
+      <section className="cash-planning-section" aria-labelledby="cash-planning-transfers">
+        <div className="cash-planning-heading"><div><h4 id="cash-planning-transfers">Répartition des versements</h4><p>Ces prévisions seront reprises dans les briefings. Les versements réels restent à confirmer dans Finance.</p></div><Button tone="admin" variant="secondary" disabled={locked || planning.couriers.length === 0} onClick={() => { setDraft((rows) => [...rows, { key: crypto.randomUUID(), sellerAccountId: '', courierAccountId: '', amount: '' }]); setDirty(true) }}><Plus aria-hidden="true" />Ajouter un versement</Button></div>
+        {draft.length === 0 && <p className="cash-planning-empty">Aucun versement prévu. Ajoutez-en un ou lancez la répartition automatique.</p>}
+        <fieldset className="cash-planning-rows" disabled={locked}>{draft.map((row, index) => <div className="cash-planning-row" key={row.key}>
+          <label>Vendeur<CourierCombobox couriers={planning.sellers.map((seller) => ({ id: seller.sellerAccountId, name: seller.sellerName, contact: seller.sellerPayoutNumber, active: true }))} value={row.sellerAccountId} ariaLabel={`Vendeur du versement ${index + 1}`} placeholder="Rechercher un vendeur" optionsAriaLabel="Vendeurs disponibles" emptyMessage="Aucun vendeur ne correspond à cette recherche." clearAriaLabel="Effacer le vendeur choisi" onChange={(sellerAccountId) => update(row.key, { sellerAccountId })} /></label>
+          <label>Livreur<CourierCombobox couriers={planning.couriers.map((courier) => ({ id: courier.courierAccountId, name: courier.courierName, contact: `Disponible : ${formatAriary(courier.capacityAriary)}`, active: true }))} value={row.courierAccountId} ariaLabel={`Livreur du versement ${index + 1}`} onChange={(courierAccountId) => update(row.key, { courierAccountId })} /></label>
+          <label>Montant (Ar)<input aria-label={`Montant du versement ${index + 1}`} type="number" min="1" step="1" inputMode="numeric" value={row.amount} onChange={(event) => update(row.key, { amount: event.target.value })} /></label>
+          <Button tone="admin" variant="ghost" aria-label={`Retirer le versement ${index + 1}`} onClick={() => { setDraft((rows) => rows.filter((item) => item.key !== row.key)); setDirty(true) }}><Trash2 aria-hidden="true" /></Button>
+        </div>)}</fieldset>
+        {dirty && validation && <p role="alert" className="cash-planning-negative">{validation}</p>}
+        {batch?.transfers.some((transfer) => transfer.status === 'CONFIRMED') && <div className="cash-planning-confirmed"><h5>Déjà confirmés dans Finance</h5><ul>{batch.transfers.filter((transfer) => transfer.status === 'CONFIRMED').map((transfer) => <li key={transfer.id}><span>{transfer.courierName} → {transfer.sellerName}</span><strong>{formatAriary(transfer.amountAriary)}</strong></li>)}</ul></div>}
+      </section>
+    </>}
+    <footer><Button tone="admin" variant="secondary" disabled={locked || !planning?.couriers.length} onClick={() => dirty || draft.length > 0 ? setConfirmation('automatic') : void automatic()}><Sparkles aria-hidden="true" />Répartir automatiquement</Button><Button tone="admin" disabled={locked || !dirty || Boolean(validation)} onClick={() => void save()}><Save aria-hidden="true" />Enregistrer les versements</Button></footer>
+    {confirmation && <ConfirmDialog title={confirmation === 'refresh' ? 'Actualiser les versements ?' : 'Répartir automatiquement ?'} confirmLabel={confirmation === 'refresh' ? 'Actualiser et remplacer' : 'Générer la répartition'} busy={busy} onClose={() => setConfirmation(undefined)} onConfirm={() => void (confirmation === 'refresh' ? refresh() : automatic())}><p>{confirmation === 'refresh' ? 'Les modifications non enregistrées seront remplacées par les versements enregistrés.' : 'La répartition automatique remplacera les versements prévus et les modifications non enregistrées. Les versements déjà confirmés sont conservés.'}</p></ConfirmDialog>}
   </section>
 }

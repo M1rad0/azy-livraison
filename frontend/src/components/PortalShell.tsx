@@ -1,5 +1,6 @@
 import {
   BadgeDollarSign,
+  Banknote,
   Bike,
   Boxes,
   CalendarClock,
@@ -66,6 +67,7 @@ const NAVIGATION: Record<AccountRole, PortalNavigationItem[]> = {
     { id: 'queue', label: 'Livraisons', detail: 'File globale', icon: Boxes },
     { id: 'express', label: 'Express', detail: 'Traitement immédiat', icon: Zap },
     { id: 'dispatch', label: 'Dispatch', detail: 'Préparer la journée', icon: Sparkles },
+    { id: 'payouts', label: 'Versements', detail: 'Préparer les versements', icon: Banknote },
     { id: 'briefing', label: 'Briefing', detail: 'Consignes des livreurs', icon: MessageSquareText },
     { id: 'day', label: 'Compte rendu', detail: 'Suivi et clôture', icon: ClipboardCheck },
     { id: 'postponed', label: 'Reportés', detail: 'Reprogrammer les colis', icon: CalendarClock },
