@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BadgeDollarSign, Bike, Boxes, CalendarClock, ClipboardCheck, Settings2, Sparkles, TriangleAlert, UsersRound, WalletCards, Zap } from 'lucide-react'
+import { BadgeDollarSign, Bike, Boxes, CalendarClock, ClipboardCheck, MessageSquareText, Settings2, Sparkles, TriangleAlert, UsersRound, WalletCards, Zap } from 'lucide-react'
 import {
   cancelAdminDeliveryPackage,
   getAdminQueue,
@@ -19,6 +19,7 @@ import {
 } from '../../api/admin'
 import { AdminCouriersPanel } from './AdminCouriersPanel'
 import { AdminDispatchPanel } from './AdminDispatchPanel'
+import { AdminBriefingPanel } from './AdminBriefingPanel'
 import { AdminDailyOperationsPanel } from './AdminDailyOperationsPanel'
 import { AdminFinancePanel } from './AdminFinancePanel'
 import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
@@ -31,12 +32,13 @@ import { AdminPostponedPackagesPanel } from './AdminPostponedPackagesPanel'
 import { usePortalNavigation } from '../PortalShell'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'express' | 'dispatch' | 'day' | 'postponed' | 'finance' | 'clients' | 'couriers' | 'pricing' | 'settings'
+type AdminTab = 'queue' | 'express' | 'dispatch' | 'briefing' | 'day' | 'postponed' | 'finance' | 'clients' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
   { id: 'express', label: 'Express', detail: 'Traitement immédiat', icon: Zap },
   { id: 'dispatch', label: 'Dispatch', detail: 'Affectations et tournées', icon: Sparkles },
+  { id: 'briefing', label: 'Briefing', detail: 'Consignes des livreurs', icon: MessageSquareText },
   { id: 'day', label: 'Compte rendu', detail: 'Clôture et rapports', icon: ClipboardCheck },
   { id: 'postponed', label: 'Reportés', detail: 'Choisir une nouvelle date', icon: CalendarClock },
   { id: 'finance', label: 'Finances', detail: 'Versements et soldes', icon: WalletCards },
@@ -222,6 +224,18 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
             if (date) setDispatchDate(date)
           }}
           onCreated={dispatchCreated}
+          onOpenBriefing={() => openTab('briefing')}
+        />
+      )}
+      {tab === 'briefing' && (
+        <AdminBriefingPanel
+          accessToken={accessToken}
+          date={dispatchDate}
+          history={currentHistory}
+          busy={dispatchBusy}
+          onDateChange={(date) => { if (date) setDispatchDate(date) }}
+          onOpenDispatch={() => openTab('dispatch')}
+          onRefresh={() => { void loadPending(); void loadDispatchDay() }}
         />
       )}
       {tab === 'express' && <AdminExpressPanel accessToken={accessToken} couriers={couriers} refreshKey={expressRefreshKey} onOpenClients={() => openTab('clients')} />}

@@ -84,6 +84,10 @@ Les colis sont initialement proposés à la livraison chez leur collecteur ; l'a
 
 Un seul brouillon ou plan actif est autorisé par date. Le brouillon est enregistré dans PostgreSQL, avec sauvegarde automatique, version et snapshots des entrées. Sa création ferme les admissions normales et les annulations de colis de cette date ; les expresses restent indépendantes. L'abandon du brouillon rouvre les admissions. La validation exige un collecteur pour chaque retrait et un livreur pour chaque colis, sans doublon. Elle est atomique et idempotente et alimente les tables existantes pour les comptes rendus et rapports. Un plan manuel validé peut être rouvert dans l'éditeur tant qu'aucun résultat de livraison n'est renseigné ; l'ancienne version reste historisée.
 
+L'onglet **Briefing**, situé après Dispatch, reprend la répartition validée de la date choisie, dans l'ordre **Récupérations → Échanges → Colis à livrer**. La vue d'ensemble regroupe les missions par livreur ; la vue individuelle utilise une recherche de livreur et conserve les ordres de passage enregistrés. L'aperçu de vérification avant validation réutilise la même présentation, sans génération de message.
+
+Pour un plan manuel validé, **Briefing texte** ouvre un message modifiable et copiable par livreur : retraits et vendeurs, personnes à rencontrer, colis à donner ou prendre, puis liste finale avec repères, contacts, montants à encaisser et créneaux renseignés. Aucun lieu de rencontre, trajet ou horaire d'échange n'est inventé et aucun SMS n'est envoyé par l'application. Les retouches sont temporaires, propres au livreur et au plan affichés ; elles ne modifient pas le dispatch et ne sont pas enregistrées en base. Les plans annulés ou remplacés ne sont pas utilisés et une répartition incomplète est signalée plutôt que transformée en instructions trompeuses. Les anciens plans automatiques restent consultables dans Dispatch.
+
 ### Compte rendu, clôture et rapports
 
 Après le dispatch, l'administrateur attribue à chaque colis une issue finale :

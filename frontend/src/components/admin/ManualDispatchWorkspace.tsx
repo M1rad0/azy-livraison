@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
-import { ArrowDown, ArrowRightLeft, ArrowUp, Check, Clock3, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, Undo2, WandSparkles, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, Clock3, GripVertical, List, LoaderCircle, Map as MapIcon, Save, Trash2, Undo2, WandSparkles, X } from 'lucide-react'
 import type { DispatchPlan } from '../../api/admin'
 import { cancelManualDraft, finalizeManualDraft, getActiveManualDraft, saveManualDraft, type ManualDispatchDraft, type ManualDispatchStep } from '../../api/manualDispatch'
 import { LocationPicker } from '../LocationPicker'
@@ -7,44 +7,15 @@ import { CourierCombobox } from './CourierCombobox'
 import { ManualDispatchMap } from './ManualDispatchMap'
 import { asConfirmedLocation, errorMessage, formatAriary, formatDate, vehicleLabel } from './adminHelpers'
 import { dispatchPlace, dispatchPlaceText as locationLabel } from './manualDispatchPresentation'
-import { assignmentIds, assignPoint, changeManualStep, manualTransfers, packageCollector } from './manualDispatchLayout'
+import { assignmentIds, assignPoint, changeManualStep, packageCollector } from './manualDispatchLayout'
 import { groupByGeography, manualDispatchCourierColor } from './manualDispatchGeography'
 import { automaticallyAssignPhase } from './manualDispatchAutomatic'
 import './ManualDispatchWorkspace.css'
 import { formatOneHourWindow } from '../../deliveryWindows'
+import { DispatchBriefingView } from './AdminBriefingPanel'
 
 export function ManualDispatchReview({ draft }: { draft: ManualDispatchDraft }) {
-  const transfers = manualTransfers(draft)
-  const names = new Map(draft.couriers.map((c) => [c.courierId, c.name]))
-  return <div className="manual-review">
-    <section className="manual-transfers">
-      <h3><ArrowRightLeft aria-hidden="true" />Échanges à prévoir</h3>
-      {transfers.length ? <ul>{transfers.map((transfer) => <li key={transfer.package.packageId}>
-        <strong>{names.get(transfer.from)} → {names.get(transfer.to)}</strong>
-        <span>{transfer.package.recipientName} · {locationLabel(transfer.package.destination)}</span>
-        <small>{transfer.package.serviceClientName}</small>
-      </li>)}</ul> : <p className="admin-muted">Chaque livreur conserve les colis qu’il récupère.</p>}
-    </section>
-    <div className="manual-review__couriers">{draft.couriers.map((courier) => {
-      const collections = assignmentIds(draft, 'COLLECTION', courier.courierId)
-      const deliveries = assignmentIds(draft, 'DELIVERY', courier.courierId)
-      return <article key={courier.courierId} style={{ borderTopColor: manualDispatchCourierColor(courier.courierId) }}>
-        <h3>{courier.name}</h3><p className="admin-muted">Départ : {locationLabel(courier.departure)} · {courier.departureAt.slice(11, 16)}</p>
-        <h4>Récupérations · {collections.length}</h4>
-        {collections.length ? <ol>{collections.map((id) => {
-          const pickup = draft.pickups.find((p) => p.id === id)!
-          const clients = [...new Set(draft.packages.filter((p) => pickup.packageIds.includes(p.packageId)).map((p) => p.serviceClientName))]
-          const place = dispatchPlace(pickup.location)
-          return <li key={id}><strong>{place.title}</strong>{place.address && <span>{place.address}</span>}<span>{pickup.packageIds.length} colis · {clients.join(', ')}</span></li>
-        })}</ol> : <p className="admin-muted">Aucune récupération</p>}
-        <h4>Livraisons · {deliveries.length}</h4>
-        {deliveries.length ? <ol>{deliveries.map((id) => {
-          const p = draft.packages.find((item) => item.packageId === id)!
-          return <li key={id}><strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span><small>{p.serviceClientName}{p.contact ? ` · ${p.contact}` : ''}{formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference) ? ` · ${formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference)}` : ''}</small></li>
-        })}</ol> : <p className="admin-muted">Aucune livraison</p>}
-      </article>
-    })}</div>
-  </div>
+  return <DispatchBriefingView draft={draft} />
 }
 
 export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onFinalized, onCancelled, onClose }: {

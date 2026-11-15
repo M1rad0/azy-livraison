@@ -61,24 +61,10 @@
 .manual-lane > header > div { display: grid; gap: .25rem; }
 .manual-lane > div { display: grid; gap: .6rem; padding: 0 .65rem .65rem; }
 .manual-drop-hint { padding: 1.4rem .6rem; border: 1px dashed #cbd5df; border-radius: 10px; text-align: center; color: #647586; font-size: .78rem; }
-.manual-inventory ul, .manual-transfers ul { margin: 0; padding: 0; list-style: none; display: grid; gap: .65rem; }
+.manual-inventory ul { margin: 0; padding: 0; list-style: none; display: grid; gap: .65rem; }
 .manual-inventory > div { max-height: 20rem; overflow: auto; overscroll-behavior: contain; }
-.manual-inventory li, .manual-transfers li { display: grid; gap: .25rem; font-size: .8rem; overflow-wrap: anywhere; }
-.manual-inventory li span, .manual-transfers li span { color: #647586; font-size: .77rem; }
-.manual-review { display: grid; gap: 1rem; min-width: 0; }
-.manual-transfers { border: 1px solid #e8d8c9; background: #fffaf6; border-radius: 14px; padding: 1rem; }
-.manual-transfers h3 { display: flex; align-items: center; gap: .5rem; margin-bottom: .85rem; }
-.manual-transfers h3 svg { width: 18px; height: 18px; }
-.manual-transfers ul { grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }
-.manual-review__couriers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
-.manual-review__couriers > article { min-width: 0; padding: 1rem; border: 1px solid #e0e6ec; border-top: 3px solid; border-radius: 14px; background: white; }
-.manual-review__couriers h3 + p { margin-top: .4rem; font-size: .78rem; }
-.manual-review__couriers h4 { margin-top: 1.1rem; color: #647586; font-weight: 500; }
-.manual-review__couriers ol { padding-left: 1.2rem; margin: .75rem 0 0; display: grid; gap: .75rem; }
-.manual-review__couriers li { font-size: .8rem; overflow-wrap: anywhere; }
-.manual-review__couriers li :is(strong, span, small) { display: block; margin-bottom: .2rem; }
-.manual-review__couriers li :is(span, small) { color: #647586; font-size: .75rem; }
-.manual-review__couriers h4 + p { margin-top: .6rem; font-size: .78rem; }
+.manual-inventory li { display: grid; gap: .25rem; font-size: .8rem; overflow-wrap: anywhere; }
+.manual-inventory li span { color: #647586; font-size: .77rem; }
 .manual-workspace > .manual-workspace__footer {
   position: sticky; bottom: .5rem; z-index: 8;
   display: flex; flex-direction: row; align-items: center; justify-content: space-between;
