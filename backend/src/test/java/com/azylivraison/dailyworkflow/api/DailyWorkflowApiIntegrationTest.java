@@ -126,6 +126,35 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void payoutHoldersAndProfileDestinationChoicesAreValidatedAtTheHttpBoundary() throws Exception {
+        long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
+        UUID missingPlan = UUID.randomUUID();
+        String body = """
+                {"planId":"%s","idempotencyKey":"http-payout-holder","expectedLedgerRevision":0,
+                 "transfers":[{"sellerAccountId":"%s","courierAccountId":"%s","amountAriary":1500,
+                 "sellerPayoutNumber":"0321111111","sellerPayoutAccountHolder":%s}]}
+                """;
+        for (String holder : List.of("", " ", "X".repeat(151), "Jean\nRabe")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID,
+                                    objectMapper.writeValueAsString(holder))))
+                    .andExpect(status().is(holder.length() > 150 ? 400 : 422));
+        }
+        String valid = body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "\"Jean\"");
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content(valid))
+                .andExpect(status().isConflict()); // Valid input reaches the missing-dispatch guard.
+        String conflicting = valid.replace("\"sellerPayoutNumber\":", "\"sellerPayoutDestinationId\":\""
+                + UUID.randomUUID() + "\",\"sellerPayoutNumber\":");
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content(conflicting))
+                .andExpect(status().isUnprocessableEntity());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+    }
+
+    @Test
     void administratorCanManageSellerNumbersAndInvalidPrioritiesReturnAUsefulError() throws Exception {
         String creation = """
                 {"username":"seller-payout-http","displayName":"Boutique Soa","phone":"0340000000",

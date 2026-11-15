@@ -51,12 +51,21 @@ class CashPayoutNumberMigrationTest {
                            (?, ?, ?, 'Vendeur', '034 22 222 22', ?, 'Livreur', 3000, 'CONFIRMED', ?)
                     """, pending, batch, seller, courier, confirmed, batch, seller, courier, movement);
 
+            Flyway.configure().dataSource(database).target(MigrationVersion.fromVersion("26")).load().migrate();
+            assertThat(jdbc.queryForList("SELECT seller_payout_number_override FROM cash_briefing_transfer", Boolean.class))
+                    .containsExactlyInAnyOrder(false, false);
+            // A custom V26 destination remains custom; V27 must not infer its unknown holder.
+            jdbc.update("UPDATE cash_briefing_transfer SET seller_payout_number_override = TRUE WHERE id = ?", confirmed);
             Flyway.configure().dataSource(database).load().migrate();
             Flyway.configure().dataSource(database).load().validate();
 
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_briefing_transfer", Long.class)).isEqualTo(2);
             assertThat(jdbc.queryForList("SELECT seller_payout_number_override FROM cash_briefing_transfer", Boolean.class))
-                    .containsExactlyInAnyOrder(false, false);
+                    .containsExactlyInAnyOrder(false, true);
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM cash_briefing_transfer WHERE seller_payout_destination_id IS NULL
+                        AND seller_payout_account_holder IS NULL AND seller_payout_operator IS NULL
+                    """, Long.class)).isEqualTo(2);
             assertThat(jdbc.queryForObject("SELECT seller_payout_number FROM cash_briefing_transfer WHERE id = ?",
                     String.class, pending)).isEqualTo("034 11 111 11");
             assertThat(jdbc.queryForObject("SELECT seller_payout_number FROM cash_briefing_transfer WHERE id = ?",

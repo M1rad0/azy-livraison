@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import com.azylivraison.account.domain.ClientPayoutDestination;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
@@ -26,9 +27,13 @@ public final class CashBriefingModels {
     }
     public record ManualTransfer(@NotNull UUID sellerAccountId, @NotNull UUID courierAccountId,
             @Positive @JsonDeserialize(using = WholeAriaryDeserializer.class) long amountAriary,
-            @Size(max = 100) String sellerPayoutNumber) {
+            @Size(max = 100) String sellerPayoutNumber, UUID sellerPayoutDestinationId,
+            @Size(max = 150) String sellerPayoutAccountHolder) {
         public ManualTransfer(UUID sellerAccountId, UUID courierAccountId, long amountAriary) {
-            this(sellerAccountId, courierAccountId, amountAriary, null);
+            this(sellerAccountId, courierAccountId, amountAriary, null, null, null);
+        }
+        public ManualTransfer(UUID sellerAccountId, UUID courierAccountId, long amountAriary, String sellerPayoutNumber) {
+            this(sellerAccountId, courierAccountId, amountAriary, sellerPayoutNumber, null, null);
         }
     }
     public record ManualRequest(@NotNull UUID planId, @NotBlank @Size(max = 100) String idempotencyKey,
@@ -38,11 +43,18 @@ public final class CashBriefingModels {
             @NotNull Long expectedLedgerRevision) {}
     public record Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
             UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId,
-            boolean sellerPayoutNumberOverride) {
+            boolean sellerPayoutNumberOverride, UUID sellerPayoutDestinationId,
+            String sellerPayoutAccountHolder, String sellerPayoutOperator) {
         public Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
                 UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId) {
             this(id, sellerAccountId, sellerName, sellerPayoutNumber, courierAccountId, courierName,
-                    amountAriary, status, movementId, false);
+                    amountAriary, status, movementId, false, null, null, null);
+        }
+        public Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
+                UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId,
+                boolean sellerPayoutNumberOverride) {
+            this(id, sellerAccountId, sellerName, sellerPayoutNumber, courierAccountId, courierName,
+                    amountAriary, status, movementId, sellerPayoutNumberOverride, null, null, null);
         }
     }
     public record Balance(UUID courierAccountId, String courierName, long balanceAriary,
@@ -51,7 +63,13 @@ public final class CashBriefingModels {
             Instant expiresAt, String algorithm, List<Transfer> transfers, List<Balance> balances, String message,
             String mode) {}
     public record PlanningSeller(UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
-            long balanceAriary, long plannedAriary, long availableAriary) {}
+            long balanceAriary, long plannedAriary, long availableAriary,
+            List<ClientPayoutDestination> payoutDestinations) {
+        public PlanningSeller(UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
+                long balanceAriary, long plannedAriary, long availableAriary) {
+            this(sellerAccountId, sellerName, sellerPayoutNumber, balanceAriary, plannedAriary, availableAriary, List.of());
+        }
+    }
     public record PlanningCourier(UUID courierAccountId, String courierName, long balanceAriary,
             long reservedElsewhereAriary, long capacityAriary, long plannedAriary, long remainingAriary) {}
     public record Planning(UUID planId, LocalDate serviceDate, long ledgerRevision, Batch batch,
