@@ -8,6 +8,8 @@ import {
   MapPin,
   PackageOpen,
   Phone,
+  Pencil,
+  CalendarClock,
   RefreshCw,
   Search,
   Smartphone,
@@ -17,6 +19,7 @@ import {
 import type { DeliveryPackage, DeliveryRequest } from '../../api/admin'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { ExistingPackageActions, type EditablePackageContext } from '../ExistingPackageActions'
 import {
   antananarivoToday,
   formatAriary,
@@ -34,6 +37,7 @@ export interface PendingQueueFilters {
 }
 
 interface AdminQueuePanelProps {
+  accessToken?: string
   requests: DeliveryRequest[]
   filters: PendingQueueFilters
   busy: boolean
@@ -44,6 +48,7 @@ interface AdminQueuePanelProps {
 }
 
 export function AdminQueuePanel({
+  accessToken,
   requests,
   filters,
   busy,
@@ -57,6 +62,7 @@ export function AdminQueuePanel({
   const [packageToCancel, setPackageToCancel] = useState<DeliveryPackage>()
   const [cancelling, setCancelling] = useState(false)
   const [actionError, setActionError] = useState<string>()
+  const [packageAction, setPackageAction] = useState<EditablePackageContext>()
   const pendingPackages = requests.flatMap((request) => request.packages)
     .filter((deliveryPackage) => deliveryPackage.status === 'PENDING' && !deliveryPackage.finalOutcome)
   const clientCount = new Set(requests.map((request) => request.ownerAccountId)).size
@@ -216,10 +222,17 @@ export function AdminQueuePanel({
                       deliveryPackage.desiredDeliveryTime,
                       deliveryPackage.desiredDeliveryEndTime,
                       deliveryPackage.desiredDeliveryEndsNextDay,
+                      deliveryPackage.deliveryTimePreference,
                     )
                     return (
                       <div className="admin-package-row" role="row" key={deliveryPackage.id}>
-                        <span role="cell">
+                        <span role="cell" className="admin-package-actions">
+                          {deliveryPackage.canEdit && accessToken && <>
+                            <button className="admin-table-action" type="button" aria-label={`Modifier le colis de ${deliveryPackage.recipientName}`} title="Modifier"
+                              onClick={() => setPackageAction({ item: deliveryPackage, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'EDIT' })}><Pencil aria-hidden="true" /></button>
+                            <button className="admin-table-action" type="button" aria-label={`Reprogrammer le colis de ${deliveryPackage.recipientName}`} title="Reprogrammer"
+                              onClick={() => setPackageAction({ item: deliveryPackage, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" /></button>
+                          </>}
                           <button
                             className="admin-table-action admin-table-action--danger"
                             type="button"
@@ -247,6 +260,7 @@ export function AdminQueuePanel({
         </>
       )}
 
+      {packageAction && accessToken && <ExistingPackageActions context={packageAction} accessToken={accessToken} administration onSaved={onReload} onClose={() => setPackageAction(undefined)} />}
       {packageToCancel && (
         <ConfirmDialog
           title="Annuler ce colis ?"

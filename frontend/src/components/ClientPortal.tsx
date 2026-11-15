@@ -39,6 +39,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { LocationPicker } from './LocationPicker'
 import { usePortalNavigation } from './PortalShell'
 import { PricingTransparencyPanel } from './PricingTransparencyPanel'
+import { ExistingPackageActions, type EditablePackageContext } from './ExistingPackageActions'
 import './ClientPortal.css'
 
 type ClientView = 'history' | 'new-request' | 'express' | 'pricing' | 'reports' | 'profile'
@@ -90,9 +91,11 @@ function asPickerLocation(pickup: ClientDefaultPickup | null): Location {
 function RequestHistory({
   requests,
   onCancel,
+  onAction,
 }: {
   requests: DeliveryRequestRecord[]
   onCancel: (deliveryPackage: DeliveryRequestRecord['packages'][number]) => void
+  onAction: (context: EditablePackageContext) => void
 }) {
   if (requests.length === 0) {
     return (
@@ -160,7 +163,7 @@ function RequestHistory({
                   <article role="listitem" key={item.id}>
                     <span className="client-history-packages__number">{item.sequenceNumber}</span>
                     <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
-                    <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay) ? ` · ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay)}` : ''}</small></div>
+                    <div><strong>{item.destination.label}</strong><small>{item.pricingZoneName ? `Zone ${item.pricingZoneName}` : 'Tarif non disponible'}{item.faritra ? ' · Faritra' : ''}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay, item.deliveryTimePreference) ? ` · ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay, item.deliveryTimePreference)}` : ''}</small></div>
                     <div><strong>{formatAriary(finalAmount)}</strong><small>{item.finalOutcome ? `frais facturés ${formatAriary(finalFee)}` : item.finalDeliveryFeeAriary != null || item.deliveryFeeAriary != null ? `dont ${formatAriary(applicableFee)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-history-packages__state">
                       <span className={`client-package-status client-package-status--${item.finalOutcome ? item.finalOutcome.toLowerCase() : 'processing'}`}>
@@ -169,6 +172,10 @@ function RequestHistory({
                       {item.finalOutcome === 'RETURN_TO_SENDER' && (
                         <small>{item.returnCompletedAt ? 'Remis à l’expéditeur' : 'Retour en attente'}</small>
                       )}
+                      {item.canEdit && <>
+                        <button className="button button--secondary" type="button" onClick={() => onAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'EDIT' })}><PencilLine aria-hidden="true" />Modifier</button>
+                        <button className="button button--secondary" type="button" onClick={() => onAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: request.requestKind, action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" />Reprogrammer</button>
+                      </>}
                       {item.status === 'PENDING' && !item.finalOutcome && (
                         <button className="client-cancel-package" type="button" onClick={() => onCancel(item)}>
                           <Ban aria-hidden="true" />Annuler
@@ -337,6 +344,7 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
   const [actionError, setActionError] = useState<string>()
   const [packageToCancel, setPackageToCancel] = useState<DeliveryRequestRecord['packages'][number]>()
   const [cancelling, setCancelling] = useState(false)
+  const [packageAction, setPackageAction] = useState<EditablePackageContext>()
   const [requestFormMounted, setRequestFormMounted] = useState(view === 'new-request')
   const [profileMounted, setProfileMounted] = useState(view === 'profile')
   const [requestFormKey, setRequestFormKey] = useState(0)
@@ -493,9 +501,11 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
           <div><p className="eyebrow">Suivi</p><h2>Mes demandes de livraison</h2></div>
           <button className="button button--secondary" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Actualiser</button>
         </div>
-        <RequestHistory requests={requests} onCancel={setPackageToCancel} />
+        <RequestHistory requests={requests} onCancel={setPackageToCancel} onAction={setPackageAction} />
       </section>
 
+      {packageAction && <ExistingPackageActions context={packageAction} accessToken={accessToken} onClose={() => setPackageAction(undefined)}
+        onSaved={async () => { setRequests(await listDeliveryRequests(accessToken)); setSuccessMessage(packageAction.action === 'EDIT' ? 'Le colis a été modifié.' : 'Le colis a été reprogrammé.') }} />}
       {packageToCancel && (
         <ConfirmDialog
           title="Annuler ce colis ?"

@@ -11,6 +11,7 @@ import { assignmentIds, assignPoint, changeManualStep, manualTransfers, packageC
 import { groupByGeography, manualDispatchCourierColor } from './manualDispatchGeography'
 import { automaticallyAssignPhase } from './manualDispatchAutomatic'
 import './ManualDispatchWorkspace.css'
+import { formatOneHourWindow } from '../../deliveryWindows'
 
 export function ManualDispatchReview({ draft }: { draft: ManualDispatchDraft }) {
   const transfers = manualTransfers(draft)
@@ -39,7 +40,7 @@ export function ManualDispatchReview({ draft }: { draft: ManualDispatchDraft }) 
         <h4>Livraisons · {deliveries.length}</h4>
         {deliveries.length ? <ol>{deliveries.map((id) => {
           const p = draft.packages.find((item) => item.packageId === id)!
-          return <li key={id}><strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span><small>{p.serviceClientName}{p.contact ? ` · ${p.contact}` : ''}{p.desiredDeliveryTime ? ` · ${p.desiredDeliveryTime.slice(0, 5)}` : ''}</small></li>
+          return <li key={id}><strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span><small>{p.serviceClientName}{p.contact ? ` · ${p.contact}` : ''}{formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference) ? ` · ${formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference)}` : ''}</small></li>
         })}</ol> : <p className="admin-muted">Aucune livraison</p>}
       </article>
     })}</div>
@@ -235,7 +236,7 @@ export function ManualDispatchWorkspace({ accessToken, draft, onDraftChange, onF
       </button>
       {showDetails && <div className="manual-card__details">{packages.map((p) => <div key={p.packageId}>
         <strong>{p.recipientName}</strong><span>{locationLabel(p.destination)}</span>
-        <small>{p.contact} · {p.effectiveWeightKg} kg{p.desiredDeliveryTime ? ` · ${p.desiredDeliveryTime.slice(0, 5)}` : ''}</small>
+        <small>{p.contact} · {p.effectiveWeightKg} kg{formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference) ? ` · ${formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference)}` : ''}</small>
         <small>À récupérer : {formatAriary(p.amountToCollectAriary)}</small>
       </div>)}</div>}
       <div className="manual-card__actions">

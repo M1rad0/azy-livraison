@@ -21,6 +21,7 @@ import com.azylivraison.delivery.domain.ExpressDeliveryStatus;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
 import com.azylivraison.delivery.domain.StoredDeliveryRequest;
+import com.azylivraison.delivery.domain.DeliveryTimePreference;
 import com.azylivraison.pricing.domain.DeliveryPricingSnapshot;
 import com.azylivraison.pricing.domain.PricingDistanceMode;
 
@@ -61,6 +62,104 @@ public class DeliveryRequestRepository {
                 """, (resultSet, rowNumber) -> new OperationalSettingsSnapshot(
                 resultSet.getInt("daily_package_limit"),
                 resultSet.getBigDecimal("default_package_weight_kg")));
+    }
+
+    public Optional<StoredDeliveryRequest> lockRequestForPackage(UUID packageId, UUID ownerAccountId) {
+        List<UUID> requests = jdbcTemplate.query("""
+                SELECT dr.id FROM delivery_request dr
+                JOIN delivery_package dp ON dp.delivery_request_id = dr.id
+                WHERE dp.id = ? AND dp.cancelled_before_processing_at IS NULL
+                  AND dr.cancelled_before_processing_at IS NULL
+                """ + (ownerAccountId == null ? "" : " AND dr.owner_account_id = ?") + " FOR UPDATE",
+                (rs, row) -> rs.getObject(1, UUID.class),
+                ownerAccountId == null ? new Object[]{packageId} : new Object[]{packageId, ownerAccountId});
+        return requests.stream().findFirst().flatMap(this::findById);
+    }
+
+    /** A draft may keep admissions reserved, but is not a validated daily dispatch. */
+    public boolean isDateAvailableForReschedule(LocalDate date) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_operation_day activity_day
+                WHERE activity_day.service_date = ? AND (
+                    activity_day.status <> 'OPEN' OR activity_day.dispatch_plan_id IS NOT NULL
+                    OR (activity_day.admissions_closed_at IS NOT NULL AND NOT EXISTS (
+                        SELECT 1 FROM manual_dispatch_draft draft
+                        WHERE draft.active_service_date = activity_day.service_date AND draft.status = 'DRAFT')))
+                """, Integer.class, Date.valueOf(date));
+        return count == null || count == 0;
+    }
+
+    public void updatePackage(StoredDeliveryPackage source, StoredDeliveryPackage edited,
+            UUID actorId, Instant now) {
+        DeliveryPricingSnapshot price = edited.pricingSnapshot();
+        int changed = jdbcTemplate.update("""
+                UPDATE delivery_package SET recipient_name = ?, faritra = ?,
+                    destination_label = ?, destination_query = ?, destination_latitude = ?, destination_longitude = ?,
+                    contact = ?, amount_to_collect_ariary = ?, mobile_money_paid = ?,
+                    desired_delivery_time = ?, desired_delivery_end_time = ?, delivery_time_preference = ?,
+                    effective_weight_kg = ?, weight_source = ?,
+                    pricing_zone_id = ?, pricing_zone_name = ?, delivery_fee_ariary = ?,
+                    final_delivery_fee_ariary = ?, distance_from_center_meters = ?, pricing_distance_mode = ?,
+                    pricing_zone_max_distance_meters = ?, pricing_policy_version = ?, pricing_policy_id = ?,
+                    base_delivery_fee_ariary = ?, weight_surcharge_ariary = ?, time_surcharge_ariary = ?,
+                    delivery_fee_version = delivery_fee_version + ?, version = version + 1, updated_at = ?
+                WHERE id = ? AND version = ? AND cancelled_before_processing_at IS NULL
+                """, edited.recipientName(), edited.faritra(), edited.destination().label(), edited.destination().query(),
+                edited.destination().latitude(), edited.destination().longitude(), edited.contact(),
+                edited.amountToCollectAriary(), edited.mobileMoneyPaid(), edited.desiredDeliveryTime(),
+                edited.desiredDeliveryEndTime(), edited.deliveryTimePreference().name(),
+                edited.effectiveWeightKg(), edited.weightSource().name(), price.pricingZoneId(), price.pricingZoneName(),
+                price.deliveryFeeAriary(), edited.finalDeliveryFeeAriary(), price.distanceFromCenterMeters(),
+                price.distanceMode() == null ? null : price.distanceMode().name(), price.pricingZoneMaxDistanceMeters(),
+                price.pricingPolicyVersion(), price.pricingPolicyId(), price.baseDeliveryFeeAriary(),
+                price.weightSurchargeAriary(), price.timeSurchargeAriary(),
+                source.pricingSnapshot().equals(price) ? 0 : 1, timestamp(now), source.id(), source.version());
+        if (changed != 1) throw new com.azylivraison.delivery.service.DeliveryPackageConflictException(
+                "Le colis a été modifié entre-temps. Actualisez la liste avant de continuer.");
+        jdbcTemplate.update("UPDATE delivery_request SET version = version + 1, updated_at = ? WHERE id = ?",
+                timestamp(now), source.deliveryRequestId());
+        insertEvent(source.deliveryRequestId(), source.id(), "PACKAGE_EDITED_BEFORE_PROCESSING",
+                source.status().name(), source.status().name(), actorId,
+                "{\"previousAmountToCollectAriary\":" + source.amountToCollectAriary()
+                        + ",\"amountToCollectAriary\":" + edited.amountToCollectAriary()
+                        + ",\"previousCalculatedFeeAriary\":" + source.pricingSnapshot().deliveryFeeAriary()
+                        + ",\"calculatedFeeAriary\":" + price.deliveryFeeAriary()
+                        + ",\"previousFinalFeeAriary\":" + source.finalDeliveryFeeAriary()
+                        + ",\"finalFeeAriary\":" + edited.finalDeliveryFeeAriary() + "}", now);
+    }
+
+    public void updatePickup(UUID requestId, UUID editedPackageId, ConfirmedLocation pickup, Instant now) {
+        jdbcTemplate.update("""
+                UPDATE delivery_request SET pickup_label = ?, pickup_query = ?, pickup_latitude = ?, pickup_longitude = ?
+                WHERE id = ?
+                """, pickup.label(), pickup.query(), pickup.latitude(), pickup.longitude(), requestId);
+        jdbcTemplate.update("""
+                UPDATE delivery_package SET version = version + 1, updated_at = ?
+                WHERE delivery_request_id = ? AND id <> ? AND cancelled_before_processing_at IS NULL
+                """, timestamp(now), requestId, editedPackageId);
+    }
+
+    public void retireRescheduledPackage(StoredDeliveryPackage source, UUID targetRequestId,
+            UUID targetPackageId, LocalDate date, UUID actorId, Instant now) {
+        jdbcTemplate.update("""
+                UPDATE delivery_package SET cancelled_before_processing_at = ?,
+                    cancelled_before_processing_by_account_id = ?, version = version + 1, updated_at = ?
+                WHERE id = ? AND version = ? AND cancelled_before_processing_at IS NULL
+                """, timestamp(now), actorId, timestamp(now), source.id(), source.version());
+        jdbcTemplate.update("UPDATE delivery_request SET version = version + 1, updated_at = ? WHERE id = ?",
+                timestamp(now), source.deliveryRequestId());
+        jdbcTemplate.update("""
+                UPDATE delivery_request SET cancelled_before_processing_at = ?,
+                    cancelled_before_processing_by_account_id = ?
+                WHERE id = ? AND NOT EXISTS (SELECT 1 FROM delivery_package dp
+                    WHERE dp.delivery_request_id = delivery_request.id AND dp.cancelled_before_processing_at IS NULL)
+                """, timestamp(now), actorId, source.deliveryRequestId());
+        insertEvent(source.deliveryRequestId(), source.id(), "PACKAGE_RESCHEDULED_BEFORE_PROCESSING",
+                source.status().name(), source.status().name(), actorId,
+                "{\"targetRequestId\":\"" + targetRequestId + "\",\"targetPackageId\":\"" + targetPackageId
+                        + "\",\"targetDate\":\"" + date + "\"}", now);
+        insertEvent(targetRequestId, targetPackageId, "PACKAGE_RESCHEDULED_FROM",
+                null, "PENDING", actorId, "{\"sourcePackageId\":\"" + source.id() + "\"}", now);
     }
 
     public boolean isDateClosedForAdmissions(LocalDate date) {
@@ -339,7 +438,7 @@ public class DeliveryRequestRepository {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
-                    desired_delivery_time,
+                    desired_delivery_time, desired_delivery_end_time, delivery_time_preference,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
                     final_delivery_fee_ariary, delivery_fee_override_reason,
                     delivery_fee_overridden_at, delivery_fee_overridden_by_account_id,
@@ -354,7 +453,7 @@ public class DeliveryRequestRepository {
                     return_completed_at, return_completed_by_account_id,
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 deliveryPackage.id(), deliveryPackage.deliveryRequestId(), deliveryPackage.sequenceNumber(),
                 deliveryPackage.recipientName(), deliveryPackage.faritra(),
@@ -363,6 +462,7 @@ public class DeliveryRequestRepository {
                 deliveryPackage.contact(), deliveryPackage.amountToCollectAriary(),
                 deliveryPackage.mobileMoneyPaid(),
                 deliveryPackage.desiredDeliveryTime(),
+                deliveryPackage.desiredDeliveryEndTime(), deliveryPackage.deliveryTimePreference().name(),
                 deliveryPackage.pricingSnapshot().pricingZoneId(),
                 deliveryPackage.pricingSnapshot().pricingZoneName(),
                 deliveryPackage.pricingSnapshot().deliveryFeeAriary(),
@@ -435,9 +535,25 @@ public class DeliveryRequestRepository {
 
     private List<StoredDeliveryPackage> findPackages(UUID requestId) {
         return jdbcTemplate.query("""
-                SELECT * FROM delivery_package
-                WHERE delivery_request_id = ? AND cancelled_before_processing_at IS NULL
-                ORDER BY sequence_number
+                SELECT dp.*, (
+                    dp.status = 'PENDING' AND dp.final_outcome IS NULL AND dp.dispatch_plan_id IS NULL
+                    AND dr.cancelled_before_processing_at IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM delivery_operation_client_closure cc
+                        WHERE cc.service_date = dr.requested_date AND cc.client_account_id = dr.owner_account_id
+                          AND cc.status = 'CLOSED')
+                    AND NOT EXISTS (SELECT 1 FROM delivery_operation_day activity_day
+                        WHERE activity_day.service_date = dr.requested_date AND activity_day.status IN ('CLOSED', 'DISPATCHING'))
+                    AND ((dr.request_kind = 'EXPRESS' AND dr.express_status = 'PENDING')
+                        OR (dr.request_kind = 'NORMAL'
+                            AND NOT EXISTS (SELECT 1 FROM delivery_operation_day activity_day
+                                WHERE activity_day.service_date = dr.requested_date AND activity_day.dispatch_plan_id IS NOT NULL)
+                            AND NOT EXISTS (SELECT 1 FROM dispatch_plan plan
+                                WHERE plan.service_date = dr.requested_date
+                                  AND plan.status IN ('READY', 'READY_WITH_WARNINGS') AND plan.lifecycle_status = 'ACTIVE')))
+                    ) AS can_edit
+                FROM delivery_package dp JOIN delivery_request dr ON dr.id = dp.delivery_request_id
+                WHERE delivery_request_id = ? AND dp.cancelled_before_processing_at IS NULL
+                ORDER BY dp.sequence_number
                 """, this::mapPackage, requestId);
     }
 
@@ -526,7 +642,10 @@ public class DeliveryRequestRepository {
                 resultSet.getTimestamp("priority_at").toInstant(),
                 resultSet.getLong("version"),
                 resultSet.getTimestamp("created_at").toInstant(),
-                resultSet.getTimestamp("updated_at").toInstant());
+                resultSet.getTimestamp("updated_at").toInstant(),
+                resultSet.getObject("desired_delivery_end_time", java.time.LocalTime.class),
+                DeliveryTimePreference.valueOf(resultSet.getString("delivery_time_preference")),
+                resultSet.getBoolean("can_edit"));
     }
 
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {

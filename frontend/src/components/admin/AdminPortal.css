@@ -672,15 +672,18 @@
 
 .admin-package-row {
   display: grid;
-  grid-template-columns: 52px minmax(150px, 1fr) minmax(210px, 1.4fr) minmax(110px, 0.75fr) minmax(110px, 0.65fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr);
+  grid-template-columns: 108px minmax(150px, 1fr) minmax(210px, 1.4fr) minmax(110px, 0.75fr) minmax(110px, 0.65fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr);
   align-items: center;
-  min-width: 990px;
+  min-width: 1046px;
   border-top: 1px solid #edf1f4;
 }
 
 .admin-package-row:first-child {
   border-top: 0;
 }
+
+.admin-package-row > .admin-package-actions { flex-wrap: wrap; gap: .3rem; padding: .5rem; }
+.admin-package-actions > button { flex: 0 0 1.7rem; width: 1.7rem; height: 1.7rem; padding: .3rem; }
 
 .admin-package-row > span {
   display: flex;

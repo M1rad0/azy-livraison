@@ -5,6 +5,7 @@ import java.time.LocalTime;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.delivery.domain.DeliveryTimePreference;
 
 public record AdvancedPricingQuote(
         short pricingPolicyId,
@@ -22,7 +23,22 @@ public record AdvancedPricingQuote(
         LocalTime desiredDeliveryTime,
         String timeSlotLabel,
         long timeSurchargeAriary,
-        long deliveryFeeAriary) {
+        long deliveryFeeAriary,
+        LocalTime desiredDeliveryEndTime,
+        DeliveryTimePreference deliveryTimePreference,
+        String matchedKeyword) {
+
+    public AdvancedPricingQuote(short pricingPolicyId, long pricingPolicyVersion, UUID clientAccountId,
+            DeliveryRequestKind requestKind, PricingDistanceMode distanceMode, UUID pricingZoneId,
+            String pricingZoneName, long distanceFromCenterMeters, long pricingZoneMaxDistanceMeters,
+            long baseDeliveryFeeAriary, BigDecimal effectiveWeightKg, long weightSurchargeAriary,
+            LocalTime desiredDeliveryTime, String timeSlotLabel, long timeSurchargeAriary, long deliveryFeeAriary) {
+        this(pricingPolicyId, pricingPolicyVersion, clientAccountId, requestKind, distanceMode, pricingZoneId,
+                pricingZoneName, distanceFromCenterMeters, pricingZoneMaxDistanceMeters, baseDeliveryFeeAriary,
+                effectiveWeightKg, weightSurchargeAriary, desiredDeliveryTime, timeSlotLabel, timeSurchargeAriary,
+                deliveryFeeAriary, desiredDeliveryTime == null ? null : desiredDeliveryTime.plusHours(1),
+                desiredDeliveryTime == null ? DeliveryTimePreference.NONE : DeliveryTimePreference.CUSTOM, null);
+    }
 
     public DeliveryPricingSnapshot toLegacySnapshot() {
         return new DeliveryPricingSnapshot(

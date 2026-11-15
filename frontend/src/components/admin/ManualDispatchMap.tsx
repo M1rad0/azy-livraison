@@ -7,6 +7,7 @@ import { dispatchPlace, dispatchPlaceText as locationLabel } from './manualDispa
 import { manualDispatchCourierColor, validPosition } from './manualDispatchGeography'
 import 'leaflet/dist/leaflet.css'
 import './ManualDispatchMap.css'
+import { formatOneHourWindow } from '../../deliveryWindows'
 
 function MapBounds({ positions }: { positions: string }) {
   const map = useMap()
@@ -45,7 +46,7 @@ export function ManualDispatchMap({ draft, phase, selectedId, onSelect }: {
     : draft.packages.map((p) => ({ id: p.packageId, location: p.destination, title: dispatchPlace(p.destination).title,
       address: dispatchPlace(p.destination).address,
       courierId: draft.deliveries.find((d) => d.packageId === p.packageId)?.courierId,
-      details: [p.recipientName, p.serviceClientName, p.contact, p.desiredDeliveryTime ? `Créneau : ${p.desiredDeliveryTime.slice(0, 5)}` : ''].filter(Boolean) }))
+      details: [p.recipientName, p.serviceClientName, p.contact, formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference) ? `Créneau : ${formatOneHourWindow(p.desiredDeliveryTime, p.desiredDeliveryEndTime, undefined, p.deliveryTimePreference)}` : ''].filter(Boolean) }))
   // Colocated packages remain independently selectable inside a shared popup.
   const groups = new Map<string, typeof points>()
   for (const point of points) {

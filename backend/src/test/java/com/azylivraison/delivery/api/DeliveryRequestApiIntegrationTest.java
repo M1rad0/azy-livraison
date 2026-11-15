@@ -3,6 +3,7 @@ package com.azylivraison.delivery.api;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -318,6 +319,235 @@ class DeliveryRequestApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("DELIVERY_REQUEST_INVALID"))
                 .andExpect(jsonPath("$.violations.length()").value(6));
+    }
+
+    @Test
+    void persistsLongCustomWindowsAndMorningPreference() throws Exception {
+        mockMvc.perform(post("/api/client/delivery-requests").with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false).replace("\"mobileMoneyPaid\": false",
+                                "\"mobileMoneyPaid\": false, \"desiredDeliveryTime\":\"08:00\","
+                                        + "\"desiredDeliveryEndTime\":\"11:30\",\"deliveryTimePreference\":\"CUSTOM\"")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryTime").value("08:00:00"))
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryEndTime").value("11:30:00"))
+                .andExpect(jsonPath("$.packages[0].deliveryTimePreference").value("CUSTOM"))
+                .andExpect(jsonPath("$.packages[0].canEdit").value(true));
+        mockMvc.perform(post("/api/client/delivery-requests").with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false).replace("\"mobileMoneyPaid\": false",
+                                "\"mobileMoneyPaid\": false,\"deliveryTimePreference\":\"MORNING\"")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryTime").value("00:00:00"))
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryEndTime").value("12:00:00"))
+                .andExpect(jsonPath("$.packages[0].deliveryTimePreference").value("MORNING"));
+    }
+
+    @Test
+    void ownerCanEditAllPackageInputsWithOptimisticVersionAndAdminOverridePreserved() throws Exception {
+        var created = createSinglePackage(false);
+        String requestId = created.get("id").asText();
+        String packageId = created.get("packages").get(0).get("id").asText();
+        jdbcTemplate.update("""
+                UPDATE delivery_package SET final_delivery_fee_ariary = 1234,
+                    delivery_fee_override_reason = 'Accord commercial', delivery_fee_overridden_at = CURRENT_TIMESTAMP,
+                    delivery_fee_overridden_by_account_id = ? WHERE id = ?
+                """, ADMIN_ID, UUID.fromString(packageId));
+        mockMvc.perform(put("/api/client/delivery-packages/{id}", packageId).with(client(CLIENT_TWO_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(0)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/client/delivery-packages/{id}", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(requestId))
+                .andExpect(jsonPath("$.packages[0].recipientName").value("Nouveau destinataire"))
+                .andExpect(jsonPath("$.packages[0].faritra").value(false))
+                .andExpect(jsonPath("$.packages[0].destination.label").value("Nouvelle adresse"))
+                .andExpect(jsonPath("$.packages[0].contact").value("034 11 222 33"))
+                .andExpect(jsonPath("$.packages[0].amountToCollectAriary").value(98000))
+                .andExpect(jsonPath("$.packages[0].mobileMoneyPaid").value(true))
+                .andExpect(jsonPath("$.packages[0].effectiveWeightKg").value(3.5))
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryEndTime").value("18:00:00"))
+                .andExpect(jsonPath("$.packages[0].finalDeliveryFeeAriary").value(1234))
+                .andExpect(jsonPath("$.packages[0].deliveryFeeOverrideReason").value("Accord commercial"))
+                .andExpect(jsonPath("$.packages[0].version").value(1));
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}", packageId).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(0)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/api/admin/delivery-packages/{id}", packageId).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(1)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void dailyValidationFreezesEvenUnassignedPendingPackages() throws Exception {
+        var created = createSinglePackage(false);
+        String packageId = created.get("packages").get(0).get("id").asText();
+        UUID planId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO dispatch_plan(id,service_date,status,created_by_account_id,idempotency_key,request_hash,
+                    hub_label,hub_latitude,hub_longitude,input_snapshot_json,policy_snapshot_json,
+                    selected_package_count,selected_courier_count)
+                VALUES (?,'2099-08-24','READY',?,'validated-day',?,'Hub',-18.9,47.5,'{}','{}',1,1)
+                """, planId, ADMIN_ID, "0".repeat(64));
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day(service_date,status,dispatch_plan_id)
+                VALUES ('2099-08-24','DISPATCHED',?)
+                """, planId);
+        mockMvc.perform(get("/api/client/delivery-requests/{id}", created.get("id").asText()).with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.packages[0].canEdit").value(false));
+        mockMvc.perform(put("/api/client/delivery-packages/{id}", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(0)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/admin/delivery-packages/{id}/reschedule", packageId).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"requestedDate\":\"2099-08-25\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void reschedulingMovesOnlyOnePackageAndPreservesSourceDatePickupAndPrice() throws Exception {
+        var created = createSinglePackage(true);
+        String requestId = created.get("id").asText();
+        String packageId = created.get("packages").get(0).get("id").asText();
+        long price = created.get("packages").get(0).get("finalDeliveryFeeAriary").asLong();
+        MvcResult moved = mockMvc.perform(post("/api/client/delivery-packages/{id}/reschedule", packageId)
+                        .with(client(CLIENT_ONE_ID)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"requestedDate\":\"2099-08-25\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestedDate").value("2099-08-25"))
+                .andExpect(jsonPath("$.pickup.label").value("Boutique Analakely"))
+                .andExpect(jsonPath("$.packages.length()").value(1))
+                .andExpect(jsonPath("$.packages[0].carriedForwardFromPackageId").value(packageId))
+                .andExpect(jsonPath("$.packages[0].finalDeliveryFeeAriary").value(price))
+                .andReturn();
+        org.assertj.core.api.Assertions.assertThat(objectMapper.readTree(moved.getResponse().getContentAsString()).get("id").asText())
+                .isNotEqualTo(requestId);
+        mockMvc.perform(get("/api/client/delivery-requests/{id}", requestId).with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.requestedDate").value("2099-08-24"))
+                .andExpect(jsonPath("$.packages.length()").value(1))
+                .andExpect(jsonPath("$.packages[0].recipientName").value("Soa"));
+        Integer sourceAllocated = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM delivery_package p JOIN delivery_request r ON r.id = p.delivery_request_id
+                WHERE r.requested_date = '2099-08-24' AND p.cancelled_before_processing_at IS NULL
+                """, Integer.class);
+        org.assertj.core.api.Assertions.assertThat(sourceAllocated).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT requested_date FROM delivery_request WHERE id = ?", LocalDate.class, UUID.fromString(requestId)))
+                .isEqualTo(LocalDate.of(2099, 8, 24));
+    }
+
+    @Test
+    void reschedulingRejectsFullAndClosedTargetsWithoutRetiringSource() throws Exception {
+        jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
+        var created = createSinglePackage(false);
+        String packageId = created.get("packages").get(0).get("id").asText();
+        mockMvc.perform(post("/api/client/delivery-requests").with(client(CLIENT_TWO_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false).replace("2099-08-24", "2099-08-25")))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/client/delivery-packages/{id}/reschedule", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"requestedDate\":\"2099-08-25\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DAILY_CAPACITY_EXCEEDED"));
+        jdbcTemplate.update("""
+                INSERT INTO delivery_operation_day(service_date,status,closed_at,closed_by_account_id)
+                VALUES ('2099-08-26','CLOSED',CURRENT_TIMESTAMP,?)
+                """, ADMIN_ID);
+        mockMvc.perform(post("/api/client/delivery-packages/{id}/reschedule", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"requestedDate\":\"2099-08-26\"}"))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/client/delivery-requests/{id}", created.get("id").asText()).with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.packages[0].version").value(0));
+    }
+
+    @Test
+    void expressIsEditableAndReprogrammableOnlyBeforeConfirmation() throws Exception {
+        jdbcTemplate.update("INSERT INTO client_profile(account_id,express_delivery_enabled) VALUES (?,TRUE)", CLIENT_ONE_ID);
+        String body = requestJson(false, false).replace("\"requestedDate\": \"2099-08-24\"",
+                "\"requestKind\":\"EXPRESS\"");
+        var first = objectMapper.readTree(mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client(CLIENT_ONE_ID)).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        String packageId = first.get("packages").get(0).get("id").asText();
+        mockMvc.perform(put("/api/client/delivery-packages/{id}", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(0)
+                                .replace("\"desiredDeliveryTime\":\"13:00\",\"desiredDeliveryEndTime\":\"18:00\",\"deliveryTimePreference\":\"CUSTOM\"",
+                                        "\"deliveryTimePreference\":\"NONE\"")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/client/delivery-packages/{id}/reschedule", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"requestedDate\":\"2099-08-25\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.requestKind").value("NORMAL"));
+        var second = objectMapper.readTree(mockMvc.perform(post("/api/client/delivery-requests")
+                        .with(client(CLIENT_ONE_ID)).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        jdbcTemplate.update("UPDATE delivery_request SET express_status='CONFIRMED' WHERE id = ?",
+                UUID.fromString(second.get("id").asText()));
+        mockMvc.perform(post("/api/admin/delivery-packages/{id}/reschedule",
+                        second.get("packages").get(0).get("id").asText()).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"requestedDate\":\"2099-08-25\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void editsAndMovesPackagesWhileManualDraftsArePreparedAndSynchronizesBothDrafts() throws Exception {
+        var source = createSinglePackage(true);
+        String packageId = source.get("packages").get(0).get("id").asText();
+        mockMvc.perform(post("/api/client/delivery-requests").with(client(CLIENT_TWO_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(false, false).replace("2099-08-24", "2099-08-25")))
+                .andExpect(status().isCreated());
+        UUID courier = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO courier_profile(id,name,active,vehicle_type,default_departure_time,
+                    departure_location_label,departure_latitude,departure_longitude)
+                VALUES (?,'Livreur test',TRUE,'MOTO','06:00','Depart',-18.9,47.5)
+                """, courier);
+        createManualDraft("2099-08-24", courier, "source-draft");
+        createManualDraft("2099-08-25", courier, "target-draft");
+        mockMvc.perform(put("/api/client/delivery-packages/{id}", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(0)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.packages[0].canEdit").value(true));
+        mockMvc.perform(get("/api/admin/manual-dispatch-drafts/active").param("date", "2099-08-24").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.packages[?(@.packageId == '" + packageId + "')].recipientName")
+                        .value("Nouveau destinataire"));
+        mockMvc.perform(post("/api/client/delivery-packages/{id}/reschedule", packageId).with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"requestedDate\":\"2099-08-25\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/admin/manual-dispatch-drafts/active").param("date", "2099-08-24").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.packages.length()").value(1));
+        mockMvc.perform(get("/api/admin/manual-dispatch-drafts/active").param("date", "2099-08-25").with(admin()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.packages.length()").value(2));
+    }
+
+    private void createManualDraft(String date, UUID courier, String key) throws Exception {
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts").with(admin())
+                        .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"serviceDate":"%s","courierIds":["%s"],
+                                 "hubOverride":{"label":"Hub test","latitude":-18.9,"longitude":47.5}}
+                                """.formatted(date, courier)))
+                .andExpect(status().isOk());
+    }
+
+    private tools.jackson.databind.JsonNode createSinglePackage(boolean twoPackages) throws Exception {
+        return objectMapper.readTree(mockMvc.perform(post("/api/client/delivery-requests").with(client(CLIENT_ONE_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(requestJson(false, twoPackages)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    private String updateJson(long version) {
+        return """
+                {"expectedVersion":%d,"recipientName":"Nouveau destinataire","faritra":false,
+                 "destination":{"label":"Nouvelle adresse","query":"Analakely","latitude":-18.9096,"longitude":47.5236},
+                 "contact":"034 11 222 33","amountToCollectAriary":98000,"mobileMoneyPaid":true,"weightKg":3.5,
+                 "desiredDeliveryTime":"13:00","desiredDeliveryEndTime":"18:00","deliveryTimePreference":"CUSTOM"}
+                """.formatted(version);
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID accountId) {

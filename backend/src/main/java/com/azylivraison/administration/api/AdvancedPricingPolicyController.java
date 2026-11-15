@@ -37,7 +37,8 @@ public class AdvancedPricingPolicyController {
     public AdvancedPricingPolicyResponse save(@Valid @RequestBody AdvancedPricingPolicyRequest request) {
         return AdvancedPricingPolicyResponse.from(service.save(request.clientAccountId(), request.requestKind(),
                 request.distanceMode(), request.centerDomain(), request.defaultWeightKg(), request.zoneDomains(),
-                request.weightDomains(), request.timeDomains(), request.version()));
+                request.weightDomains(), request.timeDomains(), request.morningSurchargeAriary(),
+                request.afternoonSurchargeAriary(), request.keywordDomains(), request.version()));
     }
 
     @DeleteMapping

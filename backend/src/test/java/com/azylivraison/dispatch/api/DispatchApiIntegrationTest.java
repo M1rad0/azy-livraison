@@ -98,6 +98,9 @@ class DispatchApiIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private com.azylivraison.dispatch.service.ManualDispatchService manualDispatchService;
+
     @MockitoBean
     private ViaHubOptimizationFacade optimizationFacade;
 
@@ -780,6 +783,42 @@ class DispatchApiIntegrationTest {
                 .andExpect(status().isConflict());
         assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM dispatch_plan", Integer.class));
         assertEquals("PENDING", jdbcTemplate.queryForObject("SELECT status FROM delivery_package WHERE id = ?", String.class, PACKAGE_ID));
+    }
+
+    @Test
+    void pendingEditRefreshesDraftWithoutLosingAssignmentsAndPersistsRealWindow() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-refresh-window", List.of(COURIER_ID));
+        ManualDispatchDraft saved = saveManual(draft,
+                List.of(new ManualDispatchDraft.Collection(draft.pickups().getFirst().id(), COURIER_ID, 0)),
+                List.of(new ManualDispatchDraft.Delivery(PACKAGE_ID, COURIER_ID, 0)));
+        jdbcTemplate.update("""
+                UPDATE delivery_package SET contact = '032', desired_delivery_time = TIME '08:00:00',
+                    desired_delivery_end_time = TIME '11:30:00', delivery_time_preference = 'CUSTOM'
+                WHERE id = ?
+                """, PACKAGE_ID);
+        manualDispatchService.synchronizePendingPackages(draft.serviceDate(), ADMIN_ID);
+        ManualDispatchDraft refreshed = manualDispatchService.get(draft.id());
+        assertEquals(saved.collections(), refreshed.collections());
+        assertEquals(saved.deliveries(), refreshed.deliveries());
+        assertEquals(2, refreshed.version());
+        assertEquals("032", refreshed.packages().getFirst().contact());
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/admin/manual-dispatch-drafts/{id}/finalize", draft.id()).with(admin())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.packages[0].desiredDeliveryEndTime").value("11:30:00"))
+                .andExpect(jsonPath("$.packages[0].deliveryTimePreference").value("CUSTOM"));
+    }
+
+    @Test
+    void movingTheLastPackageAwayCancelsEmptyDraftAndReopensAdmissions() throws Exception {
+        ManualDispatchDraft draft = manualDraft("manual-empty-after-reschedule", List.of(COURIER_ID));
+        jdbcTemplate.update("UPDATE delivery_package SET cancelled_before_processing_at = CURRENT_TIMESTAMP WHERE id = ?", PACKAGE_ID);
+        manualDispatchService.synchronizePendingPackages(draft.serviceDate(), ADMIN_ID);
+        assertEquals("CANCELLED", manualDispatchService.get(draft.id()).status());
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM delivery_operation_day WHERE service_date = ? AND admissions_closed_at IS NOT NULL", Integer.class, draft.serviceDate()));
     }
 
     @Test

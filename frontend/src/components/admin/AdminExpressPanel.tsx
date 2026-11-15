@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Ban, Bike, Check, Clock3, Fuel, LoaderCircle, PackageCheck, RefreshCw, Search, Send, TriangleAlert, Undo2, Zap } from 'lucide-react'
+import { Ban, Bike, CalendarClock, Check, Clock3, Fuel, LoaderCircle, PackageCheck, Pencil, RefreshCw, Search, Send, TriangleAlert, Undo2, Zap } from 'lucide-react'
 import {
   cancelExpressDelivery,
   confirmExpressDelivery,
@@ -9,6 +9,7 @@ import {
 } from '../../api/admin'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { ExistingPackageActions, type EditablePackageContext } from '../ExistingPackageActions'
 import { errorMessage, formatAriary } from './adminHelpers'
 
 const statusLabel = { PENDING: 'En attente', CONFIRMED: 'Confirmée', COMPLETED: 'Terminée' } as const
@@ -27,6 +28,7 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
   const [courierQuery, setCourierQuery] = useState<Record<string, string>>({})
   const [cancelTarget, setCancelTarget] = useState<ExpressDelivery>()
   const [message, setMessage] = useState<string>()
+  const [packageAction, setPackageAction] = useState<EditablePackageContext>()
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
@@ -92,7 +94,10 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
             return (
               <article key={request.id} className={`admin-express-card is-${request.expressStatus?.toLowerCase()}`}>
                 <header><span className="admin-express-card__icon"><Zap /></span><div><small>{new Date(request.createdAt).toLocaleString('fr-MG')}</small><h3>{request.ownerDisplayName}</h3><p>{request.pickup.label} · {request.packages.length} colis · {delivery.totalWeightKg.toLocaleString('fr-MG')} kg</p></div><span className="admin-express-status">{statusLabel[request.expressStatus ?? 'PENDING']}</span></header>
-                <div className="admin-express-packages">{request.packages.map((item) => <span key={item.id}><strong>{item.recipientName}</strong><small>{item.destination.label} · {formatAriary(item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0)}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay) ? ` · créneau ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay)}` : ''}</small></span>)}</div>
+                <div className="admin-express-packages">{request.packages.map((item) => <span key={item.id}><strong>{item.recipientName}</strong><small>{item.destination.label} · {formatAriary(item.finalDeliveryFeeAriary ?? item.deliveryFeeAriary ?? 0)}{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay, item.deliveryTimePreference) ? ` · créneau ${formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, item.desiredDeliveryEndsNextDay, item.deliveryTimePreference)}` : ''}</small>
+                  {item.canEdit && <div className="admin-toolbar"><button className="admin-button admin-button--ghost" type="button" onClick={() => setPackageAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: 'EXPRESS', action: 'EDIT' })}><Pencil aria-hidden="true" />Modifier</button>
+                    <button className="admin-button admin-button--ghost" type="button" onClick={() => setPackageAction({ item, ownerAccountId: request.ownerAccountId, requestedDate: request.requestedDate, requestKind: 'EXPRESS', action: 'RESCHEDULE' })}><CalendarClock aria-hidden="true" />Reprogrammer</button></div>}
+                </span>)}</div>
                 {request.expressStatus === 'PENDING' && (
                   <div className="admin-express-assignment">
                     <div className="admin-express-assignment__heading"><div><strong>Livreurs mobilisés</strong><small>Le livreur réellement intervenu sera renseigné au compte rendu.</small></div><label><Search /><input placeholder="Rechercher…" value={courierQuery[request.id] ?? ''} onChange={(event) => setCourierQuery({ ...courierQuery, [request.id]: event.target.value })} /></label></div>
@@ -110,6 +115,7 @@ export function AdminExpressPanel({ accessToken, couriers, refreshKey = 0, onOpe
         </div>
       )}
       {cancelTarget && <ConfirmDialog title="Annuler la demande express ?" confirmLabel="Annuler la demande" danger busy={busyId === cancelTarget.request.id} onClose={() => setCancelTarget(undefined)} onConfirm={() => void cancel()}><p>Cette annulation avant traitement retirera définitivement les colis des flux et des rapports.</p></ConfirmDialog>}
+      {packageAction && <ExistingPackageActions context={packageAction} accessToken={accessToken} administration onSaved={() => load()} onClose={() => setPackageAction(undefined)} />}
     </section>
   )
 }

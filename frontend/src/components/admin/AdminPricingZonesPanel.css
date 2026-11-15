@@ -1,0 +1,11 @@
+.admin-pricing-help { margin: .25rem 0; color: var(--admin-ink-soft); font-size: .65rem; line-height: 1.5; }
+.admin-pricing-import { display: grid; gap: .45rem; padding: .75rem; background: #f7f9fb; border: 1px dashed var(--admin-line); border-radius: .78rem; }
+.admin-pricing-import > span { display: flex; align-items: center; gap: .4rem; color: var(--admin-navy); font-size: .68rem; font-weight: 750; }
+.admin-pricing-import svg { width: 1rem; height: 1rem; color: var(--admin-orange); }
+.admin-pricing-import input { width: 100%; min-width: 0; font-size: .67rem; }
+.admin-pricing-import input::file-selector-button { margin-right: .6rem; padding: .55rem .75rem; border: 1px solid var(--admin-line); border-radius: .65rem; color: var(--admin-navy); background: white; font: inherit; font-weight: 650; cursor: pointer; }
+.admin-pricing-import input::file-selector-button:hover { border-color: var(--admin-orange); background: #fff4eb; }
+.admin-pricing-import input:focus-visible { outline: 2px solid var(--admin-orange); outline-offset: 3px; border-radius: .65rem; }
+.admin-pricing-import small { color: var(--admin-ink-soft); font-size: .6rem; line-height: 1.4; }
+.admin-pricing-periods .admin-pricing-rule { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 680px) { .admin-pricing-periods .admin-pricing-rule { grid-template-columns: minmax(0, 1fr); } }

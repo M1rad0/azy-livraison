@@ -5,6 +5,7 @@ import java.time.LocalTime;
 import java.util.UUID;
 
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
+import com.azylivraison.delivery.domain.DeliveryTimePreference;
 import com.azylivraison.pricing.domain.AdvancedPricingQuote;
 import com.azylivraison.pricing.domain.PricingDistanceMode;
 
@@ -25,7 +26,9 @@ public record AdvancedPricingQuoteResponse(
         boolean desiredDeliveryEndsNextDay,
         String timeSlotLabel,
         long timeSurchargeAriary,
-        long deliveryFeeAriary) {
+        long deliveryFeeAriary,
+        DeliveryTimePreference deliveryTimePreference,
+        String matchedKeyword) {
 
     public static AdvancedPricingQuoteResponse from(AdvancedPricingQuote quote) {
         return new AdvancedPricingQuoteResponse(quote.pricingPolicyId(), quote.pricingPolicyVersion(),
@@ -33,10 +36,10 @@ public record AdvancedPricingQuoteResponse(
                 quote.distanceFromCenterMeters(), quote.pricingZoneMaxDistanceMeters(),
                 quote.baseDeliveryFeeAriary(), quote.effectiveWeightKg(), quote.weightSurchargeAriary(),
                 quote.desiredDeliveryTime(),
-                quote.desiredDeliveryTime() == null ? null : quote.desiredDeliveryTime().plusHours(1),
-                quote.desiredDeliveryTime() != null
-                        && quote.desiredDeliveryTime().plusHours(1).isBefore(quote.desiredDeliveryTime()),
+                quote.desiredDeliveryEndTime(),
+                quote.desiredDeliveryTime() != null && quote.desiredDeliveryEndTime() != null
+                        && quote.desiredDeliveryEndTime().isBefore(quote.desiredDeliveryTime()),
                 quote.timeSlotLabel(), quote.timeSurchargeAriary(),
-                quote.deliveryFeeAriary());
+                quote.deliveryFeeAriary(), quote.deliveryTimePreference(), quote.matchedKeyword());
     }
 }

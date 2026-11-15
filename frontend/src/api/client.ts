@@ -123,6 +123,7 @@ export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | '
 export type PackageWeightSource = 'PROVIDED' | 'DEFAULT_SETTING'
 export type DeliveryRequestKind = 'NORMAL' | 'EXPRESS'
 export type ExpressDeliveryStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED'
+export type DeliveryTimePreference = 'NONE' | 'CUSTOM' | 'MORNING' | 'AFTERNOON'
 
 export interface DeliveryPackageRecord {
   id: string
@@ -136,6 +137,8 @@ export interface DeliveryPackageRecord {
   desiredDeliveryTime?: string | null
   desiredDeliveryEndTime?: string | null
   desiredDeliveryEndsNextDay?: boolean
+  deliveryTimePreference?: DeliveryTimePreference
+  canEdit?: boolean
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
@@ -183,6 +186,10 @@ export interface DeliveryPricingQuote {
   desiredDeliveryEndsNextDay?: boolean
   timeSlotLabel?: string | null
   timeSurchargeAriary?: number
+  deliveryTimePreference?: DeliveryTimePreference
+  matchedKeyword?: string | null
+  /** Preview-only flag when an existing parcel keeps an agreed manual fee. */
+  finalFeeOverridden?: boolean
 }
 
 export interface DeliveryPricingPolicy {
@@ -197,6 +204,9 @@ export interface DeliveryPricingPolicy {
   zones: Array<{ id: string; name: string; maxDistanceMeters: number; deliveryFeeAriary: number }>
   weightTiers: Array<{ id: string; maxWeightKg: number; surchargeAriary: number }>
   timeSlots: Array<{ id: string; label: string; startTime: string; endTime: string; surchargeAriary: number }>
+  morningSurchargeAriary?: number
+  afternoonSurchargeAriary?: number
+  keywordRules?: Array<{ id?: string; keyword: string; deliveryFeeAriary: number }>
 }
 
 export interface CapacitySnapshot {
@@ -235,6 +245,16 @@ export interface CreateDeliveryPackageInput {
   mobileMoneyPaid: boolean
   weightKg?: number
   desiredDeliveryTime?: string
+  desiredDeliveryEndTime?: string
+  deliveryTimePreference?: DeliveryTimePreference
+}
+
+export interface DeliveryPricingOptions {
+  requestKind?: DeliveryRequestKind
+  weightKg?: number
+  desiredDeliveryTime?: string
+  desiredDeliveryEndTime?: string
+  deliveryTimePreference?: DeliveryTimePreference
 }
 
 export interface CreateDeliveryRequestInput {
@@ -395,13 +415,25 @@ export function quoteDeliveryPrice(
   destination: ClientLocation,
   accessToken: string,
   signal?: AbortSignal,
-  options: { requestKind?: DeliveryRequestKind; weightKg?: number; desiredDeliveryTime?: string } = {},
+  options: DeliveryPricingOptions = {},
 ): Promise<DeliveryPricingQuote> {
   return clientRequest<DeliveryPricingQuote>('delivery-pricing/quote', accessToken, {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ destination, ...options }),
+  })
+}
+
+export function updateDeliveryPackage(packageId: string, expectedVersion: number, input: CreateDeliveryPackageInput, accessToken: string) {
+  return clientRequest<DeliveryRequestRecord>(`delivery-packages/${encodeURIComponent(packageId)}`, accessToken, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion, ...input }),
+  })
+}
+
+export function rescheduleDeliveryPackage(packageId: string, expectedVersion: number, requestedDate: string, accessToken: string) {
+  return clientRequest<DeliveryRequestRecord>(`delivery-packages/${encodeURIComponent(packageId)}/reschedule`, accessToken, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion, requestedDate }),
   })
 }
 

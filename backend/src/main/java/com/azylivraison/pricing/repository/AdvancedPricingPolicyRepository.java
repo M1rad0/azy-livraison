@@ -2,7 +2,6 @@ package com.azylivraison.pricing.repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +10,7 @@ import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.pricing.domain.AdvancedPricingPolicy;
 import com.azylivraison.pricing.domain.PricingCenter;
 import com.azylivraison.pricing.domain.PricingDistanceMode;
+import com.azylivraison.pricing.domain.PricingKeywordRule;
 import com.azylivraison.pricing.domain.PricingTimeSlot;
 import com.azylivraison.pricing.domain.PricingWeightTier;
 import com.azylivraison.pricing.domain.PricingZone;
@@ -66,10 +66,12 @@ public class AdvancedPricingPolicyRepository {
                 UPDATE delivery_pricing_policy
                 SET center_label = ?, center_query = ?, center_latitude = ?, center_longitude = ?,
                     distance_mode = ?, default_weight_kg = ?,
+                    morning_surcharge_ariary = ?, afternoon_surcharge_ariary = ?,
                     version = version + 1, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND version = ? AND active = TRUE
                 """, policy.center().label(), policy.center().query(), policy.center().latitude(),
                 policy.center().longitude(), policy.distanceMode().name(), policy.defaultWeightKg(),
+                policy.morningSurchargeAriary(), policy.afternoonSurchargeAriary(),
                 policy.id(), expectedVersion);
         if (updated == 0) return false;
         replaceChildren(policy);
@@ -88,14 +90,17 @@ public class AdvancedPricingPolicyRepository {
         jdbcTemplate.update("""
                 INSERT INTO delivery_pricing_policy (
                     id, center_label, center_query, center_latitude, center_longitude,
-                    client_account_id, request_kind, distance_mode, default_weight_kg, active, version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 0)
+                    client_account_id, request_kind, distance_mode, default_weight_kg,
+                    morning_surcharge_ariary, afternoon_surcharge_ariary, active, version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 0)
                 """, id, policy.center().label(), policy.center().query(), policy.center().latitude(),
                 policy.center().longitude(), policy.clientAccountId(), policy.requestKind().name(),
-                policy.distanceMode().name(), policy.defaultWeightKg());
+                policy.distanceMode().name(), policy.defaultWeightKg(),
+                policy.morningSurchargeAriary(), policy.afternoonSurchargeAriary());
         AdvancedPricingPolicy stored = new AdvancedPricingPolicy(id, policy.clientAccountId(),
                 policy.requestKind(), policy.distanceMode(), policy.center(), policy.defaultWeightKg(), policy.zones(),
-                policy.weightTiers(), policy.timeSlots(), 0, policy.createdAt(), policy.updatedAt());
+                policy.weightTiers(), policy.timeSlots(), policy.morningSurchargeAriary(),
+                policy.afternoonSurchargeAriary(), policy.keywordRules(), 0, policy.createdAt(), policy.updatedAt());
         replaceChildren(stored);
         return id;
     }
@@ -124,6 +129,7 @@ public class AdvancedPricingPolicyRepository {
                 new PricingCenter(rs.getString("center_label"), rs.getString("center_query"),
                         rs.getDouble("center_latitude"), rs.getDouble("center_longitude")),
                 rs.getBigDecimal("default_weight_kg"), findZones(id), findWeights(id), findSlots(id),
+                rs.getLong("morning_surcharge_ariary"), rs.getLong("afternoon_surcharge_ariary"), findKeywords(id),
                 rs.getLong("version"), rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("updated_at").toInstant());
     }
@@ -157,6 +163,7 @@ public class AdvancedPricingPolicyRepository {
         jdbcTemplate.update("DELETE FROM delivery_pricing_zone WHERE pricing_policy_id = ?", policy.id());
         jdbcTemplate.update("DELETE FROM delivery_pricing_weight_tier WHERE pricing_policy_id = ?", policy.id());
         jdbcTemplate.update("DELETE FROM delivery_pricing_time_slot WHERE pricing_policy_id = ?", policy.id());
+        jdbcTemplate.update("DELETE FROM delivery_pricing_keyword_rule WHERE pricing_policy_id = ?", policy.id());
         for (int index = 0; index < policy.zones().size(); index++) {
             PricingZone zone = policy.zones().get(index);
             jdbcTemplate.update("""
@@ -183,5 +190,21 @@ public class AdvancedPricingPolicyRepository {
                     """, slot.id(), policy.id(), index + 1, slot.label(), slot.startTime(), slot.endTime(),
                     slot.surchargeAriary());
         }
+        for (int index = 0; index < policy.keywordRules().size(); index++) {
+            PricingKeywordRule rule = policy.keywordRules().get(index);
+            jdbcTemplate.update("""
+                    INSERT INTO delivery_pricing_keyword_rule
+                        (id, pricing_policy_id, rule_order, keyword, delivery_fee_ariary)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, rule.id(), policy.id(), index + 1, rule.keyword(), rule.deliveryFeeAriary());
+        }
+    }
+
+    private List<PricingKeywordRule> findKeywords(short id) {
+        return jdbcTemplate.query("""
+                SELECT id, keyword, delivery_fee_ariary
+                FROM delivery_pricing_keyword_rule WHERE pricing_policy_id = ? ORDER BY rule_order
+                """, (rs, row) -> new PricingKeywordRule(rs.getObject("id", UUID.class), rs.getString("keyword"),
+                        rs.getLong("delivery_fee_ariary")), id);
     }
 }

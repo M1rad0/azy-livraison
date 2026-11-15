@@ -41,7 +41,8 @@ public record DispatchPackageResponse(
         Long weightSurchargeAriary,
         Long timeSurchargeAriary,
         BigDecimal effectiveWeightKg,
-        Location destination) {
+        Location destination,
+        com.azylivraison.delivery.domain.DeliveryTimePreference deliveryTimePreference) {
 
     static DispatchPackageResponse from(DispatchPackageOutcome outcome) {
         return new DispatchPackageResponse(
@@ -62,10 +63,9 @@ public record DispatchPackageResponse(
                 outcome.cashToCollectAriary(),
                 outcome.mobileMoneyPaid(),
                 outcome.desiredDeliveryTime(),
-                outcome.desiredDeliveryTime() == null
-                        ? null : outcome.desiredDeliveryTime().plusHours(1),
+                outcome.desiredDeliveryEndTime(),
                 outcome.desiredDeliveryTime() != null
-                        && outcome.desiredDeliveryTime().plusHours(1)
+                        && outcome.desiredDeliveryEndTime()
                                 .isBefore(outcome.desiredDeliveryTime()),
                 outcome.pricingSnapshot().pricingZoneId(),
                 outcome.pricingSnapshot().pricingZoneName(),
@@ -79,6 +79,6 @@ public record DispatchPackageResponse(
                 outcome.pricingSnapshot().weightSurchargeAriary(),
                 outcome.pricingSnapshot().timeSurchargeAriary(),
                 outcome.effectiveWeightKg(),
-                outcome.destination());
+                outcome.destination(), outcome.deliveryTimePreference());
     }
 }

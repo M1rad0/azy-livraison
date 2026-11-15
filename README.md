@@ -52,6 +52,12 @@ La configuration initiale utilise le centre Antsahavola–Antaninarenina et les 
 
 Le tarif est calculé côté backend au moment de l'enregistrement et copié dans un snapshot du colis. Un changement ultérieur des zones ne réécrit donc pas l'historique. Les frais sont affichés comme la part livraison du total déclaré, sans modifier automatiquement `amountToCollectAriary`. L'indicateur `faritra` et le type de véhicule restent indépendants de la tarification dans cette première version.
 
+Chaque grille normale/express, générale ou personnelle, peut définir des **mots-clés tarifaires**. La recherche porte sur le libellé et l'adresse du lieu, sans distinction de casse ni d'accents. La clé la plus longue correspondante gagne ; à égalité, la première règle gagne. Son montant **remplace la base de zone** ; seuls les suppléments de poids et de créneau s'ajoutent ensuite. La destination doit toujours appartenir à la couverture géographique. L'import CSV `cle;tarif` ajoute des règles à vérifier avant l'enregistrement de la grille ; les doublons normalisés n'écrasent pas les règles existantes.
+
+Les colis acceptent un créneau libre début/fin, sans durée imposée d'une heure. Une fin avant le début indique le lendemain ; les anciennes données avec seulement un début conservent leur fin à +1 h. Le choix exclusif **Matin** (avant midi) ou **Soir** (après midi) désactive les heures précises et utilise le supplément de période de la grille, **500 Ar par défaut**, sans cumul avec les suppléments horaires. Pour un créneau libre, la règle actuelle reste fondée uniquement sur son heure de début. Pour les expresses, un début précis renseigné doit rester futur ; la période Matin n'est plus disponible une fois midi passé.
+
+Le client propriétaire et l'administrateur peuvent modifier les champs d'un colis ou le **reprogrammer avant validation du dispatch** (avant confirmation pour un express). L'API applique ce verrou, et pas seulement l'affichage des boutons. Un changement de destination, poids ou créneau recalcule le tarif automatique mais conserve un éventuel écrasement administratif ; une correction de contact seule ne réévalue pas le tarif historique. La reprogrammation crée une demande normale et un colis liés, conserve le retrait, le tarif et la priorité, libère la place d'origine et contrôle le quota de la date cible. Le brouillon de dispatch éventuel est resynchronisé, ses affectations encore valides conservées et sa version avancée ; un éditeur périmé doit le recharger. Après dispatch, le report continue à passer par le compte rendu habituel.
+
 ### Capacité journalière stricte
 
 La limite journalière correspond actuellement à un **nombre de colis**, pas à un nombre de demandes ni à un poids total. Lors de la création, le backend compare les colis déjà en attente pour la date, la limite configurée et les nouveaux colis.
@@ -713,6 +719,8 @@ Flyway applique automatiquement les migrations au démarrage, dans l'ordre :
 | `V9__create_daily_delivery_workflow.sql` | issues finales, reports liés, journées, clôtures, audit et snapshots clients |
 | `V10__record_actual_delivery_courier.sql` | livreur réellement intervenu et snapshot d'identité distinct de l'affectation planifiée |
 | `V20__create_manual_dispatch_drafts.sql` | brouillons manuels versionnés, reprise, identifiants d'idempotence et lien au plan final ; aucune donnée existante supprimée |
+| `V21__add_pricing_periods_and_keyword_rules.sql` | suppléments Matin/Soir et règles de remplacement tarifaire par mot-clé |
+| `V22__persist_delivery_time_windows.sql` | fin réelle et préférence horaire des colis et des snapshots de dispatch ; reprise des anciens créneaux à +1 h |
 
 Ne renommez et ne modifiez pas une migration déjà appliquée sur une base partagée : tout changement ultérieur doit utiliser une nouvelle version Flyway. Le passage de `V3` à `V4` attribue le rôle `ADMIN` aux comptes déjà présents afin de préserver l'accès au back-office.
 

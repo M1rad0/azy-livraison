@@ -1,0 +1,4 @@
+.client-pricing-keywords table { width: 100%; margin-top: .65rem; border-collapse: collapse; font-size: .65rem; }
+.client-pricing-keywords th, .client-pricing-keywords td { padding: .55rem .45rem; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
+.client-pricing-keywords th { color: var(--ink-soft); font-size: .58rem; }
+.client-pricing-keywords th:last-child, .client-pricing-keywords td:last-child { text-align: right; white-space: nowrap; }

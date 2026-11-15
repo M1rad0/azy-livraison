@@ -38,7 +38,7 @@ public class DispatchSourceRepository {
                    p.base_delivery_fee_ariary, p.weight_surcharge_ariary,
                    p.time_surcharge_ariary,
                    p.effective_weight_kg,
-                   p.desired_delivery_time
+                   p.desired_delivery_time, p.desired_delivery_end_time, p.delivery_time_preference
             FROM delivery_package p
             JOIN delivery_request dr ON dr.id = p.delivery_request_id
             JOIN app_account a ON a.id = dr.owner_account_id
@@ -193,7 +193,9 @@ public class DispatchSourceRepository {
                         nullableLong(resultSet, "weight_surcharge_ariary"),
                         nullableLong(resultSet, "time_surcharge_ariary")),
                 resultSet.getBigDecimal("effective_weight_kg"),
-                resultSet.getObject("desired_delivery_time", java.time.LocalTime.class));
+                resultSet.getObject("desired_delivery_time", java.time.LocalTime.class),
+                resultSet.getObject("desired_delivery_end_time", java.time.LocalTime.class),
+                com.azylivraison.delivery.domain.DeliveryTimePreference.valueOf(resultSet.getString("delivery_time_preference")));
     }
 
     private Long nullableLong(ResultSet resultSet, String column) throws SQLException {

@@ -22,6 +22,9 @@ public record AdvancedPricingPolicyResponse(
         List<Zone> zones,
         List<WeightTier> weightTiers,
         List<TimeSlot> timeSlots,
+        long morningSurchargeAriary,
+        long afternoonSurchargeAriary,
+        List<KeywordRule> keywordRules,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -36,6 +39,9 @@ public record AdvancedPricingPolicyResponse(
                         item.surchargeAriary())).toList(),
                 policy.timeSlots().stream().map(item -> new TimeSlot(item.id(), item.label(), item.startTime(),
                         item.endTime(), item.surchargeAriary())).toList(),
+                policy.morningSurchargeAriary(), policy.afternoonSurchargeAriary(),
+                policy.keywordRules().stream().map(item -> new KeywordRule(item.id(), item.keyword(),
+                        item.deliveryFeeAriary())).toList(),
                 policy.createdAt(), policy.updatedAt());
     }
 
@@ -43,4 +49,5 @@ public record AdvancedPricingPolicyResponse(
     public record WeightTier(UUID id, BigDecimal maxWeightKg, long surchargeAriary) {}
     public record TimeSlot(UUID id, String label, LocalTime startTime, LocalTime endTime,
             long surchargeAriary) {}
+    public record KeywordRule(UUID id, String keyword, long deliveryFeeAriary) {}
 }

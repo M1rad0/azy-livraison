@@ -17,6 +17,9 @@ public record AdvancedPricingPolicy(
         List<PricingZone> zones,
         List<PricingWeightTier> weightTiers,
         List<PricingTimeSlot> timeSlots,
+        long morningSurchargeAriary,
+        long afternoonSurchargeAriary,
+        List<PricingKeywordRule> keywordRules,
         long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -28,5 +31,14 @@ public record AdvancedPricingPolicy(
         zones = List.copyOf(zones);
         weightTiers = List.copyOf(weightTiers);
         timeSlots = List.copyOf(timeSlots);
+        keywordRules = List.copyOf(keywordRules);
+    }
+
+    public AdvancedPricingPolicy(short id, UUID clientAccountId, DeliveryRequestKind requestKind,
+            PricingDistanceMode distanceMode, PricingCenter center, BigDecimal defaultWeightKg,
+            List<PricingZone> zones, List<PricingWeightTier> weightTiers, List<PricingTimeSlot> timeSlots,
+            long version, Instant createdAt, Instant updatedAt) {
+        this(id, clientAccountId, requestKind, distanceMode, center, defaultWeightKg, zones, weightTiers,
+                timeSlots, 500, 500, List.of(), version, createdAt, updatedAt);
     }
 }

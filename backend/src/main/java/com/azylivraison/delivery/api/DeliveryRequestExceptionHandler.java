@@ -9,6 +9,8 @@ import com.azylivraison.delivery.service.DeliveryRequestNotFoundException;
 import com.azylivraison.delivery.service.InvalidDeliveryRequestFilterException;
 import com.azylivraison.delivery.service.InvalidDeliveryRequestException;
 import com.azylivraison.delivery.service.ExpressDeliveryForbiddenException;
+import com.azylivraison.delivery.service.DeliveryPackageConflictException;
+import com.azylivraison.dailyworkflow.service.DailyWorkflowConflictException;
 import com.azylivraison.pricing.service.DestinationOutsidePricingZonesException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
 import com.azylivraison.pricing.api.PublicPricingController;
@@ -26,9 +28,23 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         ClientDeliveryPricingController.class,
         AdminDeliveryRequestController.class,
         AdminExpressDeliveryController.class,
+        ClientDeliveryPackageController.class,
+        AdminDeliveryPackageController.class,
         PublicPricingController.class
 })
 public class DeliveryRequestExceptionHandler {
+
+    @ExceptionHandler(DeliveryPackageConflictException.class)
+    ResponseEntity<DeliveryApiErrorResponse> packageConflict(DeliveryPackageConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new DeliveryApiErrorResponse(
+                "DELIVERY_PACKAGE_CONFLICT", exception.getMessage(), List.of()));
+    }
+
+    @ExceptionHandler(DailyWorkflowConflictException.class)
+    ResponseEntity<DeliveryApiErrorResponse> closedClientConflict(DailyWorkflowConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new DeliveryApiErrorResponse(
+                "DAILY_WORKFLOW_CONFLICT", exception.getMessage(), List.of()));
+    }
 
     @ExceptionHandler(DailyCapacityExceededException.class)
     ResponseEntity<DailyCapacityErrorResponse> dailyCapacityExceeded(

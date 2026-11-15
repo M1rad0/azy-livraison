@@ -18,11 +18,12 @@ import {
   type DeliveryRequestRecord,
 } from '../api/client'
 import type { Location } from '../api/csvImports'
-import { endOfOneHourWindow } from '../deliveryWindows'
+import { formatOneHourWindow } from '../deliveryWindows'
 import { MAX_CLIENT_PACKAGES } from '../clientPackageCsv'
 import {
   ClientPackageDialog,
   emptyClientPackage,
+  packageWindowInput,
   type ClientPackageDraft,
 } from './ClientPackageDialog'
 import { LocationPicker } from './LocationPicker'
@@ -187,9 +188,7 @@ export function ClientDeliveryRequestForm({
           amountToCollectAriary: Number(item.amountToCollectAriary),
           mobileMoneyPaid: item.mobileMoneyPaid,
           ...(item.weightKg ? { weightKg: Number(item.weightKg) } : {}),
-          ...(item.desiredDeliveryTime
-            ? { desiredDeliveryTime: item.desiredDeliveryTime }
-            : {}),
+          ...packageWindowInput(item),
         })),
       })
       onCreated(created, saveAsDefaultPickup)
@@ -330,7 +329,7 @@ export function ClientDeliveryRequestForm({
                     <div><strong>{item.destination.label || item.destination.destinationQuery}</strong>{item.importResolvedPlace && <small title={item.importResolvedPlace}>Lieu retenu : {item.importResolvedPlace.split(',').map((part) => part.trim()).filter(Boolean).slice(0, 2).join(', ')}</small>}<small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Lieu ou tarif à confirmer'}{item.faritra ? ' · Faritra' : ''}</small>{item.importWarning && <small className="client-package-row__warning">{item.importWarning}</small>}</div>
                     <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-package-row__tags">
-                      {item.desiredDeliveryTime && <span>{item.desiredDeliveryTime}–{endOfOneHourWindow(item.desiredDeliveryTime)}</span>}
+                      {formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference) && <span>{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference)}</span>}
                       {item.weightKg && <span>{item.weightKg} kg</span>}
                       {item.faritra && <span>Faritra</span>}
                     </div>

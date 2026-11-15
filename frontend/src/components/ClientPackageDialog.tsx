@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Banknote, BadgeDollarSign, Check, Clock3, LoaderCircle, MapPin, PackagePlus, Scale, TriangleAlert, X } from 'lucide-react'
-import { ClientApiError, quoteDeliveryPrice, type DeliveryPricingQuote, type DeliveryRequestKind } from '../api/client'
+import { ClientApiError, quoteDeliveryPrice, type DeliveryPricingOptions, type DeliveryPricingQuote, type DeliveryRequestKind, type DeliveryTimePreference } from '../api/client'
 import type { Location } from '../api/csvImports'
 import { formatPricingDistanceSummary } from '../api/pricing'
 import { endOfOneHourWindow } from '../deliveryWindows'
@@ -17,9 +17,18 @@ export interface ClientPackageDraft {
   mobileMoneyPaid: boolean
   weightKg: string
   desiredDeliveryTime: string
+  desiredDeliveryEndTime?: string
+  deliveryTimePreference?: DeliveryTimePreference
   pricingQuote?: DeliveryPricingQuote
   importWarning?: string
   importResolvedPlace?: string
+}
+
+export function packageWindowInput(value: ClientPackageDraft) {
+  const preference = value.deliveryTimePreference ?? (value.desiredDeliveryTime ? 'CUSTOM' : 'NONE')
+  if (preference === 'MORNING' || preference === 'AFTERNOON') return { deliveryTimePreference: preference }
+  return value.desiredDeliveryTime ? { deliveryTimePreference: 'CUSTOM' as const, desiredDeliveryTime: value.desiredDeliveryTime,
+    desiredDeliveryEndTime: value.desiredDeliveryEndTime || endOfOneHourWindow(value.desiredDeliveryTime) } : {}
 }
 
 export function emptyClientPackage(localId: string): ClientPackageDraft {
@@ -78,9 +87,9 @@ export function ClientPackageDialog({
   quotePrice?: (
     destination: Parameters<typeof quoteDeliveryPrice>[0],
     signal: AbortSignal,
-    options: { requestKind: DeliveryRequestKind; weightKg?: number; desiredDeliveryTime?: string },
+    options: DeliveryPricingOptions & { requestKind: DeliveryRequestKind },
   ) => Promise<DeliveryPricingQuote>
-  onSave: (value: ClientPackageDraft) => void
+  onSave: (value: ClientPackageDraft) => void | Promise<void>
   onClose: () => void
 }) {
   const titleId = useId()
@@ -88,8 +97,12 @@ export function ClientPackageDialog({
   const [error, setError] = useState<string>()
   const [quoteBusy, setQuoteBusy] = useState(false)
   const [quoteError, setQuoteError] = useState<{ message: string; outside: boolean }>()
+  const [saving, setSaving] = useState(false)
   const expressMinimum = nextMinuteInAntananarivo()
-  const desiredDeliveryEndTime = endOfOneHourWindow(value.desiredDeliveryTime)
+  const preference = value.deliveryTimePreference ?? (value.desiredDeliveryTime ? 'CUSTOM' : 'NONE')
+  const preset = preference === 'MORNING' || preference === 'AFTERNOON'
+  const desiredDeliveryEndTime = preset ? preference === 'MORNING' ? '12:00' : '23:59'
+    : value.desiredDeliveryEndTime || endOfOneHourWindow(value.desiredDeliveryTime)
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -101,11 +114,11 @@ export function ClientPackageDialog({
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !saving) onClose()
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+  }, [onClose, saving])
 
   useEffect(() => {
     if (!confirmed(value.destination)) {
@@ -129,9 +142,7 @@ export function ClientPackageDialog({
     const options = {
       requestKind,
       ...(value.weightKg ? { weightKg: Number(value.weightKg) } : {}),
-      ...(value.desiredDeliveryTime
-        ? { desiredDeliveryTime: value.desiredDeliveryTime }
-        : {}),
+      ...packageWindowInput(value),
     }
     void (quotePrice
       ? quotePrice(destination, controller.signal, options)
@@ -152,9 +163,10 @@ export function ClientPackageDialog({
     })
 
     return () => controller.abort()
-  }, [accessToken, packageNumber, quotePrice, requestKind, value.destination.latitude, value.destination.longitude, value.weightKg, value.desiredDeliveryTime])
+  }, [accessToken, packageNumber, quotePrice, requestKind, value.destination.latitude, value.destination.longitude, value.destination.label, value.destination.destinationQuery, value.weightKg, value.desiredDeliveryTime, value.desiredDeliveryEndTime, value.deliveryTimePreference])
 
-  function save() {
+  async function save() {
+    if (saving) return
     if (!value.recipientName.trim()) {
       setError('Indiquez le nom du destinataire.')
       return
@@ -188,12 +200,21 @@ export function ClientPackageDialog({
       setError('Le poids doit être supérieur à zéro.')
       return
     }
-    if (requestKind === 'EXPRESS' && value.desiredDeliveryTime
+    if (!preset && value.desiredDeliveryTime && desiredDeliveryEndTime === value.desiredDeliveryTime) {
+      setError('La fin du créneau doit être différente du début.')
+      return
+    }
+    if (requestKind === 'EXPRESS' && preference === 'MORNING' && currentTimeInAntananarivo() >= '12:00') {
+      setError('La période du matin est déjà terminée.')
+      return
+    }
+    if (requestKind === 'EXPRESS' && !preset && value.desiredDeliveryTime
       && value.desiredDeliveryTime <= currentTimeInAntananarivo()) {
       setError('L’heure souhaitée doit être postérieure à l’heure actuelle.')
       return
     }
-    onSave({
+    setSaving(true)
+    try { await onSave({
       ...value,
       importWarning: undefined,
       importResolvedPlace: undefined,
@@ -203,12 +224,14 @@ export function ClientPackageDialog({
         ...value.destination,
         label: value.destination.label.trim(),
       },
-    })
+    }) } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Le colis n’a pas pu être enregistré.')
+    } finally { setSaving(false) }
   }
 
   return createPortal(
     <div className="client-modal-overlay" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose()
+      if (event.target === event.currentTarget && !saving) onClose()
     }}>
       <section className="client-package-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="client-modal-header">
@@ -219,10 +242,10 @@ export function ClientPackageDialog({
               <h2 id={titleId}>{initialValue.recipientName ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
             </div>
           </div>
-          <button className="icon-button" type="button" aria-label="Fermer" onClick={onClose}><X aria-hidden="true" /></button>
+          <button className="icon-button" type="button" aria-label="Fermer" disabled={saving} onClick={onClose}><X aria-hidden="true" /></button>
         </header>
 
-        <div className="client-package-dialog__body">
+        <fieldset className="client-package-dialog__body client-package-dialog__fields" disabled={saving}>
           <div className="client-form-grid">
             <label className="client-field">
               <span>Nom du client destinataire</span>
@@ -296,7 +319,7 @@ export function ClientPackageDialog({
                   <small>Zone {value.pricingQuote.pricingZoneName}{value.pricingQuote.timeSlotLabel ? ` · ${value.pricingQuote.timeSlotLabel}` : ''}</small>
                   <strong>{value.pricingQuote.deliveryFeeAriary.toLocaleString('fr-MG')} Ar de livraison</strong>
                   <small>{formatPricingDistanceSummary(value.pricingQuote.distanceFromCenterMeters, value.pricingQuote.distanceMode)}</small>
-                  {(value.pricingQuote.weightSurchargeAriary || value.pricingQuote.timeSurchargeAriary) ? (
+                  {value.pricingQuote.finalFeeOverridden ? <small>Tarif convenu conservé</small> : (value.pricingQuote.weightSurchargeAriary || value.pricingQuote.timeSurchargeAriary) ? (
                     <small>Base {(value.pricingQuote.baseDeliveryFeeAriary ?? 0).toLocaleString('fr-MG')} Ar
                       {value.pricingQuote.weightSurchargeAriary ? ` · poids +${value.pricingQuote.weightSurchargeAriary.toLocaleString('fr-MG')} Ar` : ''}
                       {value.pricingQuote.timeSurchargeAriary ? ` · créneau +${value.pricingQuote.timeSurchargeAriary.toLocaleString('fr-MG')} Ar` : ''}
@@ -330,30 +353,38 @@ export function ClientPackageDialog({
               role="group"
               aria-labelledby={`${titleId}-delivery-window-label`}
             >
-              <span id={`${titleId}-delivery-window-label`}>Créneau de livraison d’une heure · facultatif</span>
+              <span id={`${titleId}-delivery-window-label`}>Créneau de livraison · facultatif</span>
+              <div className="client-delivery-periods" role="group" aria-label="Choix du créneau">
+                {(['CUSTOM', 'MORNING', 'AFTERNOON'] as const).map((mode) => <button key={mode} type="button"
+                  aria-pressed={mode === 'CUSTOM' ? !preset : preference === mode}
+                  disabled={requestKind === 'EXPRESS' && mode === 'MORNING' && currentTimeInAntananarivo() >= '12:00'}
+                  onClick={() => setValue({ ...value, deliveryTimePreference: mode, desiredDeliveryTime: '', desiredDeliveryEndTime: '' })}>
+                  {mode === 'CUSTOM' ? 'Heures précises' : mode === 'MORNING' ? 'Matin' : 'Soir'}</button>)}
+              </div>
               <div className="client-time-window">
                 <span><Clock3 aria-hidden="true" /><input
                   aria-label="Début du créneau"
-                  value={value.desiredDeliveryTime}
+                  value={preset ? preference === 'MORNING' ? '00:00' : '12:00' : value.desiredDeliveryTime}
                   type="time"
                   min={requestKind === 'EXPRESS' ? expressMinimum.value : '00:00'}
-                  disabled={requestKind === 'EXPRESS' && !expressMinimum.available}
-                  onChange={(event) => setValue({ ...value, desiredDeliveryTime: event.target.value })}
+                  disabled={preset || (requestKind === 'EXPRESS' && !expressMinimum.available)}
+                  onChange={(event) => setValue({ ...value, deliveryTimePreference: event.target.value ? 'CUSTOM' : 'NONE', desiredDeliveryTime: event.target.value,
+                    desiredDeliveryEndTime: value.desiredDeliveryEndTime || endOfOneHourWindow(event.target.value) })}
                 /></span>
                 <i aria-hidden="true">à</i>
                 <span><Clock3 aria-hidden="true" /><input
                   aria-label="Fin du créneau"
                   value={desiredDeliveryEndTime}
                   type="time"
-                  readOnly
-                  tabIndex={-1}
+                  disabled={preset}
+                  onChange={(event) => setValue({ ...value, desiredDeliveryEndTime: event.target.value })}
                 /></span>
               </div>
-              <small>{requestKind === 'EXPRESS'
+              <small>{preset ? preference === 'MORNING' ? 'Livraison avant midi.' : 'Livraison après midi.' : requestKind === 'EXPRESS'
                 ? expressMinimum.available
                   ? 'Le début doit être postérieur à maintenant.'
                   : 'Aucun nouveau créneau ne peut commencer avant minuit.'
-                : 'La fin est fixée automatiquement une heure après le début.'}{value.desiredDeliveryTime.startsWith('23:') ? ' La fin se situe le lendemain.' : ''}</small>
+                : 'Choisissez librement le début et la fin, ou laissez les heures vides.'}{!preset && value.desiredDeliveryTime && desiredDeliveryEndTime < value.desiredDeliveryTime ? ' La fin se situe le lendemain.' : ''}</small>
             </div>
             <label className="client-field client-field--icon">
               <span>Poids (kg) · facultatif</span>
@@ -380,11 +411,11 @@ export function ClientPackageDialog({
           </div>
 
           {error && <p className="client-alert client-alert--error" role="alert">{error}</p>}
-        </div>
+        </fieldset>
 
         <footer className="client-modal-footer">
-          <button className="button button--secondary" type="button" onClick={onClose}>Annuler</button>
-          <button className="button" type="button" disabled={quoteBusy || (confirmed(value.destination) && !value.pricingQuote)} onClick={save}><Check aria-hidden="true" />Enregistrer le colis</button>
+          <button className="button button--secondary" type="button" disabled={saving} onClick={onClose}>Annuler</button>
+          <button className="button" type="button" disabled={saving || quoteBusy || (confirmed(value.destination) && !value.pricingQuote)} onClick={() => void save()}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Check aria-hidden="true" />}{saving ? 'Enregistrement…' : 'Enregistrer le colis'}</button>
         </footer>
       </section>
     </div>,

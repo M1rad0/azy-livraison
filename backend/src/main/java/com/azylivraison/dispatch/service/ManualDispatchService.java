@@ -54,6 +54,39 @@ public class ManualDispatchService {
     public Optional<ManualDispatchDraft> forPlan(UUID id) { return drafts.forPlan(id); }
     public ManualDispatchDraft get(UUID id) { return drafts.find(id, false).orElseThrow(DispatchNotFoundException::new); }
 
+    /** Refresh commercial inputs after an authorized pre-validation edit; stale editors
+     * must reload instead of overwriting the refreshed snapshot with an old version. */
+    @Transactional
+    public void synchronizePendingPackages(LocalDate date, UUID actor) {
+        source.lockAdmissionGate();
+        var active = drafts.active(date);
+        if (active.isEmpty()) return;
+        ManualDispatchDraft current = drafts.find(active.get().id(), true).orElseThrow(DispatchNotFoundException::new);
+        if (!"DRAFT".equals(current.status())) return;
+        List<DispatchSourcePackage> packages = source.findPending(date);
+        if (packages.isEmpty()) { cancel(current.id(), current.version(), actor); return; }
+        List<Pickup> pickups = groupedPickups(packages);
+        Set<String> pickupIds = pickups.stream().map(Pickup::id).collect(Collectors.toSet());
+        Set<UUID> packageIds = packages.stream().map(DispatchSourcePackage::packageId).collect(Collectors.toSet());
+        List<Collection> collections = new ArrayList<>();
+        List<Delivery> deliveries = new ArrayList<>();
+        for (DraftCourier courier : current.couriers()) {
+            var retainedPickups = current.collections().stream().filter(c -> c.courierId().equals(courier.courierId()) && pickupIds.contains(c.pickupId()))
+                    .sorted(Comparator.comparingInt(Collection::order)).toList();
+            for (int i = 0; i < retainedPickups.size(); i++) collections.add(new Collection(retainedPickups.get(i).pickupId(), courier.courierId(), i));
+            var retainedPackages = current.deliveries().stream().filter(d -> d.courierId().equals(courier.courierId()) && packageIds.contains(d.packageId()))
+                    .sorted(Comparator.comparingInt(Delivery::order)).toList();
+            for (int i = 0; i < retainedPackages.size(); i++) deliveries.add(new Delivery(retainedPackages.get(i).packageId(), courier.courierId(), i));
+        }
+        boolean completePickups = collections.size() == pickups.size();
+        boolean completePackages = deliveries.size() == packages.size();
+        Step step = !completePickups ? Step.COLLECTION : current.step() == Step.REVIEW && !completePackages ? Step.DELIVERY : current.step();
+        ManualDispatchDraft updated = new ManualDispatchDraft(current.id(), date, current.version() + 1, "DRAFT", step,
+                current.hub(), current.couriers(), packages, pickups, collections, deliveries, null);
+        drafts.update(updated, current.version());
+        drafts.event(date, actor, "MANUAL_DISPATCH_INPUTS_UPDATED", Map.of("draftId", current.id(), "version", updated.version()));
+    }
+
     @Transactional
     public ManualDispatchDraft create(CreateDispatchCommand command) {
         if (command.serviceDate() == null || command.actorAccountId() == null
@@ -159,7 +192,7 @@ public class ManualDispatchService {
             return new DispatchPackageOutcome(p.packageId(), p.deliveryRequestId(), true, c, d.courierId(),
                     !c.equals(d.courierId()), null, d.order() + 1, null, null, p.recipientName(), p.faritra(),
                     p.contact(), p.amountToCollectAriary(), p.mobileMoneyPaid(), p.desiredDeliveryTime(),
-                    p.pricingSnapshot(), p.effectiveWeightKg(), p.destination());
+                    p.pricingSnapshot(), p.effectiveWeightKg(), p.destination(), p.desiredDeliveryEndTime(), p.deliveryTimePreference());
         }).toList());
         Set<UUID> collectionCouriers = new HashSet<>(collector.values());
         Set<UUID> distributionCouriers = draft.deliveries().stream().map(Delivery::courierId).collect(Collectors.toSet());
