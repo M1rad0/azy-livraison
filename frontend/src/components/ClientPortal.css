@@ -747,6 +747,17 @@
   gap: 0.45rem;
 }
 
+.client-package-dialog__fields { margin: 0; border: 0; min-width: 0; box-sizing: border-box; }
+.client-delivery-periods { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: .25rem; padding: .3rem; background: #edf2f6; border: 1px solid #e0e7ee; border-radius: .85rem; }
+.client-delivery-periods > button { min-width: 0; padding: .65rem .4rem; border: 0; border-radius: .65rem; background: transparent; color: #647586; font: inherit; font-size: .75rem; cursor: pointer; }
+.client-delivery-periods > button[aria-pressed=true] { color: #102f46; background: white; box-shadow: 0 3px 10px #102f4610; }
+.client-delivery-periods > button:focus-visible { outline: 2px solid #f45b0b; outline-offset: 2px; }
+.client-delivery-periods > button:disabled { opacity: .5; cursor: not-allowed; }
+.client-time-window input:disabled { color: #7d8992; background: #edf1f4; cursor: not-allowed; }
+.package-reschedule-date { display: grid; gap: .5rem; margin-top: 1rem; font-size: .85rem; }
+.package-reschedule-date > input { width: 100%; min-height: 2.8rem; box-sizing: border-box; padding: .7rem .85rem; border: 1px solid #dfe5eb; border-radius: .78rem; color: #102f46; background: #f7f9fb; font: inherit; }
+.package-reschedule-date > input:focus { outline: none; border-color: #f45b0b; box-shadow: 0 0 0 4px #f45b0b1f; }
+
 .client-time-window > span {
   position: relative;
   display: block;

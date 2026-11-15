@@ -5,6 +5,7 @@ import type {
   StrategyMetrics,
 } from './optimization'
 import type { PricingDistanceMode } from './pricing'
+import type { CreateDeliveryPackageInput, DeliveryPricingOptions, DeliveryTimePreference } from './client'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -54,6 +55,8 @@ export interface DeliveryPackage {
   desiredDeliveryTime?: string | null
   desiredDeliveryEndTime?: string | null
   desiredDeliveryEndsNextDay?: boolean
+  deliveryTimePreference?: DeliveryTimePreference
+  canEdit?: boolean
   pricingZoneId?: string | null
   pricingZoneName?: string | null
   deliveryFeeAriary?: number | null
@@ -280,6 +283,9 @@ export interface AdvancedPricingPolicy {
   zones: DeliveryPricingZone[]
   weightTiers: Array<{ id: string; maxWeightKg: number; surchargeAriary: number }>
   timeSlots: Array<{ id: string; label: string; startTime: string; endTime: string; surchargeAriary: number }>
+  morningSurchargeAriary?: number
+  afternoonSurchargeAriary?: number
+  keywordRules?: Array<{ id?: string; keyword: string; deliveryFeeAriary: number }>
 }
 
 export interface AdvancedPricingPolicyInput {
@@ -292,6 +298,9 @@ export interface AdvancedPricingPolicyInput {
   zones: Array<{ id?: string; name: string; maxDistanceMeters: number; deliveryFeeAriary: number }>
   weightTiers: Array<{ id?: string; maxWeightKg: number; surchargeAriary: number }>
   timeSlots: Array<{ id?: string; label: string; startTime: string; endTime: string; surchargeAriary: number }>
+  morningSurchargeAriary?: number
+  afternoonSurchargeAriary?: number
+  keywordRules?: Array<{ id?: string; keyword: string; deliveryFeeAriary: number }>
 }
 
 export interface DispatchPlanSummary {
@@ -343,6 +352,7 @@ export interface DispatchPackageOutcome {
   desiredDeliveryTime?: string | null
   desiredDeliveryEndTime?: string | null
   desiredDeliveryEndsNextDay?: boolean
+  deliveryTimePreference?: DeliveryTimePreference
   effectiveWeightKg: number
   pricingZoneId?: string | null
   pricingZoneName?: string | null
@@ -959,6 +969,8 @@ export function createAdminDeliveryRequest(
       mobileMoneyPaid: boolean
       weightKg?: number
       desiredDeliveryTime?: string
+      desiredDeliveryEndTime?: string
+      deliveryTimePreference?: DeliveryTimePreference
     }>
   },
   accessToken: string,
@@ -974,7 +986,7 @@ export function quoteAdminDeliveryPrice(
   requestKind: DeliveryRequestKind,
   accessToken: string,
   signal?: AbortSignal,
-  options: { weightKg?: number; desiredDeliveryTime?: string } = {},
+  options: Omit<DeliveryPricingOptions, 'requestKind'> = {},
 ) {
   return adminRequest<{
     pricingZoneId: string
@@ -991,10 +1003,22 @@ export function quoteAdminDeliveryPrice(
     desiredDeliveryTime?: string | null
     desiredDeliveryEndTime?: string | null
     desiredDeliveryEndsNextDay?: boolean
+    deliveryTimePreference?: DeliveryTimePreference
+    matchedKeyword?: string | null
   }>(`clients/${encodeURIComponent(clientAccountId)}/delivery-pricing/quote`, accessToken, {
     ...jsonRequest('POST', { destination, requestKind, ...options }),
     signal,
   })
+}
+
+export function updateAdminDeliveryPackage(packageId: string, expectedVersion: number, input: CreateDeliveryPackageInput, accessToken: string) {
+  return adminRequest<DeliveryRequest>(`delivery-packages/${encodeURIComponent(packageId)}`, accessToken,
+    jsonRequest('PUT', { expectedVersion, ...input }))
+}
+
+export function rescheduleAdminDeliveryPackage(packageId: string, expectedVersion: number, requestedDate: string, accessToken: string) {
+  return adminRequest<DeliveryRequest>(`delivery-packages/${encodeURIComponent(packageId)}/reschedule`, accessToken,
+    jsonRequest('POST', { expectedVersion, requestedDate }))
 }
 
 export function listExpressDeliveries(accessToken: string, signal?: AbortSignal) {

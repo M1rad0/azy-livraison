@@ -198,6 +198,7 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
 
       {tab === 'queue' && (
         <AdminQueuePanel
+          accessToken={accessToken}
           requests={pendingRequests}
           filters={pendingFilters}
           busy={pendingBusy}

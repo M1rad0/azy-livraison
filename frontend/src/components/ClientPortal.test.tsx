@@ -144,6 +144,26 @@ describe('ClientPortal', () => {
     expect(screen.getByText(/dont 3.*000 Ar de livraison/)).toBeInTheDocument()
   })
 
+  it('propose modification et reprogrammation tant que le serveur les autorise', async () => {
+    vi.mocked(listDeliveryRequests).mockResolvedValue([{ ...request, packages: request.packages.map((item) => ({ ...item, canEdit: true })) }])
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByText('Boutique Analakely', { selector: '.client-history-card__identity strong' }))
+    expect(screen.getByRole('button', { name: 'Reprogrammer' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }))
+    expect(await screen.findByRole('dialog', { name: 'Modifier le colis' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Contact client')).toHaveValue('032 00 000 00')
+  })
+
+  it('masque modification et reprogrammation après dispatch', async () => {
+    vi.mocked(listDeliveryRequests).mockResolvedValue([{ ...request, packages: request.packages.map((item) => ({ ...item, canEdit: false, status: 'DISPATCHED', dispatchPlanId: 'plan' })) }])
+    render(<ClientPortal accessToken="client-token" />)
+    await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })
+    fireEvent.click(screen.getByText('Boutique Analakely', { selector: '.client-history-card__identity strong' }))
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reprogrammer' })).not.toBeInTheDocument()
+  })
+
   it('masque la navigation express quand le compte client n’y a pas droit', async () => {
     render(
       <PortalShell

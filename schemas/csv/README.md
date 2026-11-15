@@ -17,7 +17,25 @@ Le retrait et la date sont communs à la demande et se renseignent dans le formu
 | `faritra` | `oui`/`non`, `true`/`false` ou `1`/`0`. Vide = non. |
 | `mobile_money_paid` | Même format de booléen. Information uniquement. Vide = non. |
 | `weight_kg` | Poids facultatif, point ou virgule décimale. Vide = poids par défaut du compte/réglage. |
-| `desired_delivery_time` | Début du créneau facultatif au format `HH:mm`. La fin est une heure après. Pour un express, cette heure doit être postérieure à maintenant à Antananarivo. |
+| `desired_delivery_time` | Début du créneau libre facultatif au format `HH:mm`. Pour un express, cette heure doit être postérieure à maintenant à Antananarivo. |
+| `desired_delivery_end_time` | Fin du créneau libre, sans limite d'une heure. Une fin inférieure au début indique le lendemain ; début et fin identiques sont refusés. |
+| `delivery_time_preference` | `NONE` (aucune heure), `CUSTOM` (heures précises), `MORNING` ou `MATIN` (avant midi), `AFTERNOON` ou `SOIR` (après midi). Les périodes sont exclusives des heures précises : laisser les deux heures vides pour ces modes. |
+
+Un ancien CSV ne contenant qu'une heure de début reste compatible : la fin est alors fixée à +1 h. Pour `CUSTOM` explicite, renseigner le début et la fin. Matin et Soir appliquent le supplément de période de la grille (500 Ar par défaut), sans cumul avec les créneaux horaires. Les heures précises conservent le supplément déterminé par l'heure de début.
+
+## Importer des tarifs par mot-clé
+
+Dans l'administration des tarifs, un second import accepte un CSV UTF-8 `cle;tarif` (également `keyword;delivery_fee_ariary`). Par exemple :
+
+```csv
+cle;tarif
+Cotisse;8000
+Cotisse Ambodivona;7500
+```
+
+Le tarif remplace la base de zone, pas les suppléments de poids ou d'horaire. La clé la plus longue correspondante est prioritaire ; à égalité, l'ordre de la grille s'applique. Casse et accents sont ignorés. L'import ajoute les règles sans remplacer celles qui existent déjà ; vérifier puis enregistrer la grille pour les appliquer.
+
+## Validation des fichiers de colis
 
 Les colonnes facultatives peuvent être omises. Les en-têtes restent ceux du modèle ; leur ordre est libre. Les fichiers sont limités à 10 Mo et la demande complète à 500 colis. Utiliser CSV UTF-8, avec ou sans BOM, et le séparateur point-virgule (recommandé) ou virgule. Les cellules contenant le séparateur, des guillemets ou plusieurs lignes doivent être entourées de guillemets ; un guillemet dans une cellule s’écrit `""`. Dans un tableur, conserver la colonne contact au format texte avant l’export CSV.
 

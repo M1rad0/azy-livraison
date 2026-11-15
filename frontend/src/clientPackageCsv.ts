@@ -1,19 +1,22 @@
 import {
   quoteDeliveryPrice,
   type ClientLocation,
+  type DeliveryPricingOptions,
   type DeliveryPricingQuote,
   type DeliveryRequestKind,
+  type DeliveryTimePreference,
 } from './api/client'
 import { searchAddress } from './api/geocoding'
-import type { ClientPackageDraft } from './components/ClientPackageDialog'
+import { packageWindowInput, type ClientPackageDraft } from './components/ClientPackageDialog'
+import { endOfOneHourWindow } from './deliveryWindows'
 
 export const CLIENT_PACKAGE_CSV_COLUMNS = [
   'recipient_name', 'destination_label', 'destination_query', 'latitude', 'longitude',
   'contact', 'amount_to_collect_ariary', 'faritra', 'mobile_money_paid', 'weight_kg',
-  'desired_delivery_time',
+  'desired_delivery_time', 'desired_delivery_end_time', 'delivery_time_preference',
 ] as const
 
-export const CLIENT_PACKAGE_CSV_TEMPLATE = `${CLIENT_PACKAGE_CSV_COLUMNS.join(';')}\nMiora;Bureau Ankorondrano;Ankorondrano, Antananarivo;;;0340000000;25000;non;non;1,5;14:00\nRakoto;Boutique Analakely;;-18.9089;47.5212;0320000000;15000;non;oui;;\n`
+export const CLIENT_PACKAGE_CSV_TEMPLATE = `${CLIENT_PACKAGE_CSV_COLUMNS.join(';')}\nMiora;Bureau Ankorondrano;Ankorondrano, Antananarivo;;;0340000000;25000;non;non;1,5;14:00;15:30;CUSTOM\nRakoto;Boutique Analakely;;-18.9089;47.5212;0320000000;15000;non;oui;;;;NONE\n`
 export const MAX_CLIENT_PACKAGES = 500
 export const MAX_CLIENT_PACKAGE_CSV_BYTES = 10 * 1024 * 1024
 
@@ -156,11 +159,33 @@ export function parseClientPackageCsv(content: string, requestKind: DeliveryRequ
     if (amount === undefined || !Number.isSafeInteger(amount) || amount < 0) error('amount_to_collect_ariary', 'Le montant à récupérer doit être un entier positif ou nul.')
     const weight = numeric('weight_kg')
     if (weight !== undefined && (!(weight > 0) || weight > 9_999_999.999)) error('weight_kg', 'Le poids doit être supérieur à zéro et ne pas dépasser 9 999 999,999 kg.')
-    const time = field('desired_delivery_time')
-    const timeMatch = /^(\d{1,2}):([0-5]\d)(?::00)?$/.exec(time)
-    const desiredDeliveryTime = timeMatch ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}` : time
-    if (time && (!timeMatch || Number(timeMatch[1]) > 23)) error('desired_delivery_time', 'Utilisez une heure au format HH:mm, par exemple 14:00.')
-    else if (requestKind === 'EXPRESS' && time && desiredDeliveryTime <= expressCurrentTime) error('desired_delivery_time', 'L’heure souhaitée doit être postérieure à maintenant pour un express.')
+    const parseTime = (name: string) => {
+      const time = field(name)
+      if (!time) return ''
+      const match = /^(\d{1,2}):([0-5]\d)(?::00)?$/.exec(time)
+      if (!match || Number(match[1]) > 23) { error(name, 'Utilisez une heure au format HH:mm, par exemple 14:00.'); return '' }
+      return `${match[1].padStart(2, '0')}:${match[2]}`
+    }
+    let desiredDeliveryTime = parseTime('desired_delivery_time')
+    let desiredDeliveryEndTime = parseTime('desired_delivery_end_time')
+    const rawPreference = field('delivery_time_preference').toUpperCase()
+    const preferences: Record<string, DeliveryTimePreference> = { NONE: 'NONE', CUSTOM: 'CUSTOM', MORNING: 'MORNING', MATIN: 'MORNING', AFTERNOON: 'AFTERNOON', SOIR: 'AFTERNOON' }
+    const inferredPreference = field('desired_delivery_time') || field('desired_delivery_end_time') ? 'CUSTOM' : 'NONE'
+    const deliveryTimePreference = rawPreference ? preferences[rawPreference] : inferredPreference
+    if (rawPreference && !deliveryTimePreference) error('delivery_time_preference', 'Utilisez NONE, CUSTOM, MORNING (MATIN) ou AFTERNOON (SOIR).')
+    if (deliveryTimePreference === 'CUSTOM') {
+      if (!field('desired_delivery_time')) error('desired_delivery_time', 'Indiquez le début du créneau personnalisé.')
+      if (!field('desired_delivery_end_time')) {
+        if (rawPreference === 'CUSTOM') error('desired_delivery_end_time', 'Indiquez la fin du créneau personnalisé.')
+        else if (desiredDeliveryTime) desiredDeliveryEndTime = endOfOneHourWindow(desiredDeliveryTime)
+      }
+      if (desiredDeliveryTime && desiredDeliveryEndTime === desiredDeliveryTime) error('desired_delivery_end_time', 'Le début et la fin du créneau doivent être différents. Une fin plus tôt correspond au lendemain.')
+      if (requestKind === 'EXPRESS' && desiredDeliveryTime && desiredDeliveryTime <= expressCurrentTime) error('desired_delivery_time', 'L’heure souhaitée doit être postérieure à maintenant pour un express.')
+    } else if (deliveryTimePreference) {
+      if (field('desired_delivery_time') || field('desired_delivery_end_time')) error('delivery_time_preference', 'Choisissez une période ou un créneau personnalisé, sans les combiner. Le mode NONE ne comporte pas d’heures.')
+      desiredDeliveryTime = ''; desiredDeliveryEndTime = ''
+      if (requestKind === 'EXPRESS' && deliveryTimePreference === 'MORNING' && expressCurrentTime >= '12:00') error('delivery_time_preference', 'Le choix Matin est indisponible à partir de midi pour un express.')
+    }
     return {
       line: row.line,
       value: {
@@ -176,6 +201,8 @@ export function parseClientPackageCsv(content: string, requestKind: DeliveryRequ
         faritra: boolean('faritra'),
         mobileMoneyPaid: boolean('mobile_money_paid'),
         desiredDeliveryTime,
+        desiredDeliveryEndTime,
+        deliveryTimePreference,
       },
     }
   })
@@ -191,7 +218,7 @@ export interface ClientPackageCsvImportOptions {
   quotePrice?: (
     destination: ClientLocation,
     signal: AbortSignal,
-    options: { requestKind: DeliveryRequestKind; weightKg?: number; desiredDeliveryTime?: string },
+    options: DeliveryPricingOptions & { requestKind: DeliveryRequestKind },
   ) => Promise<DeliveryPricingQuote>
   onProgress?: (completed: number, total: number) => void
 }
@@ -230,7 +257,7 @@ export async function prepareClientPackageCsv(content: string, options: ClientPa
       const pricingOptions = {
         requestKind: options.requestKind,
         ...(value.weightKg ? { weightKg: Number(value.weightKg) } : {}),
-        ...(value.desiredDeliveryTime ? { desiredDeliveryTime: value.desiredDeliveryTime } : {}),
+        ...packageWindowInput(value),
       }
       value.pricingQuote = options.quotePrice
         ? await options.quotePrice(destination, options.signal, pricingOptions)

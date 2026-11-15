@@ -1,4 +1,5 @@
 import type { ConfirmedLocation, DispatchPlan, VehicleType } from './admin'
+import type { DeliveryTimePreference } from './client'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -27,6 +28,8 @@ export interface ManualPackage {
   mobileMoneyPaid: boolean
   effectiveWeightKg: number
   desiredDeliveryTime?: string
+  desiredDeliveryEndTime?: string
+  deliveryTimePreference?: DeliveryTimePreference
   pricingSnapshot?: { deliveryFeeAriary?: number }
 }
 export interface ManualPickup { id: string; location: ConfirmedLocation; packageIds: string[] }
