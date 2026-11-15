@@ -35,6 +35,7 @@ public class PublicPricingController {
         var destination = request.destination();
         return AdvancedPricingQuoteResponse.from(service.quote(null, request.requestKind(),
                 destination.latitude(), destination.longitude(), request.weightKg(),
-                request.desiredDeliveryTime()));
+                request.desiredDeliveryTime(), request.desiredDeliveryEndTime(), request.deliveryTimePreference(),
+                destination.label(), destination.query()));
     }
 }

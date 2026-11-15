@@ -8,6 +8,7 @@ import java.util.UUID;
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.pricing.domain.PricingCenter;
 import com.azylivraison.pricing.domain.PricingDistanceMode;
+import com.azylivraison.pricing.domain.PricingKeywordRule;
 import com.azylivraison.pricing.domain.PricingTimeSlot;
 import com.azylivraison.pricing.domain.PricingWeightTier;
 import com.azylivraison.pricing.domain.PricingZone;
@@ -28,10 +29,15 @@ public record AdvancedPricingPolicyRequest(
         @NotNull @Positive BigDecimal defaultWeightKg,
         @NotEmpty @Size(max = 50) List<@Valid Zone> zones,
         @Size(max = 50) List<@Valid WeightTier> weightTiers,
-        @Size(max = 50) List<@Valid TimeSlot> timeSlots) {
+        @Size(max = 50) List<@Valid TimeSlot> timeSlots,
+        @PositiveOrZero Long morningSurchargeAriary,
+        @PositiveOrZero Long afternoonSurchargeAriary,
+        @Size(max = 100) List<@NotNull @Valid KeywordRule> keywordRules) {
 
     public AdvancedPricingPolicyRequest {
         if (distanceMode == null) distanceMode = PricingDistanceMode.AIR_DISTANCE;
+        if (morningSurchargeAriary == null) morningSurchargeAriary = 500L;
+        if (afternoonSurchargeAriary == null) afternoonSurchargeAriary = 500L;
     }
 
     public PricingCenter centerDomain() { return center.toDomain(); }
@@ -49,6 +55,18 @@ public record AdvancedPricingPolicyRequest(
                         item.surchargeAriary())).toList();
     }
 
+    public List<PricingKeywordRule> keywordDomains() {
+        return keywordRules == null ? List.of() : keywordRules.stream().map(item ->
+                new PricingKeywordRule(item.id(), item.keyword(), item.deliveryFeeAriary())).toList();
+    }
+
+    public AdvancedPricingPolicyRequest(UUID clientAccountId, DeliveryRequestKind requestKind,
+            PricingDistanceMode distanceMode, Long version, PricingCenterRequest center, BigDecimal defaultWeightKg,
+            List<Zone> zones, List<WeightTier> weightTiers, List<TimeSlot> timeSlots) {
+        this(clientAccountId, requestKind, distanceMode, version, center, defaultWeightKg, zones, weightTiers,
+                timeSlots, 500L, 500L, List.of());
+    }
+
     public record Zone(UUID id, @NotNull @Size(min = 1, max = 100) String name,
             @Positive long maxDistanceMeters, @PositiveOrZero long deliveryFeeAriary) {}
     public record WeightTier(UUID id, @NotNull @Positive BigDecimal maxWeightKg,
@@ -56,4 +74,6 @@ public record AdvancedPricingPolicyRequest(
     public record TimeSlot(UUID id, @NotNull @Size(min = 1, max = 100) String label,
             @NotNull LocalTime startTime, @NotNull LocalTime endTime,
             @PositiveOrZero long surchargeAriary) {}
+    public record KeywordRule(UUID id, @NotNull @Size(min = 1, max = 200) String keyword,
+            @PositiveOrZero long deliveryFeeAriary) {}
 }

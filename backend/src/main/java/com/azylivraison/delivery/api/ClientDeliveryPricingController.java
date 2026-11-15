@@ -42,6 +42,7 @@ public class ClientDeliveryPricingController {
         return AdvancedPricingQuoteResponse.from(advancedPricingService.quote(
                 UUID.fromString(jwt.getClaimAsString("accountId")), request.requestKind(),
                 destination.latitude(), destination.longitude(), request.weightKg(),
-                request.desiredDeliveryTime()));
+                request.desiredDeliveryTime(), request.desiredDeliveryEndTime(), request.deliveryTimePreference(),
+                destination.label(), destination.query()));
     }
 }

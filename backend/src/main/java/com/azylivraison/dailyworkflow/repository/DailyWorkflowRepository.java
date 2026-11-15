@@ -21,6 +21,7 @@ import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryRequestKind;
 import com.azylivraison.delivery.domain.PackageWeightSource;
+import com.azylivraison.delivery.domain.DeliveryTimePreference;
 import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -536,7 +537,7 @@ public class DailyWorkflowRepository {
                     destination_label, destination_query,
                     destination_latitude, destination_longitude,
                     contact, amount_to_collect_ariary, mobile_money_paid,
-                    desired_delivery_time,
+                    desired_delivery_time, desired_delivery_end_time, delivery_time_preference,
                     pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
                     final_delivery_fee_ariary, delivery_fee_override_reason,
                     delivery_fee_overridden_at, delivery_fee_overridden_by_account_id,
@@ -551,7 +552,7 @@ public class DailyWorkflowRepository {
                     carried_forward_from_package_id, dispatch_plan_id, priority_at,
                     version, created_at, updated_at
                 ) VALUES (
-                    ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     'PENDING', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                     ?, NULL, ?, 0, ?, ?
                 )
@@ -562,6 +563,7 @@ public class DailyWorkflowRepository {
                 source.destination().latitude(), source.destination().longitude(),
                 source.contact(), source.amountToCollectAriary(), source.mobileMoneyPaid(),
                 source.desiredDeliveryTime(),
+                source.desiredDeliveryEndTime(), source.deliveryTimePreference().name(),
                 source.pricingZoneId(), source.pricingZoneName(), source.deliveryFeeAriary(),
                 source.finalDeliveryFeeAriary(), source.deliveryFeeOverrideReason(),
                 timestamp(source.deliveryFeeOverriddenAt()), source.deliveryFeeOverriddenByAccountId(),
@@ -729,6 +731,8 @@ public class DailyWorkflowRepository {
                 resultSet.getLong("amount_to_collect_ariary"),
                 resultSet.getBoolean("mobile_money_paid"),
                 resultSet.getObject("desired_delivery_time", LocalTime.class),
+                resultSet.getObject("desired_delivery_end_time", LocalTime.class),
+                DeliveryTimePreference.valueOf(resultSet.getString("delivery_time_preference")),
                 resultSet.getObject("pricing_zone_id", UUID.class),
                 resultSet.getString("pricing_zone_name"),
                 nullableLong(resultSet, "delivery_fee_ariary"),
@@ -839,6 +843,8 @@ public class DailyWorkflowRepository {
             long amountToCollectAriary,
             boolean mobileMoneyPaid,
             LocalTime desiredDeliveryTime,
+            LocalTime desiredDeliveryEndTime,
+            DeliveryTimePreference deliveryTimePreference,
             UUID pricingZoneId,
             String pricingZoneName,
             Long deliveryFeeAriary,

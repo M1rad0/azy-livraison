@@ -70,6 +70,7 @@ public class AdminDeliveryRequestController {
         ConfirmedLocationRequest destination = request.destination();
         return AdvancedPricingQuoteResponse.from(pricingService.quote(
                 clientAccountId, request.requestKind(), destination.latitude(), destination.longitude(),
-                request.weightKg(), request.desiredDeliveryTime()));
+                request.weightKg(), request.desiredDeliveryTime(), request.desiredDeliveryEndTime(),
+                request.deliveryTimePreference(), destination.label(), destination.query()));
     }
 }

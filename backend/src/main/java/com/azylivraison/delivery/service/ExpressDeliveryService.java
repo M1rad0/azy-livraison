@@ -49,6 +49,7 @@ public class ExpressDeliveryService {
     @Transactional
     public ExpressDeliveryResponse confirm(UUID requestId, List<UUID> requestedCourierIds,
             Boolean requestedReturnToPickup, long expectedVersion, UUID actorId) {
+        deliveryRequests.lockOperationalSettings();
         var state = requireState(requestId);
         if (!"PENDING".equals(state.status()) || state.cancelled())
             throw new InvalidDeliveryRequestFilterException("Cette demande express n'est plus en attente.");

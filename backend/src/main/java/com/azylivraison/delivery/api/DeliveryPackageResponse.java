@@ -9,6 +9,7 @@ import com.azylivraison.delivery.domain.DeliveryPackageStatus;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.PackageWeightSource;
 import com.azylivraison.delivery.domain.StoredDeliveryPackage;
+import com.azylivraison.delivery.domain.DeliveryTimePreference;
 import com.azylivraison.pricing.domain.PricingDistanceMode;
 
 public record DeliveryPackageResponse(
@@ -52,7 +53,9 @@ public record DeliveryPackageResponse(
         UUID dispatchPlanId,
         long version,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        DeliveryTimePreference deliveryTimePreference,
+        boolean canEdit) {
 
     static DeliveryPackageResponse from(StoredDeliveryPackage deliveryPackage) {
         return new DeliveryPackageResponse(
@@ -65,11 +68,10 @@ public record DeliveryPackageResponse(
                 deliveryPackage.amountToCollectAriary(),
                 deliveryPackage.mobileMoneyPaid(),
                 deliveryPackage.desiredDeliveryTime(),
-                deliveryPackage.desiredDeliveryTime() == null
-                        ? null : deliveryPackage.desiredDeliveryTime().plusHours(1),
+                deliveryPackage.desiredDeliveryEndTime(),
                 deliveryPackage.desiredDeliveryTime() != null
-                        && deliveryPackage.desiredDeliveryTime().plusHours(1)
-                                .isBefore(deliveryPackage.desiredDeliveryTime()),
+                        && deliveryPackage.desiredDeliveryEndTime() != null
+                        && !deliveryPackage.desiredDeliveryEndTime().isAfter(deliveryPackage.desiredDeliveryTime()),
                 deliveryPackage.pricingSnapshot().pricingZoneId(),
                 deliveryPackage.pricingSnapshot().pricingZoneName(),
                 deliveryPackage.finalDeliveryFeeAriary(),
@@ -99,6 +101,8 @@ public record DeliveryPackageResponse(
                 deliveryPackage.dispatchPlanId(),
                 deliveryPackage.version(),
                 deliveryPackage.createdAt(),
-                deliveryPackage.updatedAt());
+                deliveryPackage.updatedAt(),
+                deliveryPackage.deliveryTimePreference(),
+                deliveryPackage.canEdit());
     }
 }

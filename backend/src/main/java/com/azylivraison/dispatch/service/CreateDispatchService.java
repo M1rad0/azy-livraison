@@ -334,7 +334,7 @@ public class CreateDispatchService {
                     source.desiredDeliveryTime(),
                     source.pricingSnapshot(),
                     source.effectiveWeightKg(),
-                    source.destination()));
+                    source.destination(), source.desiredDeliveryEndTime(), source.deliveryTimePreference()));
         }
 
         Map<String, CourierRoute> routeByCourier = optimization.result().routes().stream()
@@ -498,7 +498,7 @@ public class CreateDispatchService {
                                 source.effectiveWeightKg(),
                                 source.contact(),
                                 source.destination(),
-                                deliveryWindow(serviceDate, source.desiredDeliveryTime())))
+                                deliveryWindow(serviceDate, source.desiredDeliveryTime(), source.desiredDeliveryEndTime())))
                         .toList();
                 groups.add(new DeliveryGroup(
                         request.getKey().toString(),
@@ -544,12 +544,16 @@ public class CreateDispatchService {
 
     private com.azylivraison.planning.domain.DeliveryTimeWindow deliveryWindow(
             LocalDate serviceDate,
-            java.time.LocalTime desiredDeliveryTime) {
+            java.time.LocalTime desiredDeliveryTime,
+            java.time.LocalTime desiredDeliveryEndTime) {
         if (desiredDeliveryTime == null) return null;
         var start = serviceDate.atTime(desiredDeliveryTime)
                 .atZone(ANTANANARIVO)
                 .toOffsetDateTime();
-        return new com.azylivraison.planning.domain.DeliveryTimeWindow(start, start.plusHours(1));
+        if (desiredDeliveryEndTime == null) return new com.azylivraison.planning.domain.DeliveryTimeWindow(start, start.plusHours(1));
+        var end = serviceDate.atTime(desiredDeliveryEndTime).atZone(ANTANANARIVO).toOffsetDateTime();
+        if (!end.isAfter(start)) end = end.plusDays(1);
+        return new com.azylivraison.planning.domain.DeliveryTimeWindow(start, end);
     }
 
     private void validateOptimizationTimeLimit(int timeLimitSeconds) {

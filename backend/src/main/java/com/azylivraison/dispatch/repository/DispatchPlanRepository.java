@@ -501,8 +501,9 @@ public class DispatchPlanRepository {
                     base_delivery_fee_ariary, weight_surcharge_ariary, time_surcharge_ariary,
                     effective_weight_kg,
                     destination_label, destination_query,
-                    destination_latitude, destination_longitude
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    destination_latitude, destination_longitude,
+                    desired_delivery_end_time, delivery_time_preference
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, outcomes, outcomes.size(), (statement, outcome) -> {
             statement.setObject(1, dispatchPlanId);
             statement.setObject(2, outcome.packageId());
@@ -539,6 +540,8 @@ public class DispatchPlanRepository {
             statement.setString(31, outcome.destination().destinationQuery());
             statement.setDouble(32, outcome.destination().latitude());
             statement.setDouble(33, outcome.destination().longitude());
+            statement.setObject(34, outcome.desiredDeliveryEndTime());
+            statement.setString(35, outcome.deliveryTimePreference().name());
         });
     }
 
@@ -581,7 +584,7 @@ public class DispatchPlanRepository {
                        unassigned_reason, unassigned_message,
                        recipient_name, faritra, contact,
                        amount_to_collect_ariary, mobile_money_paid,
-                       desired_delivery_time,
+                       desired_delivery_time, desired_delivery_end_time, delivery_time_preference,
                        pricing_zone_id, pricing_zone_name, delivery_fee_ariary,
                        distance_from_center_meters, pricing_distance_mode, pricing_zone_max_distance_meters,
                        pricing_policy_version, pricing_policy_id,
@@ -626,7 +629,9 @@ public class DispatchPlanRepository {
                         resultSet.getString("destination_label"),
                         resultSet.getString("destination_query"),
                         resultSet.getDouble("destination_latitude"),
-                        resultSet.getDouble("destination_longitude"))),
+                        resultSet.getDouble("destination_longitude")),
+                resultSet.getObject("desired_delivery_end_time", java.time.LocalTime.class),
+                com.azylivraison.delivery.domain.DeliveryTimePreference.valueOf(resultSet.getString("delivery_time_preference"))),
                 dispatchPlanId);
     }
 

@@ -2,6 +2,7 @@ package com.azylivraison.delivery.api;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import com.azylivraison.delivery.domain.DeliveryTimePreference;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -19,5 +20,14 @@ public record CreateDeliveryPackageRequest(
         @NotNull @PositiveOrZero Long amountToCollectAriary,
         @NotNull Boolean mobileMoneyPaid,
         LocalTime desiredDeliveryTime,
-        @DecimalMin(value = "0", inclusive = false) @DecimalMax("9999999.999") BigDecimal weightKg) {
+        @DecimalMin(value = "0", inclusive = false) @DecimalMax("9999999.999") BigDecimal weightKg,
+        LocalTime desiredDeliveryEndTime,
+        DeliveryTimePreference deliveryTimePreference) {
+
+    public CreateDeliveryPackageRequest(String recipientName, Boolean faritra,
+            ConfirmedLocationRequest destination, String contact, Long amountToCollectAriary,
+            Boolean mobileMoneyPaid, LocalTime desiredDeliveryTime, BigDecimal weightKg) {
+        this(recipientName, faritra, destination, contact, amountToCollectAriary, mobileMoneyPaid,
+                desiredDeliveryTime, weightKg, null, null);
+    }
 }
