@@ -18,6 +18,7 @@ import java.util.stream.IntStream;
 
 import com.azylivraison.dispatch.domain.CreateDispatchCommand;
 import com.azylivraison.dispatch.domain.DispatchCreationResult;
+import com.azylivraison.dispatch.domain.DispatchMode;
 import com.azylivraison.dispatch.domain.DispatchPackageOutcome;
 import com.azylivraison.dispatch.domain.DispatchPlanCourierSnapshot;
 import com.azylivraison.dispatch.domain.DispatchPlanDetails;
@@ -85,6 +86,7 @@ public class DispatchPlanControlService {
         String normalizedReason = requireReason(reason);
         validateCourierIds(courierIds);
         DispatchPlanRecord current = repository.findById(planId).orElseThrow(DispatchNotFoundException::new);
+        requireLegacyPlan(current);
         List<UUID> cohort = repository.findPlanPackageIds(planId);
         if (cohort.isEmpty()) {
             throw new DispatchConflictException("Le plan ne contient aucun colis à régénérer.");
@@ -165,6 +167,12 @@ public class DispatchPlanControlService {
         return createService.get(planId);
     }
 
+    private void requireLegacyPlan(DispatchPlanRecord plan) {
+        if (plan.mode() == DispatchMode.MANUAL && plan.resultJson() == null) {
+            throw new DispatchInputException("Utilisez l'éditeur manuel pour modifier les affectations de ce plan.");
+        }
+    }
+
     private List<UUID> cancelInternal(
             UUID planId,
             long expectedVersion,
@@ -202,6 +210,7 @@ public class DispatchPlanControlService {
             List<ManualDispatchAssignment> assignments) {
         DispatchPlanRecord plan = repository.findByIdForUpdate(planId)
                 .orElseThrow(DispatchNotFoundException::new);
+        requireLegacyPlan(plan);
         if (plan.version() != expectedVersion) {
             throw new DispatchConflictException("Le plan a été modifié entre-temps. Rechargez-le.");
         }

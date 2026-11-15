@@ -33,6 +33,32 @@ interface RoutingErrorResponse {
   message?: string
 }
 
+export interface RoutingMatrixResponse {
+  pointCount: number
+  distancesMeters: (number | null)[][]
+}
+
+export async function calculateRoutingMatrix(
+  points: RoutingPoint[], accessToken: string, signal?: AbortSignal,
+): Promise<RoutingMatrixResponse> {
+  const response = await fetch(`${API_BASE_URL}/routing/matrix`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ points }),
+    signal,
+  })
+  const payload = await response.json().catch(() => undefined) as RoutingMatrixResponse | RoutingErrorResponse | undefined
+  if (!response.ok || !payload || !('distancesMeters' in payload)) {
+    throw new Error(payload && 'message' in payload && payload.message ? payload.message : 'Les distances routières ne sont pas disponibles. Vous pouvez continuer manuellement.')
+  }
+  if (payload.pointCount !== points.length || !Array.isArray(payload.distancesMeters)
+    || payload.distancesMeters.length !== points.length || payload.distancesMeters.some((row) => !Array.isArray(row)
+      || row.length !== points.length || row.some((distance) => distance !== null && (!Number.isFinite(distance) || distance < 0)))) {
+    throw new Error('Les distances routières reçues sont incomplètes. Vous pouvez continuer manuellement.')
+  }
+  return payload
+}
+
 export async function calculateRoute(
   points: RoutingPoint[],
   accessToken: string,

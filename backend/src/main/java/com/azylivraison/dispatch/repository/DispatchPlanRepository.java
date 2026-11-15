@@ -97,6 +97,12 @@ public class DispatchPlanRepository {
     }
 
     public void beginOperationDay(LocalDate serviceDate, UUID actorAccountId, Instant staleBefore) {
+        Integer drafts = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM manual_dispatch_draft WHERE active_service_date = ?",
+                Integer.class, serviceDate);
+        if (drafts != null && drafts > 0) {
+            throw new DispatchConflictException("Un dispatch manuel est déjà en préparation pour cette date. Reprenez le brouillon.");
+        }
         List<OperationDayDispatchLock> states = jdbcTemplate.query(
                 """
                 SELECT status, dispatch_plan_id
@@ -560,10 +566,10 @@ public class DispatchPlanRepository {
             statement.setDouble(11, stop.location().latitude());
             statement.setDouble(12, stop.location().longitude());
             statement.setTimestamp(13, timestamp(stop.estimatedArrivalAt()));
-            statement.setLong(14, stop.distanceFromPreviousMeters());
-            statement.setLong(15, stop.durationFromPreviousSeconds());
-            statement.setLong(16, stop.cumulativeDistanceMeters());
-            statement.setLong(17, stop.cumulativeDurationSeconds());
+            statement.setObject(14, stop.distanceFromPreviousMeters(), java.sql.Types.BIGINT);
+            statement.setObject(15, stop.durationFromPreviousSeconds(), java.sql.Types.BIGINT);
+            statement.setObject(16, stop.cumulativeDistanceMeters(), java.sql.Types.BIGINT);
+            statement.setObject(17, stop.cumulativeDurationSeconds(), java.sql.Types.BIGINT);
         });
     }
 
@@ -687,10 +693,10 @@ public class DispatchPlanRepository {
                         resultSet.getDouble("latitude"),
                         resultSet.getDouble("longitude")),
                 instant(resultSet, "estimated_arrival_at"),
-                resultSet.getLong("distance_from_previous_meters"),
-                resultSet.getLong("duration_from_previous_seconds"),
-                resultSet.getLong("cumulative_distance_meters"),
-                resultSet.getLong("cumulative_duration_seconds")),
+                nullableLong(resultSet, "distance_from_previous_meters"),
+                nullableLong(resultSet, "duration_from_previous_seconds"),
+                nullableLong(resultSet, "cumulative_distance_meters"),
+                nullableLong(resultSet, "cumulative_duration_seconds")),
                 dispatchPlanId);
     }
 

@@ -48,7 +48,7 @@ public record DispatchPlanSummaryResponse(
                 plan.version(),
                 plan.supersedesPlanId(),
                 editable,
-                "VIA_HUB",
+                plan.mode() == DispatchMode.MANUAL && plan.resultJson() == null ? "MANUAL" : "VIA_HUB",
                 plan.hub(),
                 plan.selectedPackageCount(),
                 plan.assignedPackageCount(),
