@@ -126,6 +126,40 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void administratorCanManageSellerNumbersAndInvalidPrioritiesReturnAUsefulError() throws Exception {
+        String creation = """
+                {"username":"seller-payout-http","displayName":"Boutique Soa","phone":"0340000000",
+                 "enabled":true,"expressDeliveryEnabled":false,"payoutDestinations":[
+                 {"operator":"MVola","accountHolder":"Soa","number":"034 11 111 11","priority":1,"active":true}]}
+                """;
+        MvcResult result = mockMvc.perform(post("/api/admin/clients").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(creation))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.client.payoutDestinations[0].number").value("034 11 111 11"))
+                .andReturn();
+        JsonNode created = objectMapper.readTree(result.getResponse().getContentAsString()).get("client");
+        String id = created.get("accountId").asText();
+        String update = creation.replace("034 11 111 11", "034 99 999 99")
+                .replace("\"username\"", "\"version\":" + created.get("version").asLong() + ",\"username\"");
+        mockMvc.perform(put("/api/admin/clients/{id}", id).with(client(CLIENT_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(update))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/admin/clients/{id}", id).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(update))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payoutDestinations[0].number").value("034 99 999 99"));
+
+        String invalid = creation.replace("seller-payout-http", "seller-payout-invalid")
+                .replace("\"priority\":1", "\"priority\":2");
+        mockMvc.perform(post("/api/admin/clients").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(invalid))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CLIENT_PROFILE_INVALID"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM app_account WHERE username = 'seller-payout-invalid'", Long.class)).isZero();
+    }
+
+    @Test
     void clientAndAdministratorCanCancelOnlyPendingOwnedPackagesAndCapacityIsFreed() throws Exception {
         jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);

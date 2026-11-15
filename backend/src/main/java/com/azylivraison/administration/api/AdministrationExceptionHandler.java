@@ -3,6 +3,7 @@ package com.azylivraison.administration.api;
 import java.util.Comparator;
 import java.util.List;
 
+import com.azylivraison.account.service.InvalidClientProfileException;
 import com.azylivraison.administration.service.AdministrationConflictException;
 import com.azylivraison.administration.service.AdministrationNotFoundException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
@@ -61,6 +62,13 @@ public class AdministrationExceptionHandler {
             PricingConfigurationException exception) {
         return ResponseEntity.badRequest().body(AdministrationErrorResponse.of(
                 "PRICING_SETTINGS_INVALID", exception.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidClientProfileException.class)
+    public ResponseEntity<AdministrationErrorResponse> handleClientProfile(
+            InvalidClientProfileException exception) {
+        return ResponseEntity.badRequest().body(AdministrationErrorResponse.of(
+                "CLIENT_PROFILE_INVALID", exception.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
