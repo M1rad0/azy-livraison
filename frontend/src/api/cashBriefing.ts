@@ -1,8 +1,12 @@
 import { AdminApiError } from './admin'
+import type { ClientPayoutDestination } from './client'
 
 export interface CashBriefingTransfer {
   id: string; sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null
   sellerPayoutNumberOverride?: boolean
+  sellerPayoutDestinationId?: string | null
+  sellerPayoutAccountHolder?: string | null
+  sellerPayoutOperator?: string | null
   courierAccountId: string; courierName: string; amountAriary: number
   status: 'PENDING' | 'CONFIRMED' | 'REPLACED'; movementId?: string | null
 }
@@ -15,12 +19,12 @@ export interface CashBriefingBatch {
 }
 export interface CashBriefingPlanning {
   planId: string; serviceDate: string; ledgerRevision: number; batch?: CashBriefingBatch | null
-  sellers: { sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; balanceAriary: number; plannedAriary: number; availableAriary: number }[]
+  sellers: { sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; payoutDestinations?: ClientPayoutDestination[]; balanceAriary: number; plannedAriary: number; availableAriary: number }[]
   couriers: { courierAccountId: string; courierName: string; balanceAriary: number; reservedElsewhereAriary: number; capacityAriary: number; plannedAriary: number; remainingAriary: number }[]
 }
 export interface ManualCashBriefingInput {
   planId: string; idempotencyKey: string; expectedLedgerRevision: number; expectedBatchId?: string | null
-  transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number; sellerPayoutNumber?: string }[]
+  transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number; sellerPayoutDestinationId?: string; sellerPayoutNumber?: string; sellerPayoutAccountHolder?: string }[]
 }
 const BASE = `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/admin/cash-briefings`
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {

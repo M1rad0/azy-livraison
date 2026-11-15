@@ -220,7 +220,7 @@ export function generateCourierBriefing(
   serviceDate: string,
   sellerContacts?: Readonly<Record<string, string | null | undefined>>,
   language: BriefingLanguage = 'fr',
-  payouts: ReadonlyArray<{ courierAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; amountAriary: number; status: string }> = [],
+  payouts: ReadonlyArray<{ courierAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; sellerPayoutAccountHolder?: string | null; sellerPayoutOperator?: string | null; amountAriary: number; status: string }> = [],
 ): string {
   const labels = BRIEFING_LABELS[language]
   const lines = [`${labels.header} ${displayDate(serviceDate)} — ${text(briefing.courier.name) || labels.courierUnknown}`, '', labels.pickups]
@@ -275,7 +275,7 @@ export function generateCourierBriefing(
   const pending = payouts.filter((payout) => payout.courierAccountId === briefing.courier.courierId && payout.status === 'PENDING')
   if (pending.length) {
     lines.push('', language === 'mg' ? 'Vola halefa :' : 'Versements à faire :')
-    for (const payout of pending) lines.push(`- ${text(payout.sellerName)} — MVola : ${text(payout.sellerPayoutNumber)} — ${payout.amountAriary} Ar`)
+    for (const payout of pending) lines.push(`- ${text(payout.sellerName)} — ${text(payout.sellerPayoutOperator) || 'MVola'} : ${text(payout.sellerPayoutNumber)} — ${language === 'mg' ? 'Anarana' : 'Titulaire'} : ${text(payout.sellerPayoutAccountHolder) || '—'} — ${payout.amountAriary} Ar`)
   }
   return lines.join('\n')
 }

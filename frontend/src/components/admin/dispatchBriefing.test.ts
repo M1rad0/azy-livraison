@@ -18,7 +18,7 @@ describe('dispatch briefing model', () => {
     const draft = allocatedFixture()
     const courier = buildDispatchBriefing(draft).couriers[0]
     const payouts = [
-      { courierAccountId: 'c1', sellerName: 'Vendeur Soa', sellerPayoutNumber: '034 11 111 11', amountAriary: 25000, status: 'PENDING' },
+      { courierAccountId: 'c1', sellerName: 'Vendeur Soa', sellerPayoutNumber: '034 11 111 11', sellerPayoutAccountHolder: 'Soa Rakoto', sellerPayoutOperator: 'MVola', amountAriary: 25000, status: 'PENDING' },
       { courierAccountId: 'c2', sellerName: 'Autre vendeur', sellerPayoutNumber: '034 22 222 22', amountAriary: 10000, status: 'PENDING' },
       { courierAccountId: 'c1', sellerName: 'Déjà réglé', sellerPayoutNumber: '034 33 333 33', amountAriary: 5000, status: 'CONFIRMED' },
     ]
@@ -27,12 +27,28 @@ describe('dispatch briefing model', () => {
     expect(fr).toContain('Versements à faire :')
     expect(mg).toContain('Vola halefa :')
     for (const text of [fr, mg]) {
-      expect(text).toContain('Vendeur Soa — MVola : 034 11 111 11 — 25000 Ar')
+      expect(text).toContain('Vendeur Soa — MVola : 034 11 111 11')
+      expect(text).toContain('Soa Rakoto — 25000 Ar')
       expect(text).not.toContain('Finance')
       expect(text).not.toContain('Autre vendeur')
       expect(text).not.toContain('Déjà réglé')
     }
     expect(payouts[0].status).toBe('PENDING')
+    expect(fr).toContain('Titulaire : Soa Rakoto')
+    expect(mg).toContain('Anarana : Soa Rakoto')
+  })
+
+  it('uses the chosen operator and does not invent an account holder for historical payouts', () => {
+    const draft = allocatedFixture()
+    const courier = buildDispatchBriefing(draft).couriers[0]
+    const message = generateCourierBriefing(courier, draft.serviceDate, undefined, 'fr', [{
+      courierAccountId: 'c1', sellerName: 'Vendeur Soa', sellerPayoutNumber: '032 11 111 11',
+      sellerPayoutOperator: 'Orange Money', sellerPayoutAccountHolder: null,
+      amountAriary: 25000, status: 'PENDING',
+    }])
+    expect(message).toContain('Orange Money : 032 11 111 11 — Titulaire : —')
+    expect(message).not.toContain('MVola : 032')
+    expect(message).not.toContain('Titulaire : Vendeur Soa')
   })
 
   it('does not invent a payout section before an explicit proposal', () => {

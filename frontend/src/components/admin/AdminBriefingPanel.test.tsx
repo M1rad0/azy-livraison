@@ -35,7 +35,7 @@ function messageButton(courierName = 'Baptiste') {
 }
 
 describe('Briefing dispatch views and text', () => {
-  const payoutBatch = (): CashBriefingBatch => ({ id: 'batch', planId: 'plan-1', serviceDate: '2026-11-14', status: 'ACTIVE', ledgerRevision: 4, expiresAt: '2026-11-14T21:00:00Z', algorithm: 'exact', message: 'À confirmer dans Finance', balances: [], transfers: [{ id: 'transfer', sellerAccountId: 'seller', sellerName: 'Vendeur Soa', sellerPayoutNumber: '034 99 999 99', courierAccountId: 'c1', courierName: 'Baptiste', amountAriary: 25000, status: 'PENDING' }] })
+  const payoutBatch = (): CashBriefingBatch => ({ id: 'batch', planId: 'plan-1', serviceDate: '2026-11-14', status: 'ACTIVE', ledgerRevision: 4, expiresAt: '2026-11-14T21:00:00Z', algorithm: 'exact', message: 'À confirmer dans Finance', balances: [], transfers: [{ id: 'transfer', sellerAccountId: 'seller', sellerName: 'Vendeur Soa', sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Soa Rakoto', sellerPayoutOperator: 'MVola', courierAccountId: 'c1', courierName: 'Baptiste', amountAriary: 25000, status: 'PENDING' }] })
   beforeEach(() => {
     vi.mocked(getDispatchPlan).mockResolvedValue({ plan: summary(), packages: [] })
     vi.mocked(getManualDraftForPlan).mockResolvedValue(finalized())
@@ -71,6 +71,25 @@ describe('Briefing dispatch views and text', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Par livreur' }))
     expect(screen.queryByRole('button', { name: 'Générer le briefing' })).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Colis à livrer' })).toBeInTheDocument()
+  })
+
+  it('regenerates both messages when only the account holder or operator changes', () => {
+    const batch = payoutBatch()
+    const { rerender } = render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={batch} />)
+    fireEvent.click(messageButton())
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Titulaire : Soa Rakoto')
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ancien titulaire à ne pas envoyer' } })
+    const changed = { ...batch, transfers: [{ ...batch.transfers[0], sellerPayoutAccountHolder: 'Jean Rakoto' }] }
+    rerender(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={changed} />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Générer le briefing' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Titulaire : Jean Rakoto')
+    fireEvent.click(screen.getByRole('tab', { name: 'Malagasy' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Anarana : Jean Rakoto')
+    rerender(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={{ ...changed, transfers: [{ ...changed.transfers[0], sellerPayoutOperator: 'Orange Money' }] }} />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Générer le briefing' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Orange Money : 034 99 999 99')
   })
 
   it('does not copy a message when a fresh financial check fails', async () => {
@@ -325,13 +344,14 @@ describe('Briefing dispatch views and text', () => {
     const payments = await screen.findByRole('region', { name: 'Versements à faire' })
     expect(within(payments).getByText('Vendeur Soa')).toBeInTheDocument()
     expect(within(payments).getByText('MVola : 034 99 999 99')).toBeInTheDocument()
+    expect(within(payments).getByText('Titulaire : Soa Rakoto')).toBeInTheDocument()
     expect(within(payments).getByText('Baptiste')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Générer automatiquement|Préparer les versements|Libérer la proposition|Enregistrer les versements/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Modifier les versements' }))
     expect(onOpenPayouts).toHaveBeenCalledOnce()
     fireEvent.click(messageButton())
     const text = (await screen.findByRole('textbox')) as HTMLTextAreaElement
-    expect(text.value).toContain('Versements à faire :\n- Vendeur Soa — MVola : 034 99 999 99 — 25000 Ar')
+    expect(text.value).toContain('Versements à faire :\n- Vendeur Soa — MVola : 034 99 999 99 — Titulaire : Soa Rakoto — 25000 Ar')
     fireEvent.click(screen.getByRole('tab', { name: 'Malagasy' }))
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Vola halefa :')
   })

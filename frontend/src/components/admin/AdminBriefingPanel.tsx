@@ -68,9 +68,16 @@ function PayoutList({ transfers, stale = false }: { transfers: CashBriefingTrans
   if (stale) return <p className="briefing-empty">Les versements sont à revalider dans l’étape Versements.</p>
   if (!transfers.length) return <p className="briefing-empty">Aucun versement à faire.</p>
   return <ul className="briefing-payouts">{transfers.map((transfer) => <li key={transfer.id}>
-    <div><strong>{transfer.sellerName}</strong><span>MVola : {transfer.sellerPayoutNumber || 'Numéro non renseigné'}</span></div>
+    <div><strong>{transfer.sellerName}</strong><span>{transfer.sellerPayoutOperator?.trim() || 'MVola'} : {transfer.sellerPayoutNumber || 'Numéro non renseigné'}</span><span>{transfer.sellerPayoutAccountHolder?.trim() ? `Titulaire : ${transfer.sellerPayoutAccountHolder.trim()}` : 'Titulaire non renseigné'}</span></div>
     <strong>{formatAriary(transfer.amountAriary)}</strong>
   </li>)}</ul>
+}
+
+function cashSignature(batch?: CashBriefingBatch) {
+  return batch ? JSON.stringify([batch.id, batch.status, batch.ledgerRevision, batch.transfers.map((transfer) => [
+    transfer.id, transfer.status, transfer.amountAriary, transfer.sellerPayoutNumber,
+    transfer.sellerPayoutAccountHolder, transfer.sellerPayoutOperator, transfer.sellerPayoutDestinationId,
+  ])]) : ''
 }
 
 function BriefingTextDialog({ courierName, text, language, onLanguageChange, onChange, onClose, beforeCopy }: {
@@ -176,7 +183,7 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
   const [editing, setEditing] = useState<string>()
   const [language, setLanguage] = useState<BriefingLanguage>('fr')
   const [texts, setTexts] = useState<Record<string, Record<BriefingLanguage, string>>>({})
-  const cashVersion = cashBatch ? JSON.stringify([cashBatch.id, cashBatch.status, cashBatch.ledgerRevision, cashBatch.transfers.map((t) => [t.id, t.status, t.amountAriary, t.sellerPayoutNumber])]) : ''
+  const cashVersion = cashSignature(cashBatch)
   useEffect(() => { setTexts({}); setEditing(undefined) }, [cashVersion])
   const closeEditor = useCallback(() => setEditing(undefined), [])
   const selected = couriers.find((item) => item.courier.courierId === courierId) ?? couriers[0]
@@ -245,8 +252,7 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
     try {
       const batches = await listCashBriefings(accessToken, planId)
       const current = batches.find((b) => ['ACTIVE', 'STALE', 'COMPLETED'].includes(b.status))
-      const signature = (batch?: CashBriefingBatch) => batch ? JSON.stringify([batch.id, batch.status, batch.ledgerRevision, batch.transfers.map((t) => [t.id, t.status, t.amountAriary, t.sellerPayoutNumber])]) : ''
-      if (current?.status === 'STALE' || signature(current) !== signature(cashBatch)) {
+      if (current?.status === 'STALE' || cashSignature(current) !== cashSignature(cashBatch)) {
         setCashBatch(current); setCashMessage('Les caisses ou les versements ont changé. Actualisez puis rouvrez le texte ; les versions FR et MG seront régénérées.'); return false
       }
       return true

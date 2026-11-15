@@ -21,6 +21,22 @@ describe('cash payout planning API', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/cash-briefings/manual', expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }))
   })
 
+  it('sends the selected profile destination without replacing account details', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'new-batch' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const input = { planId: 'plan', idempotencyKey: 'key', expectedLedgerRevision: 4, expectedBatchId: null, transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 5000, sellerPayoutDestinationId: 'destination-id' }] }
+    await saveManualCashBriefing(input, 'token')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/admin/cash-briefings/manual', expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }))
+  })
+
+  it('sends both custom number and real holder for an individual planned transfer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'new-batch' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const input = { planId: 'plan', idempotencyKey: 'key', expectedLedgerRevision: 4, transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 5000, sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Titulaire vérifié' }] }
+    await saveManualCashBriefing(input, 'token')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/admin/cash-briefings/manual', expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }))
+  })
+
   it('replaces automatic proposals atomically without a separate release', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'automatic' }) })
     vi.stubGlobal('fetch', fetchMock)
