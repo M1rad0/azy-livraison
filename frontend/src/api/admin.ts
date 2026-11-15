@@ -592,6 +592,7 @@ export interface PaymentProof {
 }
 
 export interface ClientSettlement {
+  cashLedgerManaged?: boolean
   id: string
   reportId: string
   serviceDate: string
@@ -723,6 +724,7 @@ export interface FuelCompensationLine {
 }
 
 export interface CourierCompensation {
+  newAccrualsEnabled?: boolean
   serviceDate: string
   closureRevision: number
   finalized: boolean

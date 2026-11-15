@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BadgeCheck, BadgePercent, Calculator, CheckCheck, Fuel, LoaderCircle, Pencil, Plus, RefreshCw, Route, RotateCcw, TriangleAlert, UsersRound, X } from 'lucide-react'
+import { BadgeCheck, BadgePercent, Calculator, CheckCheck, Fuel, History, LoaderCircle, Pencil, Plus, RefreshCw, Route, RotateCcw, TriangleAlert, UsersRound, X } from 'lucide-react'
 import {
   finalizeCourierCompensations,
   getCourierCompensations,
@@ -207,6 +207,10 @@ export function AdminCourierCompensationPanel({
     } finally {
       setSaving(false)
     }
+  }
+
+  if (compensation && !compensation.finalized && compensation.newAccrualsEnabled !== true) {
+    return <section className="admin-compensation"><div className="admin-callout"><History aria-hidden="true" /><div><strong>Ancien suivi des rémunérations</strong><span>Les nouvelles commissions et les remboursements de carburant sont désactivés. Les encaissements et transferts se suivent désormais dans Finances, onglet Caisses.</span></div></div></section>
   }
 
   return (

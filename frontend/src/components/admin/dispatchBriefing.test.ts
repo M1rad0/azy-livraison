@@ -14,6 +14,33 @@ function allocatedFixture(): ManualDispatchDraft {
 }
 
 describe('dispatch briefing model', () => {
+  it('appends only this courier pending payouts in both languages without validating them', () => {
+    const draft = allocatedFixture()
+    const courier = buildDispatchBriefing(draft).couriers[0]
+    const payouts = [
+      { courierAccountId: 'c1', sellerName: 'Vendeur Soa', sellerPayoutNumber: '034 11 111 11', amountAriary: 25000, status: 'PENDING' },
+      { courierAccountId: 'c2', sellerName: 'Autre vendeur', sellerPayoutNumber: '034 22 222 22', amountAriary: 10000, status: 'PENDING' },
+      { courierAccountId: 'c1', sellerName: 'Déjà réglé', sellerPayoutNumber: '034 33 333 33', amountAriary: 5000, status: 'CONFIRMED' },
+    ]
+    const fr = generateCourierBriefing(courier, draft.serviceDate, undefined, 'fr', payouts)
+    const mg = generateCourierBriefing(courier, draft.serviceDate, undefined, 'mg', payouts)
+    expect(fr).toContain('Versements à effectuer :')
+    expect(mg).toContain('Vola halefa :')
+    for (const text of [fr, mg]) {
+      expect(text).toContain('Vendeur Soa — MVola : 034 11 111 11 — 25000 Ar')
+      expect(text).toContain('Finance')
+      expect(text).not.toContain('Autre vendeur')
+      expect(text).not.toContain('Déjà réglé')
+    }
+    expect(payouts[0].status).toBe('PENDING')
+  })
+
+  it('does not invent a payout section before an explicit proposal', () => {
+    const draft = allocatedFixture()
+    const courier = buildDispatchBriefing(draft).couriers[0]
+    expect(generateCourierBriefing(courier, draft.serviceDate)).not.toContain('Versements à effectuer')
+    expect(generateCourierBriefing(courier, draft.serviceDate, undefined, 'mg')).not.toContain('Vola halefa')
+  })
   it('handles collecting-only, delivering-only and mixed couriers without inventing routes', () => {
     const result = buildDispatchBriefing(allocatedFixture())
     expect(result.warnings).toEqual([])

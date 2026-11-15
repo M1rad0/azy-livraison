@@ -220,6 +220,7 @@ export function generateCourierBriefing(
   serviceDate: string,
   sellerContacts?: Readonly<Record<string, string | null | undefined>>,
   language: BriefingLanguage = 'fr',
+  payouts: ReadonlyArray<{ courierAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; amountAriary: number; status: string }> = [],
 ): string {
   const labels = BRIEFING_LABELS[language]
   const lines = [`${labels.header} ${displayDate(serviceDate)} — ${text(briefing.courier.name) || labels.courierUnknown}`, '', labels.pickups]
@@ -271,5 +272,11 @@ export function generateCourierBriefing(
     ].filter(Boolean)
     lines.push(`${index + 1}. ${details.join(' — ')}`)
   })
+  const pending = payouts.filter((payout) => payout.courierAccountId === briefing.courier.courierId && payout.status === 'PENDING')
+  if (pending.length) {
+    lines.push('', language === 'mg' ? 'Vola halefa :' : 'Versements à effectuer :')
+    for (const payout of pending) lines.push(`- ${text(payout.sellerName)} — MVola : ${text(payout.sellerPayoutNumber)} — ${payout.amountAriary} Ar`)
+    lines.push(language === 'mg' ? 'Hamarinin’ny admin ao amin’ny Finance ny vola tena nalefa.' : 'Les versements réels doivent être confirmés par l’admin dans Finance.')
+  }
   return lines.join('\n')
 }

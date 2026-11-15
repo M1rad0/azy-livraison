@@ -2,11 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDispatchPlan, listAdminClients, type DispatchPlan, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft } from '../../api/manualDispatch'
+import { listCashBriefings, type CashBriefingBatch } from '../../api/cashBriefing'
 import { AdminBriefingPanel, DispatchBriefingView } from './AdminBriefingPanel'
 import { draftFixture } from './manualDispatch.fixtures'
 
 vi.mock('../../api/admin', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/admin')>(), getDispatchPlan: vi.fn(), listAdminClients: vi.fn() }))
 vi.mock('../../api/manualDispatch', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/manualDispatch')>(), getManualDraftForPlan: vi.fn() }))
+vi.mock('../../api/cashBriefing', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/cashBriefing')>(), listCashBriefings: vi.fn() }))
 
 function finalized(): ManualDispatchDraft {
   return { ...draftFixture(), status: 'FINALIZED', finalPlanId: 'plan-1', step: 'REVIEW',
@@ -33,12 +35,55 @@ function messageButton(courierName = 'Baptiste') {
 }
 
 describe('Briefing dispatch views and text', () => {
+  const payoutBatch = (): CashBriefingBatch => ({ id: 'batch', planId: 'plan-1', serviceDate: '2026-11-14', status: 'ACTIVE', ledgerRevision: 4, expiresAt: '2026-11-14T21:00:00Z', algorithm: 'exact', message: 'À confirmer dans Finance', balances: [], transfers: [{ id: 'transfer', sellerAccountId: 'seller', sellerName: 'Vendeur Soa', sellerPayoutNumber: '034 99 999 99', courierAccountId: 'c1', courierName: 'Baptiste', amountAriary: 25000, status: 'PENDING' }] })
   beforeEach(() => {
     vi.mocked(getDispatchPlan).mockResolvedValue({ plan: summary(), packages: [] })
     vi.mocked(getManualDraftForPlan).mockResolvedValue(finalized())
     vi.mocked(listAdminClients).mockResolvedValue([])
+    vi.mocked(listCashBriefings).mockResolvedValue([])
   })
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+  it('invalidates both independently edited languages when the financial proposal changes', () => {
+    const batch = payoutBatch()
+    const { rerender } = render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={batch} />)
+    fireEvent.click(messageButton())
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('25000 Ar')
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'FR ancienne proposition' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Malagasy' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'MG ancienne proposition' } })
+    rerender(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={{ ...batch, ledgerRevision: 5, transfers: [{ ...batch.transfers[0], amountAriary: 24000 }] }} />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Générer le briefing' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('24000 Ar')
+    expect(screen.getByRole('textbox')).not.toHaveValue('MG ancienne proposition')
+    fireEvent.click(screen.getByRole('tab', { name: 'Français' }))
+    expect(screen.getByRole('textbox')).not.toHaveValue('FR ancienne proposition')
+    rerender(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={{ ...batch, ledgerRevision: 5, transfers: [{ ...batch.transfers[0], amountAriary: 24000, sellerPayoutNumber: '034 88 888 88' }] }} />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Générer le briefing' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('MVola : 034 88 888 88')
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).not.toContain('034 99 999 99')
+  })
+
+  it('blocks message generation while a financial proposal needs revalidation', () => {
+    render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={{ ...payoutBatch(), status: 'STALE' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Par livreur' }))
+    expect(screen.queryByRole('button', { name: 'Générer le briefing' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Colis à livrer' })).toBeInTheDocument()
+  })
+
+  it('does not copy a message when a fresh financial check fails', async () => {
+    const validate = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={payoutBatch()} validateCash={validate} />)
+    fireEvent.click(messageButton())
+    await screen.findByRole('textbox')
+    fireEvent.click(screen.getByRole('button', { name: 'Copier le texte' }))
+    expect(await screen.findByText(/Les caisses ou la proposition ont changé/)).toBeInTheDocument()
+    expect(writeText).not.toHaveBeenCalled()
+  })
 
   it('orders recoveries, exchanges and deliveries and groups the current assignments', () => {
     const { container } = render(<DispatchBriefingView draft={finalized()} allowMessages />)
@@ -279,7 +324,7 @@ describe('Briefing dispatch views and text', () => {
     await screen.findByText('Baptiste → Jean')
     fireEvent.click(messageButton())
     expect(listAdminClients).toHaveBeenCalledWith('token', expect.any(AbortSignal))
-    expect((screen.getByRole('textbox', { name: 'Texte du briefing' }) as HTMLTextAreaElement).value.split('Échanges :')[0]).toContain('032 55 555 55')
+    expect(((await screen.findByRole('textbox', { name: 'Texte du briefing' })) as HTMLTextAreaElement).value.split('Échanges :')[0]).toContain('032 55 555 55')
   })
 
   it('keeps the visual briefing available if seller contacts cannot be loaded', async () => {
@@ -288,7 +333,7 @@ describe('Briefing dispatch views and text', () => {
     expect(await screen.findByText('Baptiste → Jean')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     fireEvent.click(messageButton())
-    expect((screen.getByRole('textbox', { name: 'Texte du briefing' }) as HTMLTextAreaElement).value).toContain('contact vendeur indisponible')
+    expect(((await screen.findByRole('textbox', { name: 'Texte du briefing' })) as HTMLTextAreaElement).value).toContain('contact vendeur indisponible')
   })
 
   it('shows an actionable empty state without fetching cancelled or superseded plans', () => {

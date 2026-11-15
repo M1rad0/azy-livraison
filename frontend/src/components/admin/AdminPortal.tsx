@@ -22,6 +22,7 @@ import { AdminDispatchPanel } from './AdminDispatchPanel'
 import { AdminBriefingPanel } from './AdminBriefingPanel'
 import { AdminDailyOperationsPanel } from './AdminDailyOperationsPanel'
 import { AdminFinancePanel } from './AdminFinancePanel'
+import { LegacyFinancePanel } from './LegacyFinancePanel'
 import { AdminQueuePanel, type PendingQueueFilters } from './AdminQueuePanel'
 import { AdminPricingZonesPanel } from './AdminPricingZonesPanel'
 import { antananarivoToday, errorMessage } from './adminHelpers'
@@ -32,7 +33,7 @@ import { AdminPostponedPackagesPanel } from './AdminPostponedPackagesPanel'
 import { usePortalNavigation } from '../PortalShell'
 import './AdminPortal.css'
 
-type AdminTab = 'queue' | 'express' | 'dispatch' | 'briefing' | 'day' | 'postponed' | 'finance' | 'clients' | 'couriers' | 'pricing' | 'settings'
+type AdminTab = 'queue' | 'express' | 'dispatch' | 'briefing' | 'day' | 'postponed' | 'finance' | 'finance-legacy-clients' | 'finance-legacy-couriers' | 'clients' | 'couriers' | 'pricing' | 'settings'
 
 const tabs = [
   { id: 'queue', label: 'File d’attente', detail: 'Demandes et colis', icon: Boxes },
@@ -53,7 +54,8 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
   const portalNavigation = usePortalNavigation()
   const [localTab, setLocalTab] = useState<AdminTab>('queue')
   const tab = portalNavigation?.role === 'ADMIN'
-    && tabs.some((item) => item.id === portalNavigation.section)
+    && (tabs.some((item) => item.id === portalNavigation.section)
+      || ['finance-legacy-clients', 'finance-legacy-couriers'].includes(portalNavigation.section))
     ? portalNavigation.section as AdminTab
     : localTab
   const [pendingFilters, setPendingFilters] = useState<PendingQueueFilters>({
@@ -253,6 +255,8 @@ export function AdminPortal({ accessToken }: { accessToken: string }) {
         />
       )}
       {tab === 'finance' && <AdminFinancePanel accessToken={accessToken} couriers={couriers} initialDate={dispatchDate} />}
+      {tab === 'finance-legacy-clients' && <LegacyFinancePanel key="legacy-clients" accessToken={accessToken} couriers={couriers} initialDate={dispatchDate} initialView="CLIENTS" />}
+      {tab === 'finance-legacy-couriers' && <LegacyFinancePanel key="legacy-couriers" accessToken={accessToken} couriers={couriers} initialDate={dispatchDate} initialView="COURIERS" />}
       {tab === 'postponed' && <AdminPostponedPackagesPanel accessToken={accessToken} onChanged={() => { void loadPending(); void loadDispatchDay() }} />}
       {tab === 'clients' && <AdminClientsPanel accessToken={accessToken} onExpressCreated={() => { setExpressRefreshKey((value) => value + 1); openTab('express') }} />}
       {tab === 'couriers' && <AdminCouriersPanel accessToken={accessToken} couriers={couriers} presets={presets} onSaved={upsertCourier} />}

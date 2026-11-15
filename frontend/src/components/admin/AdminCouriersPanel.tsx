@@ -1,10 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import {
-  BadgePercent,
   Bike,
-  CircleDollarSign,
   Clock3,
-  Fuel,
   Gauge,
   MapPin,
   PackageOpen,
@@ -238,25 +235,9 @@ function CourierEditor({
               <span>Vitesse personnalisée <small>facultatif</small></span>
               <input min="0.01" step="0.01" type="number" value={draft.averageSpeedKmh} onChange={(event) => setDraft({ ...draft, averageSpeedKmh: event.target.value })} placeholder={preset ? `${preset.averageSpeedKmh} km/h par défaut` : 'km/h'} />
             </label>
-            <label>
-              <span>Part personnalisée <small>facultatif</small></span>
-              <div className="admin-fraction-input">
-                <input min="1" step="1" type="number" aria-label="Numérateur de la part du livreur" value={draft.commissionNumerator} onChange={(event) => setDraft({ ...draft, commissionNumerator: event.target.value })} placeholder="1" />
-                <b>/</b>
-                <input min="1" step="1" type="number" aria-label="Dénominateur de la part du livreur" value={draft.commissionDenominator} onChange={(event) => setDraft({ ...draft, commissionDenominator: event.target.value })} placeholder="3" />
-              </div>
-            </label>
           </div>
-          <section className="admin-courier-payout-fields admin-courier-fuel-fields">
-            <header><Fuel aria-hidden="true" /><div><strong>Carburant des express</strong><small>Facultatif · les valeurs effectives seront figées avec chaque remboursement</small></div></header>
-            <div className="admin-form-grid admin-form-grid--three">
-              <label><span>Remboursement</span><select value={draft.fuelReimbursementMode} onChange={(event) => setDraft({ ...draft, fuelReimbursementMode: event.target.value as CourierDraft['fuelReimbursementMode'] })}><option value="DEFAULT">Selon le véhicule</option><option value="ENABLED">Activé</option><option value="DISABLED">Désactivé</option></select></label>
-              <label><span>Distance avec 1 litre <small>facultatif</small></span><div className="admin-input-unit"><input min="0.01" step="0.01" type="number" value={draft.fuelEfficiencyKmPerLiter} onChange={(event) => setDraft({ ...draft, fuelEfficiencyKmPerLiter: event.target.value })} placeholder={`${courier?.effectiveFuelEfficiencyKmPerLiter ?? (draft.vehicleType === 'MOTO' ? 40 : '—')} km/L`} /><b>km/L</b></div></label>
-              <label><span>Prix du litre <small>facultatif</small></span><div className="admin-input-unit"><input min="1" step="1" type="number" value={draft.fuelPricePerLiterAriary} onChange={(event) => setDraft({ ...draft, fuelPricePerLiterAriary: event.target.value })} placeholder={courier ? `${courier.effectiveFuelPricePerLiterAriary} Ar/L` : '5 000 Ar/L'} /><b>Ar/L</b></div></label>
-            </div>
-          </section>
           <section className="admin-courier-payout-fields">
-            <header><WalletCards aria-hidden="true" /><div><strong>Numéro de versement</strong><small>Facultatif · utilisé plus tard pour la rémunération du livreur</small></div></header>
+            <header><WalletCards aria-hidden="true" /><div><strong>Numéro de versement</strong><small>Facultatif · utilisé pour les transferts de caisse</small></div></header>
             <div className="admin-form-grid">
               <label><span>Opérateur</span><input maxLength={80} value={draft.payoutOperator} onChange={(event) => setDraft({ ...draft, payoutOperator: event.target.value })} placeholder="Ex. MVola" /></label>
               <label><span>Titulaire</span><input maxLength={150} value={draft.payoutAccountHolder} onChange={(event) => setDraft({ ...draft, payoutAccountHolder: event.target.value })} /></label>
@@ -324,9 +305,6 @@ export function AdminCouriersPanel({ accessToken, couriers, presets, onSaved }: 
                 <div><dt><PackageOpen aria-hidden="true" />Capacité</dt><dd>{courier.effectiveMaxWeightKg} kg{courier.maxWeightKg != null && <small>personnalisée</small>}</dd></div>
                 <div><dt><Gauge aria-hidden="true" />Vitesse</dt><dd>{courier.effectiveAverageSpeedKmh} km/h{courier.averageSpeedKmh != null && <small>personnalisée</small>}</dd></div>
                 <div><dt><Clock3 aria-hidden="true" />Départ</dt><dd>{courier.defaultDepartureTime.slice(0, 5)}</dd></div>
-                <div><dt><BadgePercent aria-hidden="true" />Rémunération</dt><dd>{courier.effectiveCommissionNumerator}/{courier.effectiveCommissionDenominator}{courier.commissionNumerator != null && <small>personnalisée</small>}</dd></div>
-                <div><dt><Fuel aria-hidden="true" />Autonomie</dt><dd>{courier.effectiveFuelReimbursementEnabled && courier.effectiveFuelEfficiencyKmPerLiter != null ? `${courier.effectiveFuelEfficiencyKmPerLiter} km/L` : 'Non remboursé'}{courier.fuelEfficiencyKmPerLiter != null && <small>personnalisée</small>}</dd></div>
-                <div><dt><CircleDollarSign aria-hidden="true" />Essence express</dt><dd>{courier.effectiveFuelReimbursementEnabled ? `${courier.effectiveFuelPricePerLiterAriary.toLocaleString('fr-MG')} Ar/L` : 'Désactivée'}{courier.fuelPricePerLiterAriary != null && <small>personnalisée</small>}</dd></div>
               </dl>
               <div className="admin-courier-location"><MapPin aria-hidden="true" /><span><small>Point de départ</small><strong>{locationLabel(courier.departureLocation)}</strong></span></div>
               {courier.payoutDestination && <div className="admin-courier-location"><Smartphone aria-hidden="true" /><span><small>Versement · {courier.payoutDestination.operator}</small><strong>{courier.payoutDestination.number} · {courier.payoutDestination.accountHolder}</strong></span></div>}

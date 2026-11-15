@@ -90,6 +90,11 @@ const NAVIGATION: Record<AccountRole, PortalNavigationItem[]> = {
 
 const STORAGE_KEY = 'azy.portal.sidebar-collapsed'
 
+// Unlisted legacy screens stay protected by the authenticated admin portal.
+function isGhostSection(role: AccountRole, section: string): boolean {
+  return role === 'ADMIN' && ['finance-legacy-clients', 'finance-legacy-couriers'].includes(section)
+}
+
 function pathFor(role: AccountRole, section: string): string {
   return `#/${role.toLowerCase()}/${section}`
 }
@@ -97,7 +102,7 @@ function pathFor(role: AccountRole, section: string): string {
 function sectionFromHash(role: AccountRole, items: PortalNavigationItem[]): string | undefined {
   const match = window.location.hash.match(/^#\/(admin|client|courier)\/([^/?#]+)/)
   if (!match || match[1].toUpperCase() !== role) return undefined
-  return items.some((item) => item.id === match[2]) ? match[2] : undefined
+  return items.some((item) => item.id === match[2]) || isGhostSection(role, match[2]) ? match[2] : undefined
 }
 
 function initials(account: Account): string {
@@ -170,8 +175,8 @@ export function PortalShell({ account, children, onLogout }: PortalShellProps) {
   }, [account.role, defaultSection, items])
 
   useEffect(() => {
-    if (!items.some((item) => item.id === section)) navigate(defaultSection)
-  }, [defaultSection, items, navigate, section])
+    if (!items.some((item) => item.id === section) && !isGhostSection(account.role, section)) navigate(defaultSection)
+  }, [account.role, defaultSection, items, navigate, section])
 
   useEffect(() => {
     try {
@@ -217,7 +222,7 @@ export function PortalShell({ account, children, onLogout }: PortalShellProps) {
     }
   }, [mobileOpen])
 
-  const activeItem = items.find((item) => item.id === section) ?? items[0]
+  const activeItem = items.find((item) => item.id === (isGhostSection(account.role, section) ? 'finance' : section)) ?? items[0]
   const accountName = account.displayName.trim() || account.username
   const navigationValue = useMemo<PortalNavigationValue>(() => ({
     role: account.role,
@@ -275,7 +280,7 @@ export function PortalShell({ account, children, onLogout }: PortalShellProps) {
 
           <nav className="portal-sidebar__nav" aria-label="Sections principales">
             {items.map(({ id, label, detail, icon: Icon, badge }) => {
-              const active = id === section
+              const active = id === (isGhostSection(account.role, section) ? 'finance' : section)
               return (
                 <a
                   key={id}

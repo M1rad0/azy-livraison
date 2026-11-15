@@ -398,12 +398,8 @@ describe('AdminDailyOperationsPanel', () => {
     expect(screen.getByRole('button', { name: 'Modifier' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Clôturer la journée' })).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rémunérations livreurs' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
-      '/api/admin/finance/delivery-days/2026-08-24/clients/account-1/courier-compensations',
-      expect.anything(),
-    ))
+    expect(screen.queryByRole('button', { name: 'Rémunérations livreurs' })).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it('laisse confirmer le retour physique après la clôture du client', async () => {
