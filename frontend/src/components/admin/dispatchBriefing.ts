@@ -177,7 +177,8 @@ export function buildDispatchBriefing(draft: ManualDispatchDraft): DispatchBrief
 }
 
 function packageDescription(item: ManualPackage) {
-  return `${recipient(item)} — ${text(dispatchPlaceText(item.destination))} — vendeur : ${sender(item)}`
+  const contact = text(item.contact)
+  return `${text(dispatchPlaceText(item.destination))} — ${contact ? `contact : ${contact}` : 'contact non renseigné'}`
 }
 
 function displayDate(value: string) {
@@ -186,11 +187,27 @@ function displayDate(value: string) {
 }
 
 /** Plain editable text: no routing estimates, technical identifiers or meeting location are invented. */
-export function generateCourierBriefing(briefing: CourierBriefing, serviceDate: string): string {
+export function generateCourierBriefing(
+  briefing: CourierBriefing,
+  serviceDate: string,
+  sellerContacts?: Readonly<Record<string, string | null | undefined>>,
+): string {
   const lines = [`Briefing du ${displayDate(serviceDate)} — ${text(briefing.courier.name) || 'Livreur sans nom'}`, '', 'Récupérations :']
   if (briefing.pickups.length === 0) lines.push('Aucune récupération.')
-  briefing.pickups.forEach(({ pickup, packages, clients }, index) => {
-    lines.push(`${index + 1}. ${text(dispatchPlaceText(pickup.location))} — ${clients.map((client) => text(client)).join(', ') || 'Vendeur non renseigné'} — ${packages.length} colis.`)
+  briefing.pickups.forEach(({ pickup, packages }, index) => {
+    const sellers = new Map<string, ManualPackage>()
+    for (const item of packages) {
+      if (!sellers.has(item.ownerAccountId)) sellers.set(item.ownerAccountId, item)
+    }
+    const contacts = [...sellers.values()].map((item) => {
+      const available = sellerContacts && Object.hasOwn(sellerContacts, item.ownerAccountId)
+      const contact = available ? text(sellerContacts[item.ownerAccountId]) : ''
+      const contactLabel = available
+        ? contact ? `contact vendeur : ${contact}` : 'contact vendeur non renseigné'
+        : 'contact vendeur indisponible'
+      return `${sender(item)} — ${contactLabel}`
+    })
+    lines.push(`${index + 1}. ${text(dispatchPlaceText(pickup.location))} — ${contacts.join(' ; ') || 'Vendeur non renseigné — contact vendeur indisponible'} — ${packages.length} colis.`)
   })
 
   lines.push('', 'Échanges :')
@@ -214,7 +231,6 @@ export function generateCourierBriefing(briefing: CourierBriefing, serviceDate: 
     const window = formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference)
     const details = [
       packageDescription(item),
-      text(item.contact) ? `contact : ${text(item.contact)}` : undefined,
       `à encaisser : ${new Intl.NumberFormat('fr-FR', { useGrouping: false }).format(item.amountToCollectAriary)} Ar`,
       window ? `créneau : ${window}` : undefined,
     ].filter(Boolean)

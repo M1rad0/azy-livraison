@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowRight, ArrowRightLeft, Bike, CalendarDays, Check, Copy, List, LoaderCircle, MapPin, MessageSquareText, PackageCheck, Phone, RefreshCw, TriangleAlert, Warehouse, X } from 'lucide-react'
-import { getDispatchPlan, type DispatchPlanSummary } from '../../api/admin'
+import { getDispatchPlan, listAdminClients, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft, type ManualPackage } from '../../api/manualDispatch'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { Button } from '../Button'
@@ -123,7 +123,11 @@ function BriefingTextDialog({ courierName, text, onChange, onClose }: { courierN
 }
 
 /** Also reused for the read-only review immediately before validating a manual dispatch. */
-export function DispatchBriefingView({ draft, allowMessages = false }: { draft: ManualDispatchDraft; allowMessages?: boolean }) {
+export function DispatchBriefingView({ draft, allowMessages = false, sellerContacts }: {
+  draft: ManualDispatchDraft
+  allowMessages?: boolean
+  sellerContacts?: Readonly<Record<string, string | null | undefined>>
+}) {
   const model = useMemo(() => buildDispatchBriefing(draft), [draft])
   const [view, setView] = useState<'overview' | 'courier'>('overview')
   const [courierId, setCourierId] = useState(model.couriers[0]?.courier.courierId ?? '')
@@ -135,7 +139,7 @@ export function DispatchBriefingView({ draft, allowMessages = false }: { draft: 
   const canGenerate = allowMessages && draft.status === 'FINALIZED' && model.warnings.length === 0
   function openText(briefing: CourierBriefing) {
     const id = briefing.courier.courierId
-    setTexts((current) => current[id] === undefined ? { ...current, [id]: generateCourierBriefing(briefing, draft.serviceDate) } : current)
+    setTexts((current) => current[id] === undefined ? { ...current, [id]: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts) } : current)
     setEditing(id)
   }
   const collectionCouriers = model.couriers.filter((item) => item.pickups.length > 0)
@@ -162,7 +166,7 @@ export function DispatchBriefingView({ draft, allowMessages = false }: { draft: 
 }
 
 export function AdminBriefingPanel({ accessToken, date, history, busy = false, onDateChange, onOpenDispatch, onRefresh }: AdminBriefingPanelProps) {
-  const [snapshot, setSnapshot] = useState<{ planId: string; draft: ManualDispatchDraft }>()
+  const [snapshot, setSnapshot] = useState<{ planId: string; draft: ManualDispatchDraft; sellerContacts?: Readonly<Record<string, string | null>> }>()
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string>()
   const [reload, setReload] = useState(0)
@@ -181,10 +185,14 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
       if (controller.signal.aborted) return
       if (plan.plan.serviceDate !== date || plan.plan.archivedAt || !['READY', 'READY_WITH_WARNINGS'].includes(plan.plan.status)) throw new Error('Ce dispatch n’est plus actif. Actualisez pour consulter la répartition en cours.')
       if (plan.plan.strategy !== 'MANUAL') throw new Error('Ce plan ancien ne possède pas de répartition manuelle. Consultez ses détails dans Dispatch.')
-      const draft = await getManualDraftForPlan(planId, accessToken, controller.signal)
+      const [draft, clients] = await Promise.all([
+        getManualDraftForPlan(planId, accessToken, controller.signal),
+        // Contacts serve the text generator only; unavailable profiles must not hide the dispatch.
+        listAdminClients(accessToken, controller.signal).catch(() => undefined),
+      ])
       if (controller.signal.aborted) return
       if (!draft || draft.serviceDate !== date || draft.status !== 'FINALIZED' || (draft.finalPlanId && draft.finalPlanId !== planId)) throw new Error('Le briefing de ce plan n’est pas disponible. Consultez Dispatch ou actualisez la journée.')
-      setSnapshot({ planId, draft })
+      setSnapshot({ planId, draft, sellerContacts: clients ? Object.fromEntries(clients.map((client) => [client.accountId, client.phone ?? null])) : undefined })
     })().catch((error: unknown) => { if (!controller.signal.aborted) setMessage(errorMessage(error)) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -193,6 +201,6 @@ export function AdminBriefingPanel({ accessToken, date, history, busy = false, o
   const ready = !busy && !loading && snapshot?.planId === planId ? snapshot?.draft : undefined
   return <section className="admin-panel admin-briefing" aria-labelledby="briefing-title">
     <header className="admin-panel__heading"><div><p className="admin-eyebrow">Organisation de la journée</p><h2 id="briefing-title">Briefing</h2><p>Les récupérations, les échanges et la liste finale de colis de chaque livreur.</p></div><div className="admin-toolbar"><label className="admin-date-field"><CalendarDays aria-hidden="true" /><span>Date d’activité</span><input type="date" required value={date} onChange={(event) => { if (event.target.value) onDateChange(event.target.value) }} /></label><Button tone="admin" variant="secondary" disabled={busy || loading} onClick={() => { setReload((value) => value + 1); onRefresh?.() }}><RefreshCw aria-hidden="true" />Actualiser</Button></div></header>
-    {busy || loading ? <div className="admin-empty" role="status"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement du briefing…</strong></div> : message ? <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Briefing indisponible</strong><span>{message}</span><Button tone="admin" variant="secondary" size="small" onClick={onOpenDispatch}>Ouvrir Dispatch</Button></div></div> : ready ? <DispatchBriefingView key={`${planId}:${ready.id}:${ready.version}`} draft={ready} allowMessages /> : <div className="admin-empty"><MessageSquareText aria-hidden="true" /><strong>Aucun dispatch validé pour le {formatDate(date)}</strong><span>Validez d’abord les affectations de cette journée pour préparer les briefings.</span><Button tone="admin" onClick={onOpenDispatch}>Ouvrir Dispatch<ArrowRight aria-hidden="true" /></Button></div>}
+    {busy || loading ? <div className="admin-empty" role="status"><LoaderCircle className="admin-spin" aria-hidden="true" /><strong>Chargement du briefing…</strong></div> : message ? <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Briefing indisponible</strong><span>{message}</span><Button tone="admin" variant="secondary" size="small" onClick={onOpenDispatch}>Ouvrir Dispatch</Button></div></div> : ready ? <DispatchBriefingView key={`${planId}:${ready.id}:${ready.version}`} draft={ready} allowMessages sellerContacts={snapshot?.sellerContacts} /> : <div className="admin-empty"><MessageSquareText aria-hidden="true" /><strong>Aucun dispatch validé pour le {formatDate(date)}</strong><span>Validez d’abord les affectations de cette journée pour préparer les briefings.</span><Button tone="admin" onClick={onOpenDispatch}>Ouvrir Dispatch<ArrowRight aria-hidden="true" /></Button></div>}
   </section>
 }

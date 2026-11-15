@@ -1,11 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDispatchPlan, type DispatchPlan, type DispatchPlanSummary } from '../../api/admin'
+import { getDispatchPlan, listAdminClients, type DispatchPlan, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft } from '../../api/manualDispatch'
 import { AdminBriefingPanel, DispatchBriefingView } from './AdminBriefingPanel'
 import { draftFixture } from './manualDispatch.fixtures'
 
-vi.mock('../../api/admin', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/admin')>(), getDispatchPlan: vi.fn() }))
+vi.mock('../../api/admin', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/admin')>(), getDispatchPlan: vi.fn(), listAdminClients: vi.fn() }))
 vi.mock('../../api/manualDispatch', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/manualDispatch')>(), getManualDraftForPlan: vi.fn() }))
 
 function finalized(): ManualDispatchDraft {
@@ -28,6 +28,7 @@ describe('Briefing dispatch views and text', () => {
   beforeEach(() => {
     vi.mocked(getDispatchPlan).mockResolvedValue({ plan: summary(), packages: [] })
     vi.mocked(getManualDraftForPlan).mockResolvedValue(finalized())
+    vi.mocked(listAdminClients).mockResolvedValue([])
   })
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
@@ -87,6 +88,20 @@ describe('Briefing dispatch views and text', () => {
     expect(screen.getByRole('textbox', { name: 'Texte du briefing' })).not.toHaveValue('Texte personnel de Baptiste')
   })
 
+  it('uses seller contacts only in the generated text, without changing the visual briefing', () => {
+    const draft = finalized()
+    const { container, rerender } = render(<DispatchBriefingView draft={draft} allowMessages />)
+    const html = container.innerHTML
+    rerender(<DispatchBriefingView draft={draft} allowMessages sellerContacts={{ client: '034 99 999 99' }} />)
+    expect(container.innerHTML).toBe(html)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Générer le briefing de Baptiste' })[0])
+    const text = (screen.getByRole('textbox', { name: 'Texte du briefing' }) as HTMLTextAreaElement).value
+    expect(text.split('Échanges :')[0]).toContain('034 99 999 99')
+    expect(text.split('Échanges :')[1]).not.toMatch(/Destinataire|Boutique/)
+    expect(text.split('Échanges :')[1]).toContain('Destination 1')
+    expect(text.split('Échanges :')[1]).toContain('contact : 034')
+  })
+
   it('offers manual selection when clipboard permission is denied and disables empty copying', async () => {
     vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
     render(<DispatchBriefingView draft={finalized()} allowMessages />)
@@ -129,6 +144,23 @@ describe('Briefing dispatch views and text', () => {
     expect(await screen.findByText('Baptiste → Jean')).toBeInTheDocument()
     expect(getDispatchPlan).toHaveBeenCalledWith('plan-1', 'token', expect.any(AbortSignal))
     expect(getManualDraftForPlan).toHaveBeenCalledWith('plan-1', 'token', expect.any(AbortSignal))
+  })
+
+  it('loads the current seller contact for the text via the existing admin client API', async () => {
+    vi.mocked(listAdminClients).mockResolvedValue([{ accountId: 'client', username: 'boutique', displayName: 'Boutique', phone: '032 55 555 55', enabled: true, expressDeliveryEnabled: false, defaultPickup: null, version: 0 }])
+    panel()
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Générer le briefing de Baptiste' }))[0])
+    expect(listAdminClients).toHaveBeenCalledWith('token', expect.any(AbortSignal))
+    expect((screen.getByRole('textbox', { name: 'Texte du briefing' }) as HTMLTextAreaElement).value.split('Échanges :')[0]).toContain('032 55 555 55')
+  })
+
+  it('keeps the visual briefing available if seller contacts cannot be loaded', async () => {
+    vi.mocked(listAdminClients).mockRejectedValue(new Error('Contacts indisponibles'))
+    panel()
+    expect(await screen.findByText('Baptiste → Jean')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Générer le briefing de Baptiste' })[0])
+    expect((screen.getByRole('textbox', { name: 'Texte du briefing' }) as HTMLTextAreaElement).value).toContain('contact vendeur indisponible')
   })
 
   it('shows an actionable empty state without fetching cancelled or superseded plans', () => {

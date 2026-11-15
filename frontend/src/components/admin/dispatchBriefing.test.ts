@@ -107,7 +107,7 @@ describe('dispatch briefing model', () => {
     expect(result.couriers[1].give[0].courierName).toBe('Jean (034 11 111 11)')
   })
 
-  it('generates concise French plain text with the date, landmarks, seller, contact, cash and delivery windows', () => {
+  it('generates concise French plain text with the date, landmarks, recipient contact, cash and delivery windows', () => {
     const draft = allocatedFixture()
     draft.hub.label = 'SECRET MEETING PLACE'
     draft.packages[0] = {
@@ -119,9 +119,9 @@ describe('dispatch briefing model', () => {
     draft.packages[2].deliveryTimePreference = 'MORNING'
     const text = generateCourierBriefing(buildDispatchBriefing(draft).couriers[2], '2026-11-15')
     expect(text).toContain('Briefing du 15/11/2026 — Marie')
-    expect(text).toContain('Lova Rakoto — Pharmacie du coin · Analakely, Antananarivo — vendeur : Boutique — contact : 034 11 222 33 — à encaisser : 5000 Ar — créneau : 08:30–11:45')
+    expect(text).toContain('Pharmacie du coin · Analakely, Antananarivo — contact : 034 11 222 33 — à encaisser : 5000 Ar — créneau : 08:30–11:45')
     expect(text).toContain('créneau : Matin')
-    expect(text).not.toMatch(/Analamanga|Madagascar|SECRET MEETING PLACE|p1|c1|3500|92|latitude|longitude/)
+    expect(text).not.toMatch(/Lova|Rakoto|Boutique|Destinataire|Analamanga|Madagascar|SECRET MEETING PLACE|p1|c1|3500|92|latitude|longitude/)
     expect(text.indexOf('Récupérations :')).toBeLessThan(text.indexOf('Échanges :'))
     expect(text.indexOf('Échanges :')).toBeLessThan(text.indexOf('Ta liste finale de colis :'))
   })
@@ -136,5 +136,78 @@ describe('dispatch briefing model', () => {
     expect(text).toContain('créneau : Soir')
     expect(text).toContain('créneau : 23:30–01:00 (lendemain)')
     expect(text).not.toContain('arrivée')
+  })
+
+  it('adds each seller contact only once per pickup even when several parcels belong to that account', () => {
+    const draft = allocatedFixture()
+    const text = generateCourierBriefing(buildDispatchBriefing(draft).couriers[0], draft.serviceDate, { client: ' 034 99\n999 99 ' })
+    const pickups = text.split('\n\nÉchanges :')[0]
+    expect(pickups).toContain('1. Analakely — Boutique — contact vendeur : 034 99 999 99 — 2 colis.')
+    expect(pickups.match(/034 99 999 99/g)).toHaveLength(1)
+    const packageSections = text.split('\n\nÉchanges :')[1]
+    expect(packageSections).not.toContain('034 99 999 99')
+    expect(packageSections).not.toContain('Boutique')
+    expect(packageSections).not.toContain('Destinataire')
+  })
+
+  it('keeps seller accounts distinct by ID when their display names are the same', () => {
+    const draft = allocatedFixture()
+    draft.packages[0].ownerAccountId = 'seller-a'
+    draft.packages[1].ownerAccountId = 'seller-b'
+    const text = generateCourierBriefing(buildDispatchBriefing(draft).couriers[0], draft.serviceDate, {
+      'seller-a': '034 11 111 11', 'seller-b': '034 22 222 22',
+    })
+    const pickups = text.split('\n\nÉchanges :')[0]
+    expect(pickups).toContain('Boutique — contact vendeur : 034 11 111 11 ; Boutique — contact vendeur : 034 22 222 22')
+    expect(pickups.match(/034 11 111 11/g)).toHaveLength(1)
+    expect(pickups.match(/034 22 222 22/g)).toHaveLength(1)
+    expect(pickups).not.toMatch(/seller-a|seller-b/)
+  })
+
+  it('distinguishes unavailable seller profiles from known profiles without a contact', () => {
+    const draft = allocatedFixture()
+    const courier = buildDispatchBriefing(draft).couriers[0]
+    for (const contacts of [undefined, {}, { other: '034' }]) {
+      expect(generateCourierBriefing(courier, draft.serviceDate, contacts)).toContain('Boutique — contact vendeur indisponible')
+    }
+    for (const contact of [null, undefined, '', '   ']) {
+      const text = generateCourierBriefing(courier, draft.serviceDate, { client: contact })
+      expect(text).toContain('Boutique — contact vendeur non renseigné')
+      expect(text).not.toContain('contact vendeur indisponible')
+    }
+  })
+
+  it('identifies parcels at the same landmark by recipient contact in exchanges and the final list', () => {
+    const draft = allocatedFixture()
+    draft.packages[0].destination = { label: 'Gare\n routière', query: 'Ambodivona, Antananarivo, Analamanga, Madagascar', latitude: -18.9, longitude: 47.52 }
+    draft.packages[1].destination = { ...draft.packages[0].destination }
+    draft.packages[0].contact = '034 11 111 11'
+    draft.packages[1].contact = '034 22 222 22'
+    draft.deliveries = [{ packageId: 'p1', courierId: 'c2', order: 0 }, { packageId: 'p2', courierId: 'c2', order: 1 }, { packageId: 'p3', courierId: 'c2', order: 2 }]
+    const couriers = buildDispatchBriefing(draft).couriers
+    const collectionText = generateCourierBriefing(couriers[0], draft.serviceDate).split('\n\nÉchanges :')[1]
+    expect(collectionText).toContain('- Gare routière · Ambodivona, Antananarivo — contact : 034 11 111 11')
+    expect(collectionText).toContain('- Gare routière · Ambodivona, Antananarivo — contact : 034 22 222 22')
+    const deliveryText = generateCourierBriefing(couriers[1], draft.serviceDate)
+    const exchanges = deliveryText.split('\n\nÉchanges :')[1].split('\n\nTa liste finale de colis :')[0]
+    expect(exchanges).toContain('- Gare routière · Ambodivona, Antananarivo — contact : 034 11 111 11')
+    expect(exchanges).toContain('- Gare routière · Ambodivona, Antananarivo — contact : 034 22 222 22')
+    const final = deliveryText.split('\n\nTa liste finale de colis :')[1]
+    expect(final).toContain('1. Gare routière · Ambodivona, Antananarivo — contact : 034 11 111 11 — à encaisser : 5000 Ar')
+    expect(final).toContain('2. Gare routière · Ambodivona, Antananarivo — contact : 034 22 222 22 — à encaisser : 5000 Ar')
+    expect(deliveryText.split('\n\nÉchanges :')[1]).not.toMatch(/Boutique|Destinataire|Analamanga|Madagascar/)
+    expect(final.match(/034 11 111 11/g)).toHaveLength(1)
+    expect(final.match(/034 22 222 22/g)).toHaveLength(1)
+  })
+
+  it('explicitly indicates missing recipient contacts instead of falling back to personal names', () => {
+    const draft = allocatedFixture()
+    draft.packages[0].contact = '  '
+    const couriers = buildDispatchBriefing(draft).couriers
+    const exchangeText = generateCourierBriefing(couriers[0], draft.serviceDate).split('\n\nÉchanges :')[1]
+    expect(exchangeText).toContain('Destination 1 — contact non renseigné')
+    const finalText = generateCourierBriefing(couriers[2], draft.serviceDate).split('\n\nTa liste finale de colis :')[1]
+    expect(finalText).toContain('Destination 1 — contact non renseigné — à encaisser : 5000 Ar')
+    expect(finalText).not.toContain('Destinataire 1')
   })
 })
