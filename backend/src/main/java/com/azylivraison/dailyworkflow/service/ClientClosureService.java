@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.azylivraison.dailyworkflow.domain.OperationDayStatus;
 import com.azylivraison.dailyworkflow.repository.ClientClosureRepository;
+import com.azylivraison.finance.cash.CashLedgerService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -18,9 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class ClientClosureService {
 
     private final ClientClosureRepository repository;
+    private final CashLedgerService cashLedger;
 
-    public ClientClosureService(ClientClosureRepository repository) {
+    public ClientClosureService(ClientClosureRepository repository, CashLedgerService cashLedger) {
         this.repository = repository;
+        this.cashLedger = cashLedger;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -102,6 +105,8 @@ public class ClientClosureService {
                     "Le relevé financier du client n'a pas pu être créé de manière cohérente.");
         }
         repository.insertClosureEvent(closure);
+        cashLedger.syncSellerReport(closure.reportId(), serviceDate, clientAccountId,
+                closure.amountToRemitAriary(), actorAccountId);
         return overview(serviceDate);
     }
 
@@ -139,6 +144,7 @@ public class ClientClosureService {
                     "La clôture client a été modifiée entre-temps. Rechargez la page.");
         }
         assertClosureCanReopen(closure);
+        cashLedger.reopenSellerReport(closure.reportId(), actorAccountId);
         Instant now = Instant.now();
         if (!repository.reopenClosure(closure, actorAccountId, normalizedReason, now)) {
             throw new DailyWorkflowConflictException(
@@ -152,6 +158,9 @@ public class ClientClosureService {
     @Transactional
     public void reopenAllForDay(
             LocalDate serviceDate, UUID actorAccountId, String reason) {
+        for (ClientClosure closure : repository.closedClosures(serviceDate)) {
+            cashLedger.reopenSellerReport(closure.reportId(), actorAccountId);
+        }
         repository.reopenAllClosed(serviceDate, actorAccountId, normalizeReason(reason), Instant.now());
     }
 

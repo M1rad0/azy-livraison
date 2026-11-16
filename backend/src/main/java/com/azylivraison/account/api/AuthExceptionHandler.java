@@ -3,6 +3,7 @@ package com.azylivraison.account.api;
 import com.azylivraison.account.service.InvalidCredentialsException;
 import com.azylivraison.account.service.ClientProfileNotFoundException;
 import com.azylivraison.account.service.InvalidClientProfileException;
+import com.azylivraison.account.service.InvalidPayoutOperatorException;
 import com.azylivraison.account.service.InvalidRefreshTokenException;
 import com.azylivraison.account.service.ClientProfileVersionConflictException;
 import com.azylivraison.account.service.UsernameAlreadyExistsException;
@@ -52,6 +53,12 @@ public class AuthExceptionHandler {
     public ResponseEntity<AuthErrorResponse> handleInvalidClientProfile(InvalidClientProfileException exception) {
         return ResponseEntity.badRequest()
                 .body(new AuthErrorResponse("INVALID_CLIENT_PROFILE", exception.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidPayoutOperatorException.class)
+    public ResponseEntity<AuthErrorResponse> handleInvalidPayoutOperator(InvalidPayoutOperatorException exception) {
+        return ResponseEntity.unprocessableEntity()
+                .body(new AuthErrorResponse("PAYOUT_OPERATOR_INVALID", exception.getMessage()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})

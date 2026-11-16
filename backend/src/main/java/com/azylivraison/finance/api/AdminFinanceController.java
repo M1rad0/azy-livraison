@@ -44,7 +44,8 @@ public class AdminFinanceController {
 
     @GetMapping("/clients/{accountId}")
     public ClientFinanceResponse clientFinance(@PathVariable UUID accountId) {
-        return ClientFinanceResponse.from(service.getClientFinance(accountId));
+        ClientFinance finance = service.getClientFinance(accountId);
+        return ClientFinanceResponse.from(finance, service.cashManagedSettlementIds(finance));
     }
 
     @PostMapping(
@@ -85,7 +86,7 @@ public class AdminFinanceController {
     @GetMapping("/delivery-days/{serviceDate}/courier-compensations")
     public CourierCompensationResponse previewCompensations(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate) {
-        return CourierCompensationResponse.from(service.previewCompensations(serviceDate));
+        return CourierCompensationResponse.from(service.previewCompensations(serviceDate), service.legacyAccrualsEnabled());
     }
 
     @GetMapping("/delivery-days/{serviceDate}/clients/{clientAccountId}/courier-compensations")
@@ -93,7 +94,7 @@ public class AdminFinanceController {
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
             @PathVariable UUID clientAccountId) {
         return CourierCompensationResponse.from(
-                service.previewCompensations(serviceDate, clientAccountId));
+                service.previewCompensations(serviceDate, clientAccountId), service.legacyAccrualsEnabled());
     }
 
     @PostMapping("/delivery-days/{serviceDate}/courier-compensations/finalize")
@@ -105,7 +106,7 @@ public class AdminFinanceController {
                 ? List.of()
                 : request.overrides().stream().map(CompensationOverrideRequest::toDomain).toList();
         return CourierCompensationResponse.from(service.finalizeCompensations(
-                serviceDate, request.closureRevision(), overrides, accountId(jwt)));
+                serviceDate, request.closureRevision(), overrides, accountId(jwt)), service.legacyAccrualsEnabled());
     }
 
     @PostMapping("/delivery-days/{serviceDate}/clients/{clientAccountId}/courier-compensations/finalize")
@@ -118,7 +119,7 @@ public class AdminFinanceController {
                 ? List.of()
                 : request.overrides().stream().map(CompensationOverrideRequest::toDomain).toList();
         return CourierCompensationResponse.from(service.finalizeCompensations(
-                serviceDate, clientAccountId, request.closureRevision(), overrides, accountId(jwt)));
+                serviceDate, clientAccountId, request.closureRevision(), overrides, accountId(jwt)), service.legacyAccrualsEnabled());
     }
 
     @GetMapping("/couriers/{courierId}")

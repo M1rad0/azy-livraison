@@ -65,6 +65,17 @@ public class FinanceRepository {
                 .stream().findFirst();
     }
 
+    /** New reports must be paid through the cash register, not through the retired writer. */
+    public boolean isCashLedgerReport(UUID settlementId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM cash_ledger_obligation o
+                JOIN client_daily_settlement s ON s.report_id = o.report_id
+                  AND s.client_account_id = o.seller_account_id
+                WHERE s.id = ? AND (o.id <> s.id OR o.recognized_amount_ariary <> 0)
+                """, Integer.class, settlementId);
+        return count != null && count > 0;
+    }
+
     public Optional<ClosedDay> lockDay(LocalDate serviceDate) {
         return jdbcTemplate.query("""
                 SELECT service_date, status, closure_revision

@@ -8,6 +8,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  ImageDown,
   LoaderCircle,
   LockKeyhole,
   MapPin,
@@ -38,12 +39,11 @@ import {
   type DailyOperationPackage,
   type DeliveryPackageOutcome,
   type DownloadedReport,
-  type ReportFormat,
+  type DailyReportFormat,
 } from '../../api/admin'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { AdminPackageOutcomeDialog, type PackageOutcomeInput } from './AdminPackageOutcomeDialog'
 import { AdminDeliveryFeeDialog, type DeliveryFeeInput } from './AdminDeliveryFeeDialog'
-import { AdminCourierCompensationPanel } from './AdminCourierCompensationPanel'
 import { errorMessage, formatAriary, formatDate, formatDateTime, formatTime, locationLabel } from './adminHelpers'
 
 const OUTCOME_LABELS: Record<DeliveryPackageOutcome, string> = {
@@ -102,7 +102,6 @@ export function AdminDailyOperationsPanel({
   const [reopeningClient, setReopeningClient] = useState<ClientClosureItem>()
   const [reopenReason, setReopenReason] = useState('')
   const [clientReopenReason, setClientReopenReason] = useState('')
-  const [compensationClientId, setCompensationClientId] = useState<string>()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<OutcomeFilter>('ALL')
 
@@ -143,7 +142,6 @@ export function AdminDailyOperationsPanel({
   useEffect(() => {
     setDay(undefined)
     setClientClosures(undefined)
-    setCompensationClientId(undefined)
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
@@ -331,9 +329,6 @@ export function AdminDailyOperationsPanel({
       ))
       setReopeningClient(undefined)
       setClientReopenReason('')
-      setCompensationClientId((current) => (
-        current === reopeningClient.clientAccountId ? undefined : current
-      ))
       onChanged()
     } catch (reopenError) {
       setDialogError(errorMessage(reopenError))
@@ -342,7 +337,7 @@ export function AdminDailyOperationsPanel({
     }
   }
 
-  async function download(kind: 'general' | string, format: ReportFormat) {
+  async function download(kind: 'general' | string, format: DailyReportFormat) {
     setBusyAction(`report:${kind}:${format}`)
     setError(undefined)
     try {
@@ -467,7 +462,7 @@ export function AdminDailyOperationsPanel({
 
           <section className="admin-client-closures" aria-labelledby="client-closures-title">
             <header>
-              <div><p className="admin-eyebrow">Clôture progressive</p><h3 id="client-closures-title">Comptes clients</h3><p>Clôturez chaque client dès que ses colis sont prêts. Son rapport et les rémunérations associées deviennent alors disponibles sans attendre les autres.</p></div>
+              <div><p className="admin-eyebrow">Clôture progressive</p><h3 id="client-closures-title">Comptes clients</h3><p>Clôturez chaque client dès que ses colis sont prêts. Son rapport et le montant à reverser deviennent disponibles sans attendre les autres.</p></div>
               {clientClosures && <span className={`admin-client-closures__progress${clientClosures.allClientsClosed ? ' is-complete' : ''}`}><BadgeCheck aria-hidden="true" />{clientClosures.closedClientCount}/{clientClosures.clientCount} clôturé{clientClosures.closedClientCount > 1 ? 's' : ''}</span>}
             </header>
 
@@ -475,7 +470,6 @@ export function AdminDailyOperationsPanel({
               <div className="admin-client-closure-list">
                 {clientClosures.clients.map((client) => {
                   const actionBusy = busyAction === `close-client:${client.clientAccountId}` || busyAction === `reopen-client:${client.clientAccountId}`
-                  const compensationOpen = compensationClientId === client.clientAccountId
                   return (
                     <article className={`admin-client-closure is-${client.closed ? 'closed' : client.readyToClose ? 'ready' : 'blocked'}`} key={client.clientAccountId}>
                       <div className="admin-client-closure__summary">
@@ -497,7 +491,7 @@ export function AdminDailyOperationsPanel({
                           <>
                             <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport PDF de ${client.clientDisplayName}`} disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'pdf')}><FileText aria-hidden="true" />PDF</button>
                             <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport Excel de ${client.clientDisplayName}`} disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button>
-                            <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-expanded={compensationOpen} onClick={() => setCompensationClientId(compensationOpen ? undefined : client.clientAccountId)}>{client.courierCompensationFinalized ? <BadgeCheck aria-hidden="true" /> : <CircleDollarSign aria-hidden="true" />}{client.courierCompensationFinalized ? 'Rémunérations validées' : 'Rémunérations livreurs'}</button>
+                            <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport photo de ${client.clientDisplayName}`} title="Même présentation que le PDF · plusieurs pages : images dans un ZIP" disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'image')}><ImageDown aria-hidden="true" />Photo</button>
                             {day.status !== 'CLOSED' && client.version != null && <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={actionBusy} onClick={() => { setDialogError(undefined); setClientReopenReason(''); setReopeningClient(client) }}><RotateCcw aria-hidden="true" />Rouvrir ce client</button>}
                           </>
                         ) : (
@@ -505,19 +499,6 @@ export function AdminDailyOperationsPanel({
                         )}
                       </div>
 
-                      {client.closed && compensationOpen && (
-                        <div className="admin-client-closure__compensation">
-                          <AdminCourierCompensationPanel
-                            accessToken={accessToken}
-                            serviceDate={date}
-                            couriers={couriers}
-                            clientAccountId={client.clientAccountId}
-                            clientDisplayName={client.clientDisplayName}
-                            refreshKey={day.packages.filter((item) => item.ownerAccountId === client.clientAccountId).reduce((total, item) => total + item.version, client.closureRevision ?? 0)}
-                            onFinalized={() => void refreshClientClosuresSafely()}
-                          />
-                        </div>
-                      )}
                     </article>
                   )
                 })}
@@ -541,7 +522,11 @@ export function AdminDailyOperationsPanel({
             </div>
             <div className={`admin-general-report${day.status !== 'CLOSED' ? ' is-locked' : ''}`}>
               <div><FileText aria-hidden="true" /><span><strong>Rapport général</strong><small>Clients, livreurs, colis et totaux de la journée</small></span></div>
-              <div><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'pdf')}><Download aria-hidden="true" />PDF</button><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button></div>
+              <div>
+                <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'pdf')}><Download aria-hidden="true" />PDF</button>
+                <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button>
+                <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label="Télécharger le rapport général en photo" title="Même présentation que le PDF · plusieurs pages : images dans un ZIP" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'image')}><ImageDown aria-hidden="true" />Photo</button>
+              </div>
             </div>
           </section>
         </>
@@ -549,8 +534,8 @@ export function AdminDailyOperationsPanel({
 
       {editingPackage && <AdminPackageOutcomeDialog deliveryPackage={editingPackage} couriers={couriers} busy={busyAction === `outcome:${editingPackage.packageId}`} error={dialogError} onClose={() => setEditingPackage(undefined)} onSave={(input) => void saveOutcome(input)} />}
       {editingFeePackage && <AdminDeliveryFeeDialog deliveryPackage={editingFeePackage} busy={busyAction === `fee:${editingFeePackage.packageId}`} error={dialogError} onClose={() => setEditingFeePackage(undefined)} onSave={(input) => void saveDeliveryFee(input)} />}
-      {closingClient && <ConfirmDialog title={`Clôturer ${closingClient.clientDisplayName} ?`} confirmLabel="Clôturer ce client" busy={busyAction === `close-client:${closingClient.clientAccountId}`} onClose={() => { setClosingClient(undefined); setDialogError(undefined) }} onConfirm={() => void closeClient()}><p>Les {closingClient.packageCount} colis de ce client seront figés. Ses rapports financiers et la validation des rémunérations livreurs deviendront immédiatement disponibles.</p>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
-      {reopeningClient && <ConfirmDialog title={`Rouvrir ${reopeningClient.clientDisplayName} ?`} confirmLabel="Rouvrir ce client" busy={busyAction === `reopen-client:${reopeningClient.clientAccountId}`} danger onClose={() => { setReopeningClient(undefined); setClientReopenReason(''); setDialogError(undefined) }} onConfirm={() => void reopenClient()}><p>Les rapports et rémunérations liés à cette clôture ne seront plus définitifs pendant la correction.</p><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={clientReopenReason} placeholder="Ex. Corriger l’état final d’un colis" onChange={(event) => setClientReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
+      {closingClient && <ConfirmDialog title={`Clôturer ${closingClient.clientDisplayName} ?`} confirmLabel="Clôturer ce client" busy={busyAction === `close-client:${closingClient.clientAccountId}`} onClose={() => { setClosingClient(undefined); setDialogError(undefined) }} onConfirm={() => void closeClient()}><p>Les {closingClient.packageCount} colis de ce client seront figés. Son rapport financier sera disponible et son montant à reverser sera enregistré.</p>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
+      {reopeningClient && <ConfirmDialog title={`Rouvrir ${reopeningClient.clientDisplayName} ?`} confirmLabel="Rouvrir ce client" busy={busyAction === `reopen-client:${reopeningClient.clientAccountId}`} danger onClose={() => { setReopeningClient(undefined); setClientReopenReason(''); setDialogError(undefined) }} onConfirm={() => void reopenClient()}><p>Le rapport et le montant à reverser seront recalculés après correction. Les versements liés doivent d’abord être annulés.</p><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={clientReopenReason} placeholder="Ex. Corriger l’état final d’un colis" onChange={(event) => setClientReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
       {closing && <ConfirmDialog title="Clôturer cette journée ?" confirmLabel="Clôturer et activer le rapport général" busy={busyAction === 'close'} onClose={() => setClosing(false)} onConfirm={() => void closeDay()}><p>Les {clientClosures?.clientCount ?? day?.clients.length ?? 0} comptes clients sont clôturés. La journée sera figée et le rapport général deviendra téléchargeable.</p></ConfirmDialog>}
       {reopening && <ConfirmDialog title="Rouvrir cette journée ?" confirmLabel="Rouvrir la journée" busy={busyAction === 'reopen'} danger onClose={() => { setReopening(false); setDialogError(undefined) }} onConfirm={() => void reopenDay()}><label className="admin-outcome-field"><span>Raison obligatoire</span><textarea rows={3} maxLength={1000} value={reopenReason} placeholder="Ex. Corriger le montant récupéré d’un colis" onChange={(event) => setReopenReason(event.target.value)} /></label>{dialogError && <p className="admin-form-error" role="alert">{dialogError}</p>}</ConfirmDialog>}
     </section>

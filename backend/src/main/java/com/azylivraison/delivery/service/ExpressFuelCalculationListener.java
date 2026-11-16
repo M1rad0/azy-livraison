@@ -1,10 +1,12 @@
 package com.azylivraison.delivery.service;
 
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
+@ConditionalOnProperty(name = "app.finance.legacy-accruals-enabled", havingValue = "true")
 public class ExpressFuelCalculationListener {
 
     private final ExpressFuelService service;

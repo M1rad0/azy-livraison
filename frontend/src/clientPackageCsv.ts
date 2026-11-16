@@ -9,6 +9,7 @@ import {
 import { searchAddress } from './api/geocoding'
 import { packageWindowInput, type ClientPackageDraft } from './components/ClientPackageDialog'
 import { endOfOneHourWindow } from './deliveryWindows'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from './phone'
 
 export const CLIENT_PACKAGE_CSV_COLUMNS = [
   'recipient_name', 'destination_label', 'destination_query', 'latitude', 'longitude',
@@ -146,7 +147,8 @@ export function parseClientPackageCsv(content: string, requestKind: DeliveryRequ
       return false
     }
     const recipientName = text('recipient_name', 200, true)
-    const contact = text('contact', 100, true)
+    const contact = normalizePhoneNumber(text('contact', 100, true))
+    if (contact && !isValidPhoneNumber(contact)) error('contact', PHONE_NUMBER_ERROR)
     const destinationQuery = text('destination_query', 500)
     const destinationLabel = text('destination_label', 200) || destinationQuery.split(',')[0].slice(0, 200)
     const latitude = numeric('latitude')

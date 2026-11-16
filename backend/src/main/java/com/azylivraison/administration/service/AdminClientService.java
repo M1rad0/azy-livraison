@@ -8,8 +8,15 @@ import java.util.UUID;
 import com.azylivraison.account.domain.Account;
 import com.azylivraison.account.domain.AccountRole;
 import com.azylivraison.account.domain.ClientProfile;
+import com.azylivraison.account.domain.ClientPayoutDestination;
+import com.azylivraison.account.domain.ClientContactNumber;
+import com.azylivraison.account.domain.DefaultPickupLocation;
+import com.azylivraison.account.api.DefaultPickupRequest;
 import com.azylivraison.account.repository.AccountRepository;
 import com.azylivraison.account.repository.ClientProfileRepository;
+import com.azylivraison.account.service.ClientPayoutDestinationNormalizer;
+import com.azylivraison.account.service.ClientContactNumberNormalizer;
+import com.azylivraison.account.service.InvalidClientProfileException;
 import com.azylivraison.administration.api.AdminClientRequest;
 import com.azylivraison.administration.api.AdminClientResponse;
 
@@ -41,16 +48,24 @@ public class AdminClientService {
 
     @Transactional
     public CreationResult create(AdminClientRequest request) {
+        List<ClientPayoutDestination> destinations = normalizePayoutDestinations(request);
+        List<ClientContactNumber> contacts = normalizeContactNumbers(request);
+        DefaultPickupLocation pickup = normalizePickup(request);
+        String phone = primaryPhone(contacts, request.phone());
         String temporaryPassword = normalizePassword(request.temporaryPassword());
         Account account = new Account(UUID.randomUUID(), request.username().trim().toLowerCase(Locale.ROOT),
-                passwordEncoder.encode(temporaryPassword), true, AccountRole.CLIENT,
-                request.displayName().trim(), request.phone().trim());
+                passwordEncoder.encode(temporaryPassword), !Boolean.FALSE.equals(request.enabled()), AccountRole.CLIENT,
+                request.displayName().trim(), phone);
         try {
             accounts.create(account);
             profiles.create(account.id());
-            profiles.createPrimaryContact(account.id(), account.phone());
-            if (Boolean.TRUE.equals(request.expressDeliveryEnabled())) {
-                profiles.updateExpressDeliveryPermission(account.id(), true, 0);
+            if (contacts == null) profiles.createPrimaryContact(account.id(), account.phone());
+            else profiles.replaceContactNumbers(account.id(), contacts);
+            if (Boolean.TRUE.equals(request.expressDeliveryEnabled()) || pickup != null) {
+                profiles.updateAdminPreferences(account.id(), Boolean.TRUE.equals(request.expressDeliveryEnabled()), pickup, 0);
+            }
+            if (destinations != null) {
+                profiles.replacePayoutDestinations(account.id(), destinations);
             }
         } catch (DuplicateKeyException exception) {
             throw new AdministrationConflictException("CLIENT_USERNAME_EXISTS",
@@ -63,16 +78,26 @@ public class AdminClientService {
     public AdminClientResponse update(UUID accountId, AdminClientRequest request) {
         Account current = client(accountId);
         ClientProfile profile = profile(accountId);
+        List<ClientPayoutDestination> destinations = normalizePayoutDestinations(request);
+        List<ClientContactNumber> contacts = normalizeContactNumbers(request);
+        DefaultPickupLocation pickup = request.defaultPickup() != null || Boolean.TRUE.equals(request.clearDefaultPickup())
+                ? normalizePickup(request) : profile.defaultPickup();
+        String phone = primaryPhone(contacts, request.phone());
         long expectedVersion = request.version() == null ? profile.version() : request.version();
-        accounts.updateClient(accountId, request.displayName().trim(), request.phone().trim(),
+        accounts.updateClient(accountId, request.displayName().trim(), phone,
                 !Boolean.FALSE.equals(request.enabled()));
-        if (!profiles.updateExpressDeliveryPermission(accountId,
-                Boolean.TRUE.equals(request.expressDeliveryEnabled()), expectedVersion)) {
+        if (!profiles.updateAdminPreferences(accountId,
+                Boolean.TRUE.equals(request.expressDeliveryEnabled()), pickup, expectedVersion)) {
             throw new AdministrationConflictException("CLIENT_VERSION_CONFLICT",
                     "Ce client a ete modifie entre-temps. Rechargez la liste.");
         }
-        if (!current.phone().equals(request.phone().trim())) {
-            profiles.updatePrimaryContact(accountId, request.phone().trim());
+        if (contacts != null) {
+            profiles.replaceContactNumbers(accountId, contacts);
+        } else if (!current.phone().equals(phone)) {
+            profiles.updatePrimaryContact(accountId, phone);
+        }
+        if (destinations != null) {
+            profiles.replacePayoutDestinations(accountId, destinations);
         }
         return response(accounts.findById(accountId).orElseThrow());
     }
@@ -102,6 +127,35 @@ public class AdminClientService {
 
     private String normalizePassword(String requested) {
         return requested == null || requested.isBlank() ? generatePassword() : requested;
+    }
+
+    private List<ClientPayoutDestination> normalizePayoutDestinations(AdminClientRequest request) {
+        return request.payoutDestinations() == null ? null
+                : ClientPayoutDestinationNormalizer.normalize(request.payoutDestinations());
+    }
+
+    private List<ClientContactNumber> normalizeContactNumbers(AdminClientRequest request) {
+        return request.contactNumbers() == null ? null : ClientContactNumberNormalizer.normalize(request.contactNumbers());
+    }
+
+    private String primaryPhone(List<ClientContactNumber> contacts, String fallback) {
+        return contacts == null ? fallback.trim() : contacts.stream()
+                .filter(ClientContactNumber::active).findFirst().orElseThrow().number();
+    }
+
+    private DefaultPickupLocation normalizePickup(AdminClientRequest request) {
+        DefaultPickupRequest pickup = request.defaultPickup();
+        if (pickup == null) return null;
+        if (Boolean.TRUE.equals(request.clearDefaultPickup())) {
+            throw new InvalidClientProfileException("Choisissez un point de retrait ou retirez-le, pas les deux.");
+        }
+        boolean hasLatitude = pickup.latitude() != null;
+        boolean hasLongitude = pickup.longitude() != null;
+        if (hasLatitude != hasLongitude || !hasLatitude && (pickup.destinationQuery() == null || pickup.destinationQuery().isBlank())) {
+            throw new InvalidClientProfileException("Choisissez le lieu du point de retrait par défaut.");
+        }
+        return new DefaultPickupLocation(pickup.label() == null ? null : pickup.label().trim(),
+                pickup.destinationQuery() == null ? null : pickup.destinationQuery().trim(), pickup.latitude(), pickup.longitude());
     }
 
     private String generatePassword() {

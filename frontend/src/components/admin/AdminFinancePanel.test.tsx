@@ -1,7 +1,8 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientClosureOverview, ClientFinance, DailyOperation } from '../../api/admin'
 import { AdminFinancePanel } from './AdminFinancePanel'
+import { LegacyFinancePanel } from './LegacyFinancePanel'
 
 function jsonResponse(payload: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => payload }
@@ -75,6 +76,18 @@ describe('AdminFinancePanel', () => {
     vi.unstubAllGlobals()
   })
 
+  it('ouvre les nouvelles caisses par défaut sans charger les anciens règlements', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => Promise.resolve(jsonResponse(
+      String(input).includes('/cash-briefings') ? [] : { activatedAt: '2026-11-15T04:00:00Z', revision: 0, accounts: [], movements: [], obligations: [] },
+    )))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AdminFinancePanel accessToken="admin-token" couriers={[]} initialDate={day.serviceDate} />)
+    expect(screen.getByRole('tab', { name: /Caisses/ })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('heading', { name: /Argent détenu/ })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/finance/clients/'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/client-closures'))).toBe(false)
+  })
+
   it('affiche immédiatement le règlement du client clôturé sans attendre la clôture générale', async () => {
     const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
       const url = String(input)
@@ -84,7 +97,7 @@ describe('AdminFinancePanel', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<AdminFinancePanel accessToken="admin-token" couriers={[]} initialDate={day.serviceDate} />)
+    render(<LegacyFinancePanel accessToken="admin-token" couriers={[]} initialDate={day.serviceDate} />)
 
     expect(await screen.findByText('Boutique Soa')).toBeInTheDocument()
     expect(screen.getByText('Non versé')).toBeInTheDocument()
@@ -103,10 +116,30 @@ describe('AdminFinancePanel', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<AdminFinancePanel accessToken="admin-token" couriers={[]} initialDate={day.serviceDate} />)
+    render(<LegacyFinancePanel accessToken="admin-token" couriers={[]} initialDate={day.serviceDate} />)
 
     expect(await screen.findByText(/Aucun compte client clôturé/)).toBeInTheDocument()
     expect(screen.getByText(/sans attendre la fin de la journée/)).toBeInTheDocument()
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/finance/clients/'))).toBe(false)
+  })
+
+  it('redirige les rapports du nouveau registre vers Caisses sans action de paiement historique', async () => {
+    const managedFinance = { ...finance, settlements: finance.settlements.map((settlement) => ({ ...settlement, cashLedgerManaged: true })) }
+    const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/client-closures')) return Promise.resolve(jsonResponse(closures(true)))
+      if (url.endsWith('/finance/clients/client-closed')) return Promise.resolve(jsonResponse(managedFinance))
+      if (url.includes('/cash-briefings')) return Promise.resolve(jsonResponse([]))
+      if (url.includes('/cash-ledger')) return Promise.resolve(jsonResponse({ activatedAt: '2026-11-15T04:00:00Z', revision: 0, accounts: [], movements: [], obligations: [] }))
+      return Promise.resolve(jsonResponse(day))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<LegacyFinancePanel accessToken="admin-token" couriers={[]} initialDate={day.serviceDate} />)
+    expect(await screen.findByText('Ce rapport est suivi dans Caisses')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Confirmer un versement|Ajouter un versement/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Non versé')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir les caisses' }))
+    expect(await screen.findByRole('heading', { name: /Argent détenu/ })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([input, options]) => String(input).includes('/payments') && (options as RequestInit)?.method === 'POST')).toBe(false)
   })
 })

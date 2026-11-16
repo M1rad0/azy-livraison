@@ -41,6 +41,8 @@ import { usePortalNavigation } from './PortalShell'
 import { PricingTransparencyPanel } from './PricingTransparencyPanel'
 import { ExistingPackageActions, type EditablePackageContext } from './ExistingPackageActions'
 import { Button } from './Button'
+import { PhoneInput } from './PhoneInput'
+import { normalizePhoneNumber } from '../phone'
 import './ClientPortal.css'
 
 type ClientView = 'history' | 'new-request' | 'express' | 'pricing' | 'reports' | 'profile'
@@ -205,11 +207,13 @@ function ClientProfilePanel({
   profile,
   onSaved,
   onCancel,
+  welcome = false,
 }: {
   accessToken: string
   profile: ClientProfile
   onSaved: (profile: ClientProfile) => void
   onCancel: () => void
+  welcome?: boolean
 }) {
   const [displayName, setDisplayName] = useState(profile.displayName)
   const [defaultPickup, setDefaultPickup] = useState<Location>(() => asPickerLocation(profile.defaultPickup))
@@ -251,7 +255,7 @@ function ClientProfilePanel({
     try {
       const saved = await updateClientProfile({
         displayName: displayName.trim(),
-        phone: profile.phone.trim(),
+        phone: normalizePhoneNumber(profile.phone),
         defaultPickup: hasDefaultPickup ? {
           label: defaultPickup.label?.trim() || defaultPickup.destinationQuery?.trim() || 'Point de retrait',
           destinationQuery: defaultPickup.destinationQuery?.trim() || undefined,
@@ -270,9 +274,16 @@ function ClientProfilePanel({
 
   return (
     <section className="client-profile-page" aria-labelledby="client-profile-title">
-      <header className="client-page-heading">
-        <div><p className="eyebrow">Mon compte</p><h1 id="client-profile-title">Coordonnées</h1><p>Gérez séparément vos informations habituelles et les numéros utilisés pour vos versements.</p></div>
-        <button className="button button--secondary" type="button" onClick={onCancel}>Retour à l’historique</button>
+      <header className={`client-page-heading${welcome ? ' client-page-heading--welcome' : ''}`}>
+        <div>
+          <p className="eyebrow">{welcome ? 'Votre compte est créé' : 'Mon compte'}</p>
+          <h1 id="client-profile-title">{welcome ? 'Bienvenue chez AZY Livraison' : 'Coordonnées'}</h1>
+          {welcome ? <>
+            <p>Avant votre première demande, prenez un instant pour compléter toutes vos informations : votre profil, votre point de retrait et vos contacts.</p>
+            <p>Commencez par l’onglet <strong>Informations</strong>, puis ajoutez vos numéros de versement et leurs titulaires dans <strong>Versements</strong>, par ordre de priorité. Vous pourrez modifier ces informations à tout moment dans Coordonnées.</p>
+          </> : <p>Gérez séparément vos informations habituelles et les numéros utilisés pour vos versements.</p>}
+        </div>
+        <button className="button button--secondary" type="button" onClick={onCancel}>{welcome ? 'Voir mes livraisons' : 'Retour à l’historique'}</button>
       </header>
       <div className="client-profile-tabs" role="tablist" aria-label="Sections des coordonnées">
         <button ref={informationTabRef} id="client-profile-information-tab" type="button" role="tab" tabIndex={section === 'information' ? 0 : -1} aria-selected={section === 'information'} aria-controls="client-profile-information-panel" className={section === 'information' ? 'is-active' : undefined} onClick={() => setSection('information')} onKeyDown={handleSectionKeyDown}>
@@ -294,7 +305,7 @@ function ClientProfilePanel({
             </div>
             <div className="client-form-grid">
               <label className="client-field"><span>Nom affiché</span><input value={displayName} maxLength={150} onChange={(event) => setDisplayName(event.target.value)} /></label>
-              <label className="client-field client-field--readonly"><span>Téléphone principal</span><input aria-label="Téléphone principal" value={profile.phone} readOnly /><small>Modifiez ce numéro dans la liste de contacts ci-dessous.</small></label>
+              <label className="client-field client-field--readonly"><span>Téléphone principal</span><PhoneInput aria-label="Téléphone principal" value={profile.phone} readOnly /><small>Modifiez ce numéro dans la liste de contacts ci-dessous.</small></label>
             </div>
             <label className="client-field client-field--readonly"><span>Identifiant</span><input value={profile.username} readOnly /></label>
           </section>
@@ -333,9 +344,11 @@ function ClientProfilePanel({
 
 export interface ClientPortalProps {
   accessToken: string
+  welcome?: boolean
+  onWelcomeDismiss?: () => void
 }
 
-export function ClientPortal({ accessToken }: ClientPortalProps) {
+export function ClientPortal({ accessToken, welcome = false, onWelcomeDismiss }: ClientPortalProps) {
   const portalNavigation = usePortalNavigation()
   const [localView, setLocalView] = useState<ClientView>('history')
   const view = portalNavigation?.role === 'CLIENT'
@@ -387,6 +400,10 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
     if (view === 'new-request' || view === 'express') setRequestFormMounted(true)
     if (view === 'profile') setProfileMounted(true)
   }, [view])
+
+  useEffect(() => {
+    if (welcome && view !== 'profile') onWelcomeDismiss?.()
+  }, [view, welcome, onWelcomeDismiss])
 
   useEffect(() => {
     if (portalNavigation?.role !== 'CLIENT' || !profile) return
@@ -470,7 +487,7 @@ export function ClientPortal({ accessToken }: ClientPortalProps) {
       )}
       {profileMounted && (
         <div hidden={view !== 'profile'}>
-          <ClientProfilePanel accessToken={accessToken} profile={profile} onSaved={setProfile} onCancel={() => openView('history')} />
+          <ClientProfilePanel accessToken={accessToken} profile={profile} welcome={welcome} onSaved={setProfile} onCancel={() => openView('history')} />
         </div>
       )}
       {view === 'reports' && <ClientReportsPanel accessToken={accessToken} />}

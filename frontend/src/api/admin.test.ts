@@ -7,6 +7,7 @@ import {
   createDispatchPlan,
   downloadCourierStatement,
   downloadGeneralDailyReport,
+  downloadClientDailyReport,
   finalizeCourierCompensations,
   getClientClosures,
   getCourierCompensations,
@@ -230,6 +231,34 @@ describe('API administrateur', () => {
       blob,
       filename: 'rapport-azy.pdf',
     })
+  })
+
+  it.each(['png', 'zip'])('downloads client report photos as the actual %s attachment', async (extension) => {
+    const filename = `soa-2026-11-16.${extension}`
+    const blob = new Blob(['report'])
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'Content-Disposition': `attachment; filename="${filename}"` }),
+      blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(downloadClientDailyReport('2026-11-16', 'account-1', 'image', 'admin-token'))
+      .resolves.toEqual({ blob, filename })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/delivery-days/2026-11-16/reports/clients/account-1.image',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }) }),
+    )
+  })
+
+  it('keeps a real ZIP extension for general report photos even without a disposition header', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'Content-Type': 'application/zip' }),
+      blob: async () => new Blob(),
+    }))
+    expect((await downloadGeneralDailyReport('2026-11-16', 'image', 'admin-token')).filename)
+      .toBe('general-2026-11-16.zip')
   })
 
   it('télécharge le relevé livreur avec les filtres de période', async () => {

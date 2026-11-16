@@ -20,6 +20,7 @@ import {
 import type { Location } from '../api/csvImports'
 import { formatOneHourWindow } from '../deliveryWindows'
 import { MAX_CLIENT_PACKAGES } from '../clientPackageCsv'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../phone'
 import {
   ClientPackageDialog,
   emptyClientPackage,
@@ -87,6 +88,7 @@ export function ClientDeliveryRequestForm({
   defaultPickup,
   onCreated,
   onCancel,
+  backLabel = 'Retour à l’historique',
   requestKind = 'NORMAL',
   clientAccountId,
   createRequest,
@@ -96,6 +98,7 @@ export function ClientDeliveryRequestForm({
   defaultPickup: ClientDefaultPickup | null
   onCreated: (request: DeliveryRequestRecord, savedDefaultPickup: boolean) => void
   onCancel: () => void
+  backLabel?: string
   requestKind?: DeliveryRequestKind
   clientAccountId?: string
   createRequest?: (input: Parameters<typeof createDeliveryRequest>[0]) => Promise<DeliveryRequestRecord>
@@ -172,6 +175,10 @@ export function ClientDeliveryRequestForm({
       setError(`Vérifiez le lieu et le tarif des ${packagesToCorrect} colis à corriger avant d’envoyer la demande.`)
       return
     }
+    if (packages.some((item) => !isValidPhoneNumber(item.contact))) {
+      setError(PHONE_NUMBER_ERROR)
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -184,7 +191,7 @@ export function ClientDeliveryRequestForm({
           recipientName: item.recipientName,
           faritra: item.faritra,
           destination: apiLocation(item.destination, `Livraison ${index + 1}`),
-          contact: item.contact,
+          contact: normalizePhoneNumber(item.contact),
           amountToCollectAriary: Number(item.amountToCollectAriary),
           mobileMoneyPaid: item.mobileMoneyPaid,
           ...(item.weightKg ? { weightKg: Number(item.weightKg) } : {}),
@@ -213,9 +220,9 @@ export function ClientDeliveryRequestForm({
         <div>
           <p className="eyebrow">{requestKind === 'EXPRESS' ? 'Livraison express' : 'Nouvelle demande'}</p>
           <h1 id="client-request-title">Préparer une livraison{requestKind === 'EXPRESS' ? ' express' : ''}</h1>
-          <p>Un retrait, puis autant de colis que nécessaire. Vous pourrez suivre leur traitement depuis l’historique.</p>
+          <p>Un retrait, puis autant de colis que nécessaire. Vous pourrez suivre leur traitement depuis {clientAccountId ? 'la liste des demandes' : 'l’historique'}.</p>
         </div>
-        <button className="button button--secondary" type="button" onClick={onCancel}>Retour à l’historique</button>
+        <button className="button button--secondary" type="button" onClick={onCancel}>{backLabel}</button>
       </header>
 
       <div className="client-builder-layout">
@@ -320,14 +327,14 @@ export function ClientDeliveryRequestForm({
             ) : (
               <div className="client-package-list" role="list" aria-label="Colis de la demande">
                 <div className="client-package-list__header" aria-hidden="true">
-                  <span>Destinataire</span><span>Destination</span><span>Encaissement</span><span>Options</span><span />
+                  <span>N°</span><span>Destinataire</span><span>Destination</span><span>Encaissement</span><span>Options</span><span />
                 </div>
                 {packages.map((item, index) => (
                   <article className={`client-package-row${!locationConfirmed(item.destination) || !item.pricingQuote ? ' client-package-row--needs-review' : ''}`} role="listitem" key={item.localId}>
                     <div className="client-package-row__index">{index + 1}</div>
-                    <div><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
-                    <div><strong>{item.destination.label || item.destination.destinationQuery}</strong>{item.importResolvedPlace && <small title={item.importResolvedPlace}>Lieu retenu : {item.importResolvedPlace.split(',').map((part) => part.trim()).filter(Boolean).slice(0, 2).join(', ')}</small>}<small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Lieu ou tarif à confirmer'}{item.faritra ? ' · Faritra' : ''}</small>{item.importWarning && <small className="client-package-row__warning">{item.importWarning}</small>}</div>
-                    <div><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
+                    <div className="client-package-row__recipient"><strong>{item.recipientName}</strong><small>{item.contact}</small></div>
+                    <div className="client-package-row__destination"><strong>{item.destination.label || item.destination.destinationQuery}</strong>{item.importResolvedPlace && <small title={item.importResolvedPlace}>Lieu retenu : {item.importResolvedPlace.split(',').map((part) => part.trim()).filter(Boolean).slice(0, 2).join(', ')}</small>}<small>{item.pricingQuote ? `Zone ${item.pricingQuote.pricingZoneName}` : 'Lieu ou tarif à confirmer'}{item.faritra ? ' · Faritra' : ''}</small>{item.importWarning && <small className="client-package-row__warning">{item.importWarning}</small>}</div>
+                    <div className="client-package-row__amount"><strong>{formatAriary(Number(item.amountToCollectAriary))}</strong><small>{item.pricingQuote ? `dont ${formatAriary(item.pricingQuote.deliveryFeeAriary)} de livraison · à encaisser` : 'À encaisser'}{item.mobileMoneyPaid ? ' · Mobile Money signalé' : ''}</small></div>
                     <div className="client-package-row__tags">
                       {formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference) && <span>{formatOneHourWindow(item.desiredDeliveryTime, item.desiredDeliveryEndTime, undefined, item.deliveryTimePreference)}</span>}
                       {item.weightKg && <span>{item.weightKg} kg</span>}

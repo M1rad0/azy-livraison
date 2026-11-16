@@ -54,6 +54,21 @@ describe('ClientDeliveryRequestForm', () => {
     vi.clearAllMocks()
   })
 
+  it('revient à l’historique pour une demande depuis l’espace client', () => {
+    const onCancel = vi.fn()
+    render(<ClientDeliveryRequestForm accessToken="token" defaultPickup={defaultPickup} onCreated={vi.fn()} onCancel={onCancel} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Retour à l’historique' }))
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('affiche la destination de retour et le suivi adaptés au contexte admin', () => {
+    const onCancel = vi.fn()
+    render(<ClientDeliveryRequestForm accessToken="token" defaultPickup={defaultPickup} clientAccountId="client-1" backLabel="Retour à la liste des clients" onCreated={vi.fn()} onCancel={onCancel} />)
+    expect(screen.queryByText(/l’historique/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retour à la liste des clients' }))
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
   it('transmet le début du créneau pour une demande normale', async () => {
     const createRequest = vi.fn().mockResolvedValue(createdRequest)
     const quotePrice = vi.fn().mockResolvedValue({
@@ -130,6 +145,20 @@ describe('ClientDeliveryRequestForm', () => {
     fireEvent.change(screen.getByLabelText('Fichier de colis · CSV UTF-8'), { target: { files: [file] } })
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter les colis au formulaire' }))
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
+    const packageList = screen.getByRole('list', { name: 'Colis de la demande' })
+    const columnHeadings = packageList.querySelector('.client-package-list__header')!
+    expect(Array.from(columnHeadings.children).map((cell) => cell.textContent)).toEqual([
+      'N°', 'Destinataire', 'Destination', 'Encaissement', 'Options', '',
+    ])
+    within(packageList).getAllByRole('listitem').forEach((row, index) => {
+      expect(row.children).toHaveLength(columnHeadings.children.length)
+      expect(row.firstElementChild).toHaveClass('client-package-row__index')
+      expect(row.firstElementChild).toHaveTextContent(String(index + 1))
+      expect(row.children[1]).toHaveClass('client-package-row__recipient')
+      expect(row.children[2]).toHaveClass('client-package-row__destination')
+      expect(row.children[3]).toHaveClass('client-package-row__amount')
+      expect(row.lastElementChild).toHaveClass('client-package-row__actions')
+    })
     expect(screen.getByText('Bureau Ankorondrano')).toBeInTheDocument()
     expect(screen.getByText('Lieu retenu : Ankorondrano, Antananarivo')).toBeInTheDocument()
     expect(screen.getByText(/Vérifiez les destinataires, les lieux retenus/)).toBeInTheDocument()

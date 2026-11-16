@@ -27,6 +27,9 @@ import com.azylivraison.reporting.domain.DailyReport.PackageOutcome;
 import com.azylivraison.reporting.domain.DailyReport.Totals;
 import com.azylivraison.reporting.render.DailyReportPdfRenderer;
 import com.azylivraison.reporting.render.DailyReportXlsxRenderer;
+import com.azylivraison.reporting.render.DailyReportFilenames;
+import com.azylivraison.reporting.render.DailyReportImageRenderer;
+import com.azylivraison.reporting.render.ReportDownload;
 import com.azylivraison.reporting.repository.DailyReportRepository;
 import com.azylivraison.reporting.repository.DailyReportRepository.ClientIdentity;
 import com.azylivraison.reporting.repository.DailyReportRepository.ReportSource;
@@ -43,18 +46,51 @@ public class DailyReportService {
     private final DailyReportRepository repository;
     private final DailyReportPdfRenderer pdfRenderer;
     private final DailyReportXlsxRenderer xlsxRenderer;
+    private final DailyReportImageRenderer imageRenderer;
     private final ClientClosureRepository clientClosures;
 
     public DailyReportService(
             DailyReportRepository repository,
             DailyReportPdfRenderer pdfRenderer,
             DailyReportXlsxRenderer xlsxRenderer,
+            DailyReportImageRenderer imageRenderer,
             ClientClosureRepository clientClosures) {
         this.repository = repository;
         this.pdfRenderer = pdfRenderer;
         this.xlsxRenderer = xlsxRenderer;
+        this.imageRenderer = imageRenderer;
         this.clientClosures = clientClosures;
     }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ReportDownload downloadGeneral(LocalDate serviceDate, ExportFormat format) {
+        DailyReport report = build(serviceDate);
+        return download(report, null, DailyReportFilenames.stem("general", serviceDate), format);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ReportDownload downloadClient(LocalDate serviceDate, UUID accountId, ExportFormat format) {
+        DailyReport report = clientSnapshot(serviceDate, accountId).report();
+        ClientSummary client = report.clients().stream()
+                .filter(item -> item.accountId().equals(accountId)).findFirst().orElseThrow();
+        String identifier = firstNonBlank(client.username(), client.displayName(), "client");
+        return download(report, accountId, DailyReportFilenames.stem(identifier, serviceDate), format);
+    }
+
+    private ReportDownload download(DailyReport report, UUID accountId, String stem, ExportFormat format) {
+        if (format == ExportFormat.XLSX) {
+            byte[] content = accountId == null ? xlsxRenderer.render(report)
+                    : xlsxRenderer.renderForClient(report, accountId);
+            return new ReportDownload(content, stem + ".xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        byte[] pdf = accountId == null ? pdfRenderer.render(report)
+                : pdfRenderer.renderForClient(report, accountId);
+        return format == ExportFormat.IMAGE ? imageRenderer.render(pdf, stem)
+                : new ReportDownload(pdf, stem + ".pdf", "application/pdf");
+    }
+
+    public enum ExportFormat { PDF, XLSX, IMAGE }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public byte[] renderGeneralPdf(LocalDate serviceDate) {

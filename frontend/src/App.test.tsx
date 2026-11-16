@@ -20,8 +20,8 @@ vi.mock('react-leaflet', () => {
 })
 
 vi.mock('./components/ClientPortal', () => ({
-  ClientPortal: ({ accessToken }: { accessToken: string }) => (
-    <section data-access-token={accessToken}>
+  ClientPortal: ({ accessToken, welcome = false }: { accessToken: string; welcome?: boolean }) => (
+    <section data-access-token={accessToken} data-welcome={welcome}>
       <p>Espace client</p>
       <h1>Bonjour, Soa Rakoto</h1>
       <h2>Nouvelle demande</h2>
@@ -134,6 +134,33 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Nouvelle demande' })).toBeInTheDocument()
     expect(screen.getAllByText('Espace client').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: 'Ouvrir les outils historiques' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Bonjour,? Soa/ }).closest('section')).toHaveAttribute('data-welcome', 'false')
+  })
+
+  it('accueille un nouveau client dans ses coordonnées après l’inscription', async () => {
+    window.history.replaceState(null, '', '#/admin/finance')
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/refresh') return Promise.resolve(jsonResponse({}, 401))
+      if (input === '/api/auth/register') return Promise.resolve(jsonResponse(clientSession))
+      throw new Error(`Unexpected request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Créer un compte' }))
+    expect(screen.queryByRole('button', { name: /Calculer un tarif/ })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Nom ou enseigne'), { target: { value: 'Soa Rakoto' } })
+    fireEvent.change(screen.getByLabelText('Téléphone'), { target: { value: '0341679343' } })
+    fireEvent.change(screen.getByLabelText('Identifiant'), { target: { value: 'soa.client' } })
+    fireEvent.change(screen.getByLabelText('Mot de passe', { exact: true }), { target: { value: 'secret-password' } })
+    fireEvent.change(screen.getByLabelText('Confirmer le mot de passe'), { target: { value: 'secret-password' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Créer mon compte' }))
+
+    const dashboard = await screen.findByRole('heading', { name: /Bonjour,? Soa/ })
+    expect(dashboard.closest('section')).toHaveAttribute('data-welcome', 'true')
+    expect(window.location.hash).toBe('#/client/profile')
+    expect(screen.getByRole('link', { name: /Coordonnées/ })).toHaveAttribute('aria-current', 'page')
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/register', expect.objectContaining({ method: 'POST' }))
+    window.history.replaceState(null, '', '/')
   })
 
   it('keeps file actions above the workspace and changes the sidebar with the active step', async () => {
@@ -345,7 +372,9 @@ describe('App', () => {
     expect(screen.getByLabelText('Mot de passe')).toHaveAttribute('type', 'password')
     const pricingButton = screen.getByRole('button', { name: /Calculer un tarif/ })
     expect(pricingButton).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Créer un compte/ })).not.toBeInTheDocument()
+    const registerButton = screen.getByRole('button', { name: 'Créer un compte' })
+    expect(registerButton).toBeVisible()
+    expect(pricingButton.compareDocumentPosition(registerButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText(/Première livraison avec AZY/)).not.toBeInTheDocument()
     const loginButton = screen.getByRole('button', { name: 'Se connecter' })
     expect(loginButton.compareDocumentPosition(pricingButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

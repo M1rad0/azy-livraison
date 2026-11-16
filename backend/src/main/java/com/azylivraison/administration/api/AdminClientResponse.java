@@ -1,9 +1,12 @@
 package com.azylivraison.administration.api;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.azylivraison.account.domain.Account;
 import com.azylivraison.account.domain.ClientProfile;
+import com.azylivraison.account.domain.ClientPayoutDestination;
+import com.azylivraison.account.domain.ClientContactNumber;
 import com.azylivraison.account.domain.DefaultPickupLocation;
 
 public record AdminClientResponse(
@@ -14,13 +17,15 @@ public record AdminClientResponse(
         DefaultPickupResponse defaultPickup,
         boolean enabled,
         boolean expressDeliveryEnabled,
-        long version) {
+        long version,
+        List<ClientPayoutDestination> payoutDestinations,
+        List<ClientContactNumber> contactNumbers) {
 
     public static AdminClientResponse from(Account account, ClientProfile profile) {
         return new AdminClientResponse(
                 account.id(), account.username(), account.displayName(), account.phone(),
                 DefaultPickupResponse.from(profile.defaultPickup()), account.enabled(),
-                profile.expressDeliveryEnabled(), profile.version());
+                profile.expressDeliveryEnabled(), profile.version(), profile.payoutDestinations(), profile.contactNumbers());
     }
 
     public record DefaultPickupResponse(

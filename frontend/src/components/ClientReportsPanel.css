@@ -49,7 +49,7 @@
 .client-report-detail__identity h2 { overflow-wrap: anywhere; font-size: clamp(1.55rem, 3vw, 2.35rem); line-height: 1.05; }
 .client-report-detail__meta { display: grid; flex: 0 0 auto; gap: .75rem; justify-items: end; text-align: right; }
 .client-report-detail__meta time { color: var(--ink); font-size: clamp(1.3rem, 2.2vw, 1.85rem); font-weight: 850; line-height: 1.1; text-transform: capitalize; }
-.client-report-detail__actions { display: flex; gap: .45rem; }
+.client-report-detail__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
 .client-report-section-title { margin: 0; padding: 0 0 .55rem; color: var(--ink); border-bottom: 3px solid var(--coral); font-size: 1.05rem; font-weight: 850; text-align: center; }
 .client-report-deliveries > .client-report-section-title { margin: 1.6rem 1.2rem 1rem; }
 .client-report-context { display: grid; grid-template-columns: minmax(12rem, .65fr) minmax(18rem, 1.35fr); gap: .7rem; margin: 0 1.2rem 1rem; }

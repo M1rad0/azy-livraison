@@ -3,6 +3,8 @@ package com.azylivraison.administration.api;
 import java.util.Comparator;
 import java.util.List;
 
+import com.azylivraison.account.service.InvalidClientProfileException;
+import com.azylivraison.account.service.InvalidPayoutOperatorException;
 import com.azylivraison.administration.service.AdministrationConflictException;
 import com.azylivraison.administration.service.AdministrationNotFoundException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
@@ -63,11 +65,24 @@ public class AdministrationExceptionHandler {
                 "PRICING_SETTINGS_INVALID", exception.getMessage()));
     }
 
+    @ExceptionHandler(InvalidClientProfileException.class)
+    public ResponseEntity<AdministrationErrorResponse> handleClientProfile(
+            InvalidClientProfileException exception) {
+        return ResponseEntity.badRequest().body(AdministrationErrorResponse.of(
+                "CLIENT_PROFILE_INVALID", exception.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<AdministrationErrorResponse> handleDataIntegrity(
             DataIntegrityViolationException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(AdministrationErrorResponse.of(
                 "ADMIN_DATA_CONFLICT",
                 "Ces informations ne peuvent pas être enregistrées dans leur état actuel."));
+    }
+
+    @ExceptionHandler(InvalidPayoutOperatorException.class)
+    public ResponseEntity<AdministrationErrorResponse> handleInvalidPayoutOperator(InvalidPayoutOperatorException exception) {
+        return ResponseEntity.unprocessableEntity().body(AdministrationErrorResponse.of(
+                "PAYOUT_OPERATOR_INVALID", exception.getMessage()));
     }
 }

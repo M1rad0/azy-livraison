@@ -1,9 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import {
-  BadgePercent,
   Bike,
   Clock3,
-  Fuel,
   Gauge,
   MapPinned,
   PackageOpen,
@@ -221,15 +219,6 @@ export function AdminSettingsPanel({
           <div className="admin-locked-setting"><MapPinned aria-hidden="true" /><div><small>Profil routier actif</small><strong>Routes principales · Madagascar</strong></div><span>Fixe</span></div>
         </section>
 
-        <section className="admin-settings-card admin-settings-card--fuel">
-          <header><span><Fuel aria-hidden="true" /></span><div><strong>Carburant des livraisons express</strong><small>Valeurs utilisées pour estimer le remboursement des trajets express</small></div></header>
-          <div className="admin-form-grid">
-            <label><span>Prix remboursé par litre</span><div className="admin-input-unit"><input required type="number" min="1" step="1" value={draft.defaultFuelPricePerLiterAriary} onChange={(event) => { setDraft({ ...draft, defaultFuelPricePerLiterAriary: event.target.value }); setSaved(false) }} /><b>Ar/L</b></div></label>
-            <label className="admin-switch"><input type="checkbox" checked={draft.defaultExpressReturnToPickup} onChange={(event) => { setDraft({ ...draft, defaultExpressReturnToPickup: event.target.checked }); setSaved(false) }} /><span><i /><span><strong>Retour au retrait inclus</strong><small>Chaque tournée express revient au point de récupération par défaut</small></span></span></label>
-          </div>
-          <p className="admin-settings-hint"><Fuel aria-hidden="true" />Une moto utilise 40 km/L par défaut. Le prix et la consommation peuvent être personnalisés sur chaque profil livreur.</p>
-        </section>
-
         <section className="admin-settings-card">
           <header><span><Bike aria-hidden="true" /></span><div><strong>Préréglages des véhicules</strong><small>Appliqués tant qu’un livreur ne possède pas de valeur personnalisée</small></div></header>
           <div className="admin-preset-grid">
@@ -241,14 +230,6 @@ export function AdminSettingsPanel({
                 <p><Gauge aria-hidden="true" />Ces valeurs restent modifiables livreur par livreur.</p>
               </article>
             ))}
-          </div>
-          <div className="admin-settings-subsection">
-            <header><BadgePercent aria-hidden="true" /><div><strong>Part des livreurs</strong><small>Fraction des frais finaux appliquée par défaut</small></div></header>
-            <div className="admin-form-grid">
-              <label><span>Numérateur</span><input required type="number" min="1" step="1" value={draft.defaultCourierCommissionNumerator} onChange={(event) => { setDraft({ ...draft, defaultCourierCommissionNumerator: event.target.value }); setSaved(false) }} /></label>
-              <label><span>Dénominateur</span><input required type="number" min="1" step="1" value={draft.defaultCourierCommissionDenominator} onChange={(event) => { setDraft({ ...draft, defaultCourierCommissionDenominator: event.target.value }); setSaved(false) }} /></label>
-            </div>
-            <p className="admin-settings-hint"><BadgePercent aria-hidden="true" />Part par défaut : {draft.defaultCourierCommissionNumerator}/{draft.defaultCourierCommissionDenominator}, arrondie à l’ariary le plus proche. Chaque livreur peut avoir sa propre fraction.</p>
           </div>
         </section>
 

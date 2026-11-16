@@ -31,6 +31,8 @@ import {
 } from '../api/plans'
 import { compareOptimizations, type OptimizationComparisonResult } from '../api/optimization'
 import { LocationPicker } from './LocationPicker'
+import { PhoneInput } from './PhoneInput'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../phone'
 import { OptimizationComparisonResults } from './OptimizationComparisonResults'
 import { PlanMapPreview } from './PlanMapPreview'
 import { CsvImportButton } from './PlanningWorkspace'
@@ -279,11 +281,16 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
   }
 
   async function handleValidation(generate: boolean) {
+    if (plan.clients.some((client) => client.deliveryGroups.some((group) => group.packages.some((item) => item.phone?.trim() && !isValidPhoneNumber(item.phone))))) {
+      setMessage(PHONE_NUMBER_ERROR)
+      setActiveTab('deliveries')
+      return
+    }
     generate ? setGenerating(true) : setValidating(true)
     setValidationErrors([])
     setMessage(undefined)
     try {
-      const response = await validatePlan(plan, accessToken)
+      const response = await validatePlan({ ...plan, clients: plan.clients.map((client) => ({ ...client, deliveryGroups: client.deliveryGroups.map((group) => ({ ...group, packages: group.packages.map((item) => ({ ...item, phone: item.phone ? normalizePhoneNumber(item.phone) : item.phone })) })) })) }, accessToken)
       if (!response.plan || response.plan.pattern !== 'MULTI_CLIENT_MULTI_PICKUP_DELIVERY') return
       const normalizedPlan = normalizeWithdrawalPlan(response.plan)
       setPlan(normalizedPlan)
@@ -502,7 +509,7 @@ export function MultiClientPlanningWorkspace({ accessToken }: Props) {
                     <InputField label="Identifiant"><input value={editorPackage.id} onChange={(event) => updatePackage(editor.clientIndex, editor.groupIndex, editor.packageIndex, { id: event.target.value })} /></InputField>
                     <InputField label="Libellé"><input value={editorPackage.label} onChange={(event) => updatePackage(editor.clientIndex, editor.groupIndex, editor.packageIndex, { label: event.target.value })} /></InputField>
                     <InputField label="Poids (kg)"><input type="number" min="0.01" step="0.01" value={editorPackage.weightKg} onChange={(event) => updatePackage(editor.clientIndex, editor.groupIndex, editor.packageIndex, { weightKg: Number(event.target.value) })} /></InputField>
-                    <InputField label="Téléphone"><input value={editorPackage.phone ?? ''} onChange={(event) => updatePackage(editor.clientIndex, editor.groupIndex, editor.packageIndex, { phone: event.target.value })} /></InputField>
+                    <InputField label="Téléphone"><PhoneInput value={editorPackage.phone ?? ''} onChange={(event) => updatePackage(editor.clientIndex, editor.groupIndex, editor.packageIndex, { phone: event.target.value })} /></InputField>
                   </div>
                   <div className="planning-editor-form__location">
                     <span><MapPin />Destination</span>

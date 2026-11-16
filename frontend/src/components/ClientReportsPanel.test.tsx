@@ -223,6 +223,19 @@ describe('ClientReportsPanel', () => {
     expect(table.compareDocumentPosition(settlement as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('exports the same report as a photo without losing PDF and Excel', async () => {
+    render(<ClientReportsPanel accessToken="client-token" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Ouvrir le rapport du .*24 août 2026/i }))
+
+    const photo = await screen.findByRole('button', { name: 'Photo' })
+    expect(screen.getByRole('button', { name: 'PDF' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Excel' })).toBeEnabled()
+    fireEvent.click(photo)
+    await waitFor(() => expect(downloadClientReport).toHaveBeenCalledWith(
+      '2026-08-24', 'image', 'client-token',
+    ))
+  })
+
   it('commence par une liste filtrable puis revient à cette liste sans perdre les filtres', async () => {
     vi.mocked(listClientReports).mockResolvedValue([summary, olderSummary])
     vi.mocked(getClientFinance).mockResolvedValue({

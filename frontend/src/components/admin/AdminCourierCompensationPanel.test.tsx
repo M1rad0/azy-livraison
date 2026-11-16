@@ -39,6 +39,7 @@ function calculation(status: ExpressFuelCalculation['status']): ExpressFuelCalcu
 
 function compensation(status: ExpressFuelCalculation['status']): CourierCompensation {
   return {
+    newAccrualsEnabled: true,
     serviceDate: '2026-09-06',
     closureRevision: 1,
     finalized: false,
@@ -60,6 +61,15 @@ describe('AdminCourierCompensationPanel', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('ne propose plus de nouveaux gains ni de remboursement dans le nouveau fonctionnement', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ ...compensation('CALCULATED'), newAccrualsEnabled: false }) }))
+    render(<AdminCourierCompensationPanel accessToken="admin-token" serviceDate="2026-09-06" couriers={[]} />)
+    expect(await screen.findByText('Ancien suivi des rémunérations')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Valider les rémunérations/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Recalculer/i })).not.toBeInTheDocument()
   })
 
   it('bloque la validation financière et permet de relancer un calcul routier échoué', async () => {

@@ -159,6 +159,41 @@ class ClientProfileApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 
+    @Test
+    void normalizesMobileMoneyOperatorsAndRejectsOtherDestinationsWithoutChangingTheProfile() throws Exception {
+        String token = registerClient("payout-operators-" + UUID.randomUUID());
+        mockMvc.perform(put("/api/client/profile/payout-destinations")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version":0,"items":[
+                                  {"operator":"  mVoLa  ","accountHolder":"Soa","number":"0381415216","priority":1,"active":true},
+                                  {"operator":"ORANGE_MONEY","accountHolder":"Soa","number":"0321415216","priority":2,"active":true},
+                                  {"operator":"airtel-money","accountHolder":"Soa","number":"0331415216","priority":3,"active":true}
+                                ]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.payoutDestinations[0].operator").value("MVola"))
+                .andExpect(jsonPath("$.payoutDestinations[1].operator").value("Orange Money"))
+                .andExpect(jsonPath("$.payoutDestinations[2].operator").value("Airtel Money"));
+        mockMvc.perform(put("/api/client/profile/payout-destinations")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version":1,"items":[
+                                  {"operator":"Banque","accountHolder":"Soa","number":"0381415216","priority":1,"active":true}
+                                ]}
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PAYOUT_OPERATOR_INVALID"))
+                .andExpect(jsonPath("$.message").value("Choisissez MVola, Orange Money ou Airtel Money pour le numéro de versement."));
+        mockMvc.perform(get("/api/client/profile").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.payoutDestinations.length()").value(3));
+    }
+
     private String registerClient(String username) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

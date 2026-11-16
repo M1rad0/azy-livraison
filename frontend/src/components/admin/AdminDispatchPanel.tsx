@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRightLeft,
+  Banknote,
   Bike,
   Boxes,
   CalendarDays,
@@ -8,7 +9,6 @@ import {
   History,
   LoaderCircle,
   MapPin,
-  MessageSquareText,
   PackageCheck,
   Route,
   Sparkles,
@@ -57,7 +57,7 @@ interface AdminDispatchPanelProps {
   onRefresh?: () => void
   onDateChange: (date: string) => void
   onCreated: (plan: DispatchPlan) => void
-  onOpenBriefing?: () => void
+  onOpenPayouts?: () => void
 }
 
 export function collectionMatrixUsage(
@@ -222,12 +222,12 @@ export function DispatchResult({ plan, couriers }: { plan: DispatchPlan; courier
   )
 }
 
-function ManualPlanResult({ plan, accessToken, onEdited, onChanged, onOpenBriefing }: {
+function ManualPlanResult({ plan, accessToken, onEdited, onChanged, onOpenPayouts }: {
   plan: DispatchPlan
   accessToken: string
   onEdited: (draft: ManualDispatchDraft) => void
   onChanged: (plan: DispatchPlan) => void
-  onOpenBriefing?: () => void
+  onOpenPayouts?: () => void
 }) {
   const [message, setMessage] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -250,9 +250,9 @@ function ManualPlanResult({ plan, accessToken, onEdited, onChanged, onOpenBriefi
   return <section className="admin-dispatch-result"><header><div><p className="admin-eyebrow">Plan manuel · {formatDate(plan.plan.serviceDate)}</p><h3>{active ? 'Dispatch validé' : 'Ancien dispatch'}</h3></div>
     <span className={`admin-chip admin-chip--${plan.plan.status.toLowerCase()}`}>{dispatchStatusLabel(plan.plan.status)}</span></header>
     {message && <p role="alert" className="admin-callout admin-callout--error">{message}</p>}
-    <p className="admin-muted">{active ? 'Les récupérations, les échanges et les colis à livrer sont regroupés dans l’onglet Briefing.' : 'Ce plan n’est plus actif. Le briefing utilise uniquement la répartition validée en cours.'}</p>
+    <p className="admin-muted">{active ? 'Préparez les versements si nécessaire, puis retrouvez les consignes de chaque livreur dans Briefing.' : 'Ce plan n’est plus actif. Les versements et le briefing utilisent uniquement la répartition validée en cours.'}</p>
     <div className="admin-toolbar">
-      {onOpenBriefing && active && <Button tone="admin" disabled={busy} onClick={onOpenBriefing}><MessageSquareText aria-hidden="true" />Ouvrir le briefing</Button>}
+      {onOpenPayouts && active && <Button tone="admin" disabled={busy} onClick={onOpenPayouts}><Banknote aria-hidden="true" />Préparer les versements</Button>}
       {plan.plan.editable && <><Button tone="admin" variant="secondary" disabled={busy} onClick={() => void edit()}>Modifier les affectations</Button>
         <Button tone="admin" variant="secondary" disabled={busy} onClick={() => void cancel()}>Annuler le dispatch</Button></>}
     </div>
@@ -270,7 +270,7 @@ export function AdminDispatchPanel({
   onRefresh,
   onDateChange,
   onCreated,
-  onOpenBriefing,
+  onOpenPayouts,
 }: AdminDispatchPanelProps) {
   const activeCouriers = couriers.filter((courier) => courier.active)
   const currentQueue = queue?.date === date ? queue : undefined
@@ -370,7 +370,7 @@ export function AdminDispatchPanel({
   }
 
   if (draft && workspaceOpen) return <ManualDispatchWorkspace key={draft.id} accessToken={accessToken} draft={draft} onDraftChange={setDraft}
-    onFinalized={(plan) => { setDraft(undefined); setVisiblePlan(plan); onCreated(plan); onOpenBriefing?.() }}
+    onFinalized={(plan) => { setDraft(undefined); setVisiblePlan(plan); onCreated(plan); onOpenPayouts?.() }}
     onClose={() => setWorkspaceOpen(false)}
     onCancelled={() => { setDraft(undefined); onRefresh?.() }} />
 
@@ -473,7 +473,7 @@ export function AdminDispatchPanel({
         </aside>
       </div>
 
-      {visiblePlan && visiblePlan.plan.strategy === 'MANUAL' ? <ManualPlanResult key={visiblePlan.plan.id} plan={visiblePlan} accessToken={accessToken} onOpenBriefing={onOpenBriefing} onEdited={(nextDraft) => { setDraft(nextDraft); setWorkspaceOpen(true); setVisiblePlan(undefined); onRefresh?.() }} onChanged={(plan) => { setVisiblePlan(plan); onCreated(plan) }} /> : visiblePlan && (
+      {visiblePlan && visiblePlan.plan.strategy === 'MANUAL' ? <ManualPlanResult key={visiblePlan.plan.id} plan={visiblePlan} accessToken={accessToken} onOpenPayouts={onOpenPayouts} onEdited={(nextDraft) => { setDraft(nextDraft); setWorkspaceOpen(true); setVisiblePlan(undefined); onRefresh?.() }} onChanged={(plan) => { setVisiblePlan(plan); onCreated(plan) }} /> : visiblePlan && (
         <>
           <DispatchResult plan={visiblePlan} couriers={couriers} />
           <AdminPlanControls

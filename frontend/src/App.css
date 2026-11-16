@@ -4752,7 +4752,8 @@ tbody tr:last-child td {
 
 .compact-package-row {
   display: grid;
-  grid-template-columns: 2rem minmax(110px, 0.9fr) minmax(150px, 1.2fr) 4.5rem minmax(105px, 0.65fr) auto;
+  grid-template-columns: 2rem minmax(0, 0.9fr) minmax(0, 1.2fr) 4.5rem minmax(0, 0.65fr) auto;
+  min-width: 0;
   align-items: center;
   gap: 0.7rem;
   min-height: 3.7rem;
@@ -4770,8 +4771,11 @@ tbody tr:last-child td {
 
 .compact-package-row__number {
   display: grid;
-  width: 1.7rem;
-  height: 1.7rem;
+  min-width: 1.7rem;
+  min-height: 1.7rem;
+  max-width: 100%;
+  padding: .15rem;
+  align-self: start;
   place-items: center;
   color: #fff;
   background: var(--forest-deep);
@@ -4804,6 +4808,7 @@ tbody tr:last-child td {
 
 .compact-package-row__identity small,
 .compact-package-row__window {
+  overflow-wrap: anywhere;
   color: var(--ink-soft);
   font-size: 0.63rem;
 }
@@ -4835,6 +4840,8 @@ tbody tr:last-child td {
 
 .compact-package-row__actions {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 0.25rem;
 }
 
@@ -6249,11 +6256,15 @@ tbody tr:last-child td {
 
 .auth-switch {
   display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
+  margin: 0;
   color: var(--ink-soft);
   font-size: 0.72rem;
+  line-height: 1.5;
 }
 
 .auth-switch button {
@@ -6278,6 +6289,7 @@ tbody tr:last-child td {
 }
 
 .login-form--register {
+  align-self: safe center;
   width: min(100%, 560px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;

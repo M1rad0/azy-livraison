@@ -152,7 +152,7 @@ describe('ClientPortal', () => {
     expect(screen.getByRole('button', { name: 'Reprogrammer' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Modifier' }))
     expect(await screen.findByRole('dialog', { name: 'Modifier le colis' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Contact client')).toHaveValue('032 00 000 00')
+    expect(screen.getByLabelText('Contact client')).toHaveValue('0320000000')
   })
 
   it('masque modification et reprogrammation après dispatch', async () => {
@@ -218,7 +218,7 @@ describe('ClientPortal', () => {
     expect(payoutsTab).toHaveFocus()
     expect(screen.getByRole('heading', { name: 'Numéros de versement' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('MVola')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('034 11 111 11')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('0341111111')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Informations du compte' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Numéros de contact' })).not.toBeInTheDocument()
 
@@ -229,6 +229,28 @@ describe('ClientPortal', () => {
     fireEvent.keyDown(payoutsTab, { key: 'Home' })
     expect(informationTab).toHaveFocus()
     expect(screen.getByRole('heading', { name: 'Informations du compte' })).toBeInTheDocument()
+  })
+
+  it('explique au nouveau client comment compléter ses coordonnées sans bloquer la navigation', async () => {
+    window.history.replaceState(null, '', '#/client/profile')
+    const onWelcomeDismiss = vi.fn()
+    vi.mocked(getClientProfile).mockResolvedValue({ ...profile, defaultPickup: null, payoutDestinations: [] })
+    vi.mocked(listDeliveryRequests).mockResolvedValue([])
+    render(<PortalShell account={{ id: profile.accountId, username: profile.username, role: 'CLIENT', displayName: profile.displayName, phone: profile.phone }} onLogout={vi.fn().mockResolvedValue(undefined)}>
+      <ClientPortal accessToken="client-token" welcome onWelcomeDismiss={onWelcomeDismiss} />
+    </PortalShell>)
+
+    expect(await screen.findByRole('heading', { name: 'Bienvenue chez AZY Livraison' })).toBeInTheDocument()
+    expect(screen.getByText('Votre compte est créé')).toBeInTheDocument()
+    expect(screen.getByText(/Avant votre première demande/)).toHaveTextContent('votre profil, votre point de retrait et vos contacts')
+    expect(screen.getByText(/Commencez par l’onglet/)).toHaveTextContent('numéros de versement et leurs titulaires')
+    expect(screen.getByRole('heading', { name: 'Retrait par défaut' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /Versements/ }))
+    expect(screen.getByRole('heading', { name: 'Numéros de versement' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Voir mes livraisons' }))
+    expect(await screen.findByRole('heading', { name: 'Bonjour, Boutique Soa' })).toBeInTheDocument()
+    expect(onWelcomeDismiss).toHaveBeenCalledOnce()
+    window.history.replaceState(null, '', '/')
   })
 
   it('actualise le téléphone principal sans effacer un brouillon de versement', async () => {
@@ -252,7 +274,7 @@ describe('ClientPortal', () => {
     fireEvent.change(within(contactsSection as HTMLElement).getByLabelText('Numéro'), { target: { value: '033 22 222 22' } })
     fireEvent.click(within(contactsSection as HTMLElement).getByRole('button', { name: 'Enregistrer les contacts' }))
 
-    await waitFor(() => expect(screen.getByLabelText(/Téléphone principal/)).toHaveValue('033 22 222 22'))
+    await waitFor(() => expect(screen.getByLabelText(/Téléphone principal/)).toHaveValue('0332222222'))
     fireEvent.click(screen.getByRole('tab', { name: /Versements/ }))
     expect(screen.getByDisplayValue('Orange Money')).toBeInTheDocument()
   })

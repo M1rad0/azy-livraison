@@ -61,6 +61,163 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void financeListsExposeBoundedPagesAndRejectInvalidRangesAtTheHttpBoundary() throws Exception {
+        for (String path : List.of("/api/admin/cash-ledger/movements", "/api/admin/cash-ledger/obligations",
+                "/api/admin/cash-briefings/transfers")) {
+            mockMvc.perform(get(path).with(admin())).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items").isArray())
+                    .andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(20))
+                    .andExpect(jsonPath("$.totalElements").isNumber()).andExpect(jsonPath("$.totalPages").isNumber());
+            mockMvc.perform(get(path).with(admin()).param("page", "-1")).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("size", "101")).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("size", "0")).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("from", "2026-11-16").param("to", "2026-11-15"))
+                    .andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("q", "a".repeat(201))).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(client(CLIENT_ID))).andExpect(status().isForbidden());
+        }
+        mockMvc.perform(get("/api/admin/cash-ledger").with(admin()).param("includeHistory", "false"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.accounts").isArray())
+                .andExpect(jsonPath("$.movements").isEmpty()).andExpect(jsonPath("$.obligations").isEmpty());
+    }
+
+    @Test
+    void plannedCashPayoutsRejectNonIntegerMoneyAtTheRealHttpBoundary() throws Exception {
+        long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
+        long previousMovements = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class);
+        String body = """
+                {
+                  "planId": "%s",
+                  "idempotencyKey": "strict-http-integer",
+                  "expectedLedgerRevision": 0,
+                  "expectedBatchId": null,
+                  "transfers": [{"sellerAccountId": "%s", "courierAccountId": "%s", "amountAriary": %s}]
+                }
+                """;
+        UUID missingPlan = UUID.randomUUID();
+        for (String amount : List.of("1.5", "1.0", "\"1500\"", "null")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, amount)))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class))
+                .isEqualTo(previousMovements);
+
+        String integer = body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "1500");
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content(integer))
+                .andExpect(status().isConflict()); // Integer accepted; the missing dispatch is the business error.
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(client(CLIENT_ID)).contentType(MediaType.APPLICATION_JSON).content(integer))
+                .andExpect(status().isForbidden());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class))
+                .isEqualTo(previousMovements);
+    }
+
+    @Test
+    void payoutNumberOverridesAreValidatedAtTheHttpBoundaryAndRemainOptional() throws Exception {
+        long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
+        String body = """
+                {"planId":"%s","idempotencyKey":"http-payout-number","expectedLedgerRevision":0,
+                 "transfers":[{"sellerAccountId":"%s","courierAccountId":"%s","amountAriary":1500,
+                 "sellerPayoutNumber":%s}]}
+                """;
+        UUID missingPlan = UUID.randomUUID();
+        for (String number : List.of("", " ", "0".repeat(101), "034\n1111111", "\t0341111111")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID,
+                                    objectMapper.writeValueAsString(number))))
+                    .andExpect(status().is(number.length() > 100 ? 400 : 422));
+        }
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "null")))
+                .andExpect(status().isConflict()); // Omitting a custom destination remains valid.
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "\"032 11 111 11\"")))
+                .andExpect(status().isUnprocessableEntity()); // New custom destinations require holder and operator.
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+    }
+
+    @Test
+    void payoutHoldersAndProfileDestinationChoicesAreValidatedAtTheHttpBoundary() throws Exception {
+        long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
+        UUID missingPlan = UUID.randomUUID();
+        String body = """
+                {"planId":"%s","idempotencyKey":"http-payout-holder","expectedLedgerRevision":0,
+                 "transfers":[{"sellerAccountId":"%s","courierAccountId":"%s","amountAriary":1500,
+                  "sellerPayoutNumber":"0321111111","sellerPayoutAccountHolder":%s,
+                  "sellerPayoutOperator":"Orange Money"}]}
+                """;
+        for (String holder : List.of("", " ", "X".repeat(151), "Jean\nRabe")) {
+            mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID,
+                                    objectMapper.writeValueAsString(holder))))
+                    .andExpect(status().is(holder.length() > 150 ? 400 : 422));
+        }
+        String valid = body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "\"Jean\"");
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content(valid))
+                .andExpect(status().isConflict()); // Valid input reaches the missing-dispatch guard.
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(valid.replace("Orange Money", "Banque")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PAYOUT_OPERATOR_INVALID"));
+        String conflicting = valid.replace("\"sellerPayoutNumber\":", "\"sellerPayoutDestinationId\":\""
+                + UUID.randomUUID() + "\",\"sellerPayoutNumber\":");
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content(conflicting))
+                .andExpect(status().isUnprocessableEntity());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
+                .isEqualTo(previousBatches);
+    }
+
+    @Test
+    void administratorCanManageSellerNumbersAndInvalidPrioritiesReturnAUsefulError() throws Exception {
+        String creation = """
+                {"username":"seller-payout-http","displayName":"Boutique Soa","phone":"0340000000",
+                 "enabled":true,"expressDeliveryEnabled":false,"payoutDestinations":[
+                 {"operator":"MVola","accountHolder":"Soa","number":"034 11 111 11","priority":1,"active":true}]}
+                """;
+        MvcResult result = mockMvc.perform(post("/api/admin/clients").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(creation))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.client.payoutDestinations[0].number").value("034 11 111 11"))
+                .andReturn();
+        JsonNode created = objectMapper.readTree(result.getResponse().getContentAsString()).get("client");
+        String id = created.get("accountId").asText();
+        String update = creation.replace("034 11 111 11", "034 99 999 99")
+                .replace("\"username\"", "\"version\":" + created.get("version").asLong() + ",\"username\"");
+        mockMvc.perform(put("/api/admin/clients/{id}", id).with(client(CLIENT_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(update))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/admin/clients/{id}", id).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(update))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payoutDestinations[0].number").value("034 99 999 99"));
+
+        String invalid = creation.replace("seller-payout-http", "seller-payout-invalid")
+                .replace("\"priority\":1", "\"priority\":2");
+        mockMvc.perform(post("/api/admin/clients").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(invalid))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CLIENT_PROFILE_INVALID"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM app_account WHERE username = 'seller-payout-invalid'", Long.class)).isZero();
+    }
+
+    @Test
     void clientAndAdministratorCanCancelOnlyPendingOwnedPackagesAndCapacityIsFreed() throws Exception {
         jdbcTemplate.update("UPDATE operational_settings SET daily_package_limit = 1 WHERE id = 1");
         JsonNode created = createRequest(CLIENT_ID, SERVICE_DATE, 1);
@@ -698,6 +855,67 @@ class DailyWorkflowApiIntegrationTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message").value(
                         "Aucun tarif calculé n'est disponible pour ce colis. Indiquez un tarif manuel."));
+    }
+
+    @Test
+    void followsActualCashWithoutCommissionAndPaysTheSellerThroughTheNewRegister() throws Exception {
+        UUID packageId = packageId(createRequest(CLIENT_ID, SERVICE_DATE, 1), 0);
+        jdbcTemplate.update("""
+                UPDATE delivery_package SET amount_to_collect_ariary = 30000,
+                    delivery_fee_ariary = 5000, final_delivery_fee_ariary = 5000 WHERE id = ?
+                """, packageId);
+        installPlan(SERVICE_DATE, List.of(packageId));
+        updateOutcome(packageId, "DELIVERED", 30_000L, 1);
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(30_000);
+        assertThat(cashBalance("COURIER:" + PLANNED_COURIER_ID)).isZero();
+        updateOutcome(packageId, "DELIVERED", 30_000L, 2);
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(30_000);
+        closeClient(CLIENT_ID, 0);
+        assertThat(cashBalance("SELLER:" + CLIENT_ID)).isEqualTo(25_000);
+
+        String transfer = objectMapper.writeValueAsString(java.util.Map.of(
+                "idempotencyKey", "workflow-cash-" + packageId,
+                "fromKey", "COURIER:" + ACTUAL_COURIER_ID,
+                "toKey", "SELLER:" + CLIENT_ID,
+                "amountAriary", 25_000,
+                "paymentMethod", "MVOLA"));
+        MvcResult paid = mockMvc.perform(post("/api/admin/cash-ledger/transfers").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(transfer))
+                .andExpect(status().is2xxSuccessful()).andReturn();
+        UUID movementId = UUID.fromString(objectMapper.readTree(paid.getResponse().getContentAsString()).path("id").asText());
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(5_000);
+        assertThat(cashBalance("SELLER:" + CLIENT_ID)).isZero();
+        assertThat(cashBalance("AZY")).isZero();
+        mockMvc.perform(get("/api/client/finance").with(client(CLIENT_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.netBalanceAriary").value(0))
+                .andExpect(jsonPath("$.totalConfirmedSignedPaymentsAriary").value(25_000));
+        mockMvc.perform(get("/api/client/finance/payments/{id}/proof", movementId).with(client(OTHER_CLIENT_ID)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/admin/finance/delivery-days/{date}/clients/{id}/courier-compensations/finalize", SERVICE_DATE, CLIENT_ID)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content("{\"closureRevision\":1,\"overrides\":[]}"))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM courier_earning", Long.class)).isZero();
+        mockMvc.perform(post("/api/admin/delivery-days/{date}/clients/{id}/reopen", SERVICE_DATE, CLIENT_ID)
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON).content("{\"version\":0,\"reason\":\"Correction\"}"))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/admin/cash-ledger/movements/{id}/void", movementId).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Versement non réalisé\"}"))
+                .andExpect(status().isOk());
+        assertThat(cashBalance("COURIER:" + ACTUAL_COURIER_ID)).isEqualTo(30_000);
+        assertThat(cashBalance("SELLER:" + CLIENT_ID)).isEqualTo(25_000);
+        mockMvc.perform(get("/api/client/finance").with(client(CLIENT_ID)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.netBalanceAriary").value(25_000));
+    }
+
+    private long cashBalance(String accountKey) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/admin/cash-ledger").with(admin()))
+                .andExpect(status().isOk()).andReturn();
+        for (JsonNode account : objectMapper.readTree(result.getResponse().getContentAsString()).path("accounts")) {
+            if (accountKey.equals(account.path("key").asText())) return account.path("balanceAriary").asLong();
+        }
+        throw new AssertionError("Compte de caisse absent : " + accountKey);
     }
 
     private MvcResult updateOutcome(UUID packageId, String outcome, Long actual, long version) throws Exception {

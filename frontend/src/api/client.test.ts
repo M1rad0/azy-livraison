@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   cancelDeliveryPackage,
   createDeliveryRequest,
+  downloadClientReport,
   getClientProfile,
   quoteDeliveryPrice,
   updateClientProfile,
@@ -11,6 +12,37 @@ describe('client API', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it.each(['image/png', 'application/zip'])('downloads a report photo with its real %s filename', async (mediaType) => {
+    const extension = mediaType === 'image/png' ? 'png' : 'zip'
+    const blob = new Blob(['photo'], { type: mediaType })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'Content-Type': mediaType,
+        'Content-Disposition': `attachment; filename*=UTF-8''soa-2026-11-16.${extension}`,
+      }),
+      blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(downloadClientReport('2026-11-16', 'image', 'client-token')).resolves.toEqual({
+      blob,
+      filename: `soa-2026-11-16.${extension}`,
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/client/reports/2026-11-16.image', {
+      headers: { Authorization: 'Bearer client-token' },
+    })
+  })
+
+  it('uses the ZIP extension if the image response has no attachment name', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'Content-Type': 'application/zip' }),
+      blob: async () => new Blob(),
+    }))
+    expect((await downloadClientReport('2026-11-16', 'image', 'client-token')).filename)
+      .toBe('rapport-2026-11-16.zip')
   })
 
   it('loads and updates the authenticated client profile', async () => {

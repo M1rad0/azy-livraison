@@ -2,6 +2,8 @@
 
 Application web locale-first de préparation, répartition et visualisation de tournées de livraison à Antananarivo, Madagascar.
 
+Le [suivi des caisses et reversements](docs/CASH_LEDGER.md) sépare l'argent détenu par AZY et les livreurs des sommes dues aux vendeurs et des anciennes rémunérations. Le nouveau registre démarre à zéro à la migration V23, sans reprendre les anciens encaissements ; terminer les régularisations historiques avant le déploiement.
+
 > **État du projet : workflow journalier multi-utilisateur persistant.** Les demandes, colis, livreurs, réglages, dispatchs, comptes rendus et clôtures sont historisés dans PostgreSQL. Le dispatch opérationnel est manuel : affectation des récupérations, répartition des colis, ordre des passages et échanges à prévoir. Le ralliement reste un repère, sans passage imposé. Les anciens plans automatiques `VIA_HUB` restent consultables.
 
 ## Objectif

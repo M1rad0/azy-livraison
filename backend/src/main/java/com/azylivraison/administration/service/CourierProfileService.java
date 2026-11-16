@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.azylivraison.account.service.PayoutOperatorNormalizer;
 import com.azylivraison.administration.domain.CourierProfile;
 import com.azylivraison.administration.domain.CourierPayoutDestination;
 import com.azylivraison.administration.domain.VehiclePresetConfiguration;
@@ -181,7 +182,7 @@ public class CourierProfileService {
             return null;
         }
         return new CourierPayoutDestination(
-                normalizeRequired(payout.operator()),
+                PayoutOperatorNormalizer.normalize(payout.operator()),
                 normalizeRequired(payout.accountHolder()),
                 normalizeRequired(payout.number()));
     }
