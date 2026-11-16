@@ -8,6 +8,7 @@ import {
   Eye,
   FileSpreadsheet,
   FileText,
+  ImageDown,
   ListFilter,
   LoaderCircle,
   MapPin,
@@ -27,7 +28,7 @@ import {
   type ClientReportPackage,
   type ClientReportSummary,
 } from '../api/client'
-import type { ClientFinance, ClientPaymentDirection, ClientSettlement } from '../api/admin'
+import type { ClientFinance, ClientPaymentDirection, ClientSettlement, DailyReportFormat } from '../api/admin'
 import './ClientReportsPanel.css'
 
 function formatDate(date: string) {
@@ -94,7 +95,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
   const [settlementFilter, setSettlementFilter] = useState<SettlementFilter>('ALL')
   const [loading, setLoading] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [downloading, setDownloading] = useState<'pdf' | 'xlsx'>()
+  const [downloading, setDownloading] = useState<DailyReportFormat>()
   const [downloadingProofId, setDownloadingProofId] = useState<string>()
   const [error, setError] = useState<string>()
   const [financeWarning, setFinanceWarning] = useState<string>()
@@ -199,7 +200,7 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
     return [...uniqueLabels.values()]
   }, [report])
 
-  async function download(format: 'pdf' | 'xlsx') {
+  async function download(format: DailyReportFormat) {
     if (!selectedDate) return
     setDownloading(format)
     setError(undefined)
@@ -278,7 +279,11 @@ export function ClientReportsPanel({ accessToken }: { accessToken: string }) {
                   </div>
                   <div className="client-report-detail__meta">
                     <time dateTime={report.serviceDate}>{formatDate(report.serviceDate)}</time>
-                    <div className="client-report-detail__actions"><button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('pdf')}><FileText aria-hidden="true" />{downloading === 'pdf' ? 'Préparation…' : 'PDF'}</button><button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('xlsx')}><FileSpreadsheet aria-hidden="true" />{downloading === 'xlsx' ? 'Préparation…' : 'Excel'}</button></div>
+                    <div className="client-report-detail__actions">
+                      <button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('pdf')}><FileText aria-hidden="true" />{downloading === 'pdf' ? 'Préparation…' : 'PDF'}</button>
+                      <button className="button button--secondary" type="button" disabled={Boolean(downloading)} onClick={() => void download('xlsx')}><FileSpreadsheet aria-hidden="true" />{downloading === 'xlsx' ? 'Préparation…' : 'Excel'}</button>
+                      <button className="button button--secondary" type="button" disabled={Boolean(downloading)} title="Même présentation que le PDF · plusieurs pages : images dans un ZIP" onClick={() => void download('image')}><ImageDown aria-hidden="true" />{downloading === 'image' ? 'Préparation…' : 'Photo'}</button>
+                    </div>
                   </div>
                 </header>
 

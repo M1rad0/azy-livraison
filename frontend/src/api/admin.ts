@@ -5,7 +5,7 @@ import type {
   StrategyMetrics,
 } from './optimization'
 import type { PricingDistanceMode } from './pricing'
-import type { ClientPayoutDestination, ClientPayoutDestinationInput, CreateDeliveryPackageInput, DeliveryPricingOptions, DeliveryTimePreference } from './client'
+import type { ClientContactNumber, ClientContactNumberInput, ClientDefaultPickup, ClientPayoutDestination, ClientPayoutDestinationInput, CreateDeliveryPackageInput, DeliveryPricingOptions, DeliveryTimePreference } from './client'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -16,6 +16,7 @@ export type DeliveryPackageOutcome = 'DELIVERED' | 'CANCELLED' | 'POSTPONED' | '
 export type DispatchStatus = 'GENERATING' | 'READY' | 'READY_WITH_WARNINGS' | 'FAILED' | 'CANCELLED' | 'SUPERSEDED'
 export type OperationDayStatus = 'OPEN' | 'DISPATCHING' | 'DISPATCHED' | 'CLOSED'
 export type ReportFormat = 'pdf' | 'xlsx'
+export type DailyReportFormat = ReportFormat | 'image'
 export type DeliveryRequestKind = 'NORMAL' | 'EXPRESS'
 export type ExpressDeliveryStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED'
 export type ExpressFuelStatus =
@@ -126,6 +127,7 @@ export interface AdminClient {
   displayName: string
   phone: string
   payoutDestinations?: ClientPayoutDestination[]
+  contactNumbers?: ClientContactNumber[]
   defaultPickup: {
     label: string
     destinationQuery?: string
@@ -142,6 +144,9 @@ export interface AdminClientInput {
   displayName: string
   phone: string
   payoutDestinations?: ClientPayoutDestinationInput[]
+  contactNumbers?: ClientContactNumberInput[]
+  defaultPickup?: ClientDefaultPickup | null
+  clearDefaultPickup?: boolean
   enabled?: boolean
   expressDeliveryEnabled?: boolean
   temporaryPassword?: string
@@ -1344,13 +1349,16 @@ async function downloadAdminReport(path: string, fallback: string, accessToken: 
       payload.code,
     )
   }
-  return { blob: await response.blob(), filename: reportFilename(response, fallback) }
+  const actualFallback = fallback.endsWith('.image')
+    ? fallback.replace(/\.image$/, response.headers.get('Content-Type')?.includes('application/zip') ? '.zip' : '.png')
+    : fallback
+  return { blob: await response.blob(), filename: reportFilename(response, actualFallback) }
 }
 
-export function downloadGeneralDailyReport(serviceDate: string, format: ReportFormat, accessToken: string) {
+export function downloadGeneralDailyReport(serviceDate: string, format: DailyReportFormat, accessToken: string) {
   return downloadAdminReport(
     `delivery-days/${encodeURIComponent(serviceDate)}/reports/general.${format}`,
-    `azy-livraison-${serviceDate}.${format}`,
+    `general-${serviceDate}.${format}`,
     accessToken,
   )
 }
@@ -1358,12 +1366,12 @@ export function downloadGeneralDailyReport(serviceDate: string, format: ReportFo
 export function downloadClientDailyReport(
   serviceDate: string,
   accountId: string,
-  format: ReportFormat,
+  format: DailyReportFormat,
   accessToken: string,
 ) {
   return downloadAdminReport(
     `delivery-days/${encodeURIComponent(serviceDate)}/reports/clients/${encodeURIComponent(accountId)}.${format}`,
-    `azy-livraison-client-${serviceDate}.${format}`,
+    `rapport-${serviceDate}.${format}`,
     accessToken,
   )
 }

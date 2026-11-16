@@ -8,6 +8,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  ImageDown,
   LoaderCircle,
   LockKeyhole,
   MapPin,
@@ -38,7 +39,7 @@ import {
   type DailyOperationPackage,
   type DeliveryPackageOutcome,
   type DownloadedReport,
-  type ReportFormat,
+  type DailyReportFormat,
 } from '../../api/admin'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { AdminPackageOutcomeDialog, type PackageOutcomeInput } from './AdminPackageOutcomeDialog'
@@ -336,7 +337,7 @@ export function AdminDailyOperationsPanel({
     }
   }
 
-  async function download(kind: 'general' | string, format: ReportFormat) {
+  async function download(kind: 'general' | string, format: DailyReportFormat) {
     setBusyAction(`report:${kind}:${format}`)
     setError(undefined)
     try {
@@ -490,6 +491,7 @@ export function AdminDailyOperationsPanel({
                           <>
                             <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport PDF de ${client.clientDisplayName}`} disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'pdf')}><FileText aria-hidden="true" />PDF</button>
                             <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport Excel de ${client.clientDisplayName}`} disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button>
+                            <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label={`Télécharger le rapport photo de ${client.clientDisplayName}`} title="Même présentation que le PDF · plusieurs pages : images dans un ZIP" disabled={Boolean(busyAction?.startsWith('report:'))} onClick={() => void download(client.clientAccountId, 'image')}><ImageDown aria-hidden="true" />Photo</button>
                             {day.status !== 'CLOSED' && client.version != null && <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={actionBusy} onClick={() => { setDialogError(undefined); setClientReopenReason(''); setReopeningClient(client) }}><RotateCcw aria-hidden="true" />Rouvrir ce client</button>}
                           </>
                         ) : (
@@ -520,7 +522,11 @@ export function AdminDailyOperationsPanel({
             </div>
             <div className={`admin-general-report${day.status !== 'CLOSED' ? ' is-locked' : ''}`}>
               <div><FileText aria-hidden="true" /><span><strong>Rapport général</strong><small>Clients, livreurs, colis et totaux de la journée</small></span></div>
-              <div><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'pdf')}><Download aria-hidden="true" />PDF</button><button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button></div>
+              <div>
+                <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'pdf')}><Download aria-hidden="true" />PDF</button>
+                <button className="admin-button admin-button--ghost admin-button--small" type="button" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'xlsx')}><FileSpreadsheet aria-hidden="true" />Excel</button>
+                <button className="admin-button admin-button--ghost admin-button--small" type="button" aria-label="Télécharger le rapport général en photo" title="Même présentation que le PDF · plusieurs pages : images dans un ZIP" disabled={day.status !== 'CLOSED' || Boolean(busyAction?.startsWith('report:'))} onClick={() => void download('general', 'image')}><ImageDown aria-hidden="true" />Photo</button>
+              </div>
             </div>
           </section>
         </>

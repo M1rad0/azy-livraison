@@ -8,6 +8,8 @@ import java.util.UUID;
 import com.azylivraison.reporting.domain.ClientDailyReport;
 import com.azylivraison.reporting.service.DailyReportService;
 import com.azylivraison.reporting.service.DailyReportService.ClientReportSummary;
+import com.azylivraison.reporting.service.DailyReportService.ExportFormat;
+import com.azylivraison.reporting.render.ReportDownload;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -47,10 +49,7 @@ public class ClientDailyReportController {
     public ResponseEntity<byte[]> pdf(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
             @AuthenticationPrincipal Jwt jwt) {
-        return download(
-                service.renderClientPdf(serviceDate, accountId(jwt)),
-                MediaType.APPLICATION_PDF,
-                "azy-livraison-" + serviceDate + "-rapport-client.pdf");
+        return download(service.downloadClient(serviceDate, accountId(jwt), ExportFormat.PDF));
     }
 
     @GetMapping(
@@ -59,24 +58,29 @@ public class ClientDailyReportController {
     public ResponseEntity<byte[]> xlsx(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
             @AuthenticationPrincipal Jwt jwt) {
-        return download(
-                service.renderClientXlsx(serviceDate, accountId(jwt)),
-                AdminDailyReportController.XLSX_MEDIA_TYPE,
-                "azy-livraison-" + serviceDate + "-rapport-client.xlsx");
+        return download(service.downloadClient(serviceDate, accountId(jwt), ExportFormat.XLSX));
+    }
+
+    @GetMapping("/{serviceDate}.image")
+    public ResponseEntity<byte[]> image(
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
+            @AuthenticationPrincipal Jwt jwt) {
+        return download(service.downloadClient(serviceDate, accountId(jwt), ExportFormat.IMAGE));
     }
 
     private UUID accountId(Jwt jwt) {
         return UUID.fromString(jwt.getClaimAsString("accountId"));
     }
 
-    private ResponseEntity<byte[]> download(byte[] content, MediaType mediaType, String filename) {
+    private ResponseEntity<byte[]> download(ReportDownload report) {
         return ResponseEntity.ok()
-                .contentType(mediaType)
-                .contentLength(content.length)
+                .contentType(MediaType.parseMediaType(report.mediaType()))
+                .contentLength(report.content().length)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename(filename, StandardCharsets.UTF_8)
+                        .filename(report.filename(), StandardCharsets.UTF_8)
                         .build()
                         .toString())
-                .body(content);
+                .body(report.content());
     }
 }

@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.azylivraison.reporting.service.DailyReportService;
+import com.azylivraison.reporting.service.DailyReportService.ExportFormat;
+import com.azylivraison.reporting.render.ReportDownload;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -32,10 +34,7 @@ public class AdminDailyReportController {
     @GetMapping(value = "/general.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> generalPdf(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate) {
-        return download(
-                service.renderGeneralPdf(serviceDate),
-                MediaType.APPLICATION_PDF,
-                "azy-livraison-" + serviceDate + "-rapport-general.pdf");
+        return download(service.downloadGeneral(serviceDate, ExportFormat.PDF));
     }
 
     @GetMapping(
@@ -43,20 +42,20 @@ public class AdminDailyReportController {
             produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     public ResponseEntity<byte[]> generalXlsx(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate) {
-        return download(
-                service.renderGeneralXlsx(serviceDate),
-                XLSX_MEDIA_TYPE,
-                "azy-livraison-" + serviceDate + "-rapport-general.xlsx");
+        return download(service.downloadGeneral(serviceDate, ExportFormat.XLSX));
+    }
+
+    @GetMapping("/general.image")
+    public ResponseEntity<byte[]> generalImage(
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate) {
+        return download(service.downloadGeneral(serviceDate, ExportFormat.IMAGE));
     }
 
     @GetMapping(value = "/clients/{accountId}.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> clientPdf(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
             @PathVariable UUID accountId) {
-        return download(
-                service.renderClientPdf(serviceDate, accountId),
-                MediaType.APPLICATION_PDF,
-                "azy-livraison-" + serviceDate + "-client-" + accountId + ".pdf");
+        return download(service.downloadClient(serviceDate, accountId, ExportFormat.PDF));
     }
 
     @GetMapping(
@@ -65,20 +64,25 @@ public class AdminDailyReportController {
     public ResponseEntity<byte[]> clientXlsx(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
             @PathVariable UUID accountId) {
-        return download(
-                service.renderClientXlsx(serviceDate, accountId),
-                XLSX_MEDIA_TYPE,
-                "azy-livraison-" + serviceDate + "-client-" + accountId + ".xlsx");
+        return download(service.downloadClient(serviceDate, accountId, ExportFormat.XLSX));
     }
 
-    private ResponseEntity<byte[]> download(byte[] content, MediaType mediaType, String filename) {
+    @GetMapping("/clients/{accountId}.image")
+    public ResponseEntity<byte[]> clientImage(
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate,
+            @PathVariable UUID accountId) {
+        return download(service.downloadClient(serviceDate, accountId, ExportFormat.IMAGE));
+    }
+
+    private ResponseEntity<byte[]> download(ReportDownload report) {
         return ResponseEntity.ok()
-                .contentType(mediaType)
-                .contentLength(content.length)
+                .contentType(MediaType.parseMediaType(report.mediaType()))
+                .contentLength(report.content().length)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename(filename, StandardCharsets.UTF_8)
+                        .filename(report.filename(), StandardCharsets.UTF_8)
                         .build()
                         .toString())
-                .body(content);
+                .body(report.content());
     }
 }

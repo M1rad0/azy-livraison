@@ -144,6 +144,38 @@ describe('AdminDailyOperationsPanel', () => {
     vi.unstubAllGlobals()
   })
 
+  it('downloads a closed client report as a photo without waiting for the general report', async () => {
+    const finalized = dayFixture({
+      ...packageFixture, finalState: true, finalOutcome: 'DELIVERED',
+    })
+    const closedClient = closureFixture(finalized, true)
+    const photo = new Blob(['photo'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/reports/clients/account-1.image')) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ 'Content-Disposition': 'attachment; filename="soa-2026-08-24.png"' }),
+          blob: async () => photo,
+        })
+      }
+      return Promise.resolve(jsonResponse(url.endsWith('/client-closures') ? closedClient : finalized))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:photo')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    render(<AdminDailyOperationsPanel accessToken="admin-token" date="2026-08-24" couriers={couriers} onDateChange={vi.fn()} onOpenDispatch={vi.fn()} onChanged={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Télécharger le rapport photo de Boutique Soa' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/delivery-days/2026-08-24/reports/clients/account-1.image',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }) }),
+    ))
+    expect(screen.getByRole('button', { name: 'Télécharger le rapport général en photo' })).toBeDisabled()
+  })
+
   it('enregistre un état final et conserve Mobile Money comme information', async () => {
     const initial = dayFixture()
     const updatedPackage = {

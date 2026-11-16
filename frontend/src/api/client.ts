@@ -1,4 +1,4 @@
-import type { ClientFinance } from './admin'
+import type { ClientFinance, DailyReportFormat } from './admin'
 import type { PricingDistanceMode } from './pricing'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -483,7 +483,7 @@ export function getClientReport(serviceDate: string, accessToken: string): Promi
 
 export async function downloadClientReport(
   serviceDate: string,
-  format: 'pdf' | 'xlsx',
+  format: DailyReportFormat,
   accessToken: string,
 ): Promise<ClientReportDownload> {
   const response = await fetch(`${API_BASE_URL}/client/reports/${encodeURIComponent(serviceDate)}.${format}`, {
@@ -501,9 +501,12 @@ export async function downloadClientReport(
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   const simpleName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  const extension = format === 'image'
+    ? response.headers.get('Content-Type')?.includes('application/zip') ? 'zip' : 'png'
+    : format
   return {
     blob: await response.blob(),
-    filename: decodeURIComponent(utf8Name ?? simpleName ?? `azy-livraison-${serviceDate}.${format}`),
+    filename: decodeURIComponent(utf8Name ?? simpleName ?? `rapport-${serviceDate}.${extension}`),
   }
 }
 

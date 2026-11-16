@@ -16,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import javax.imageio.ImageIO;
 
 import com.azylivraison.reporting.service.DailyReportService;
 
@@ -95,6 +96,52 @@ class DailyReportApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("DAILY_REPORT_NOT_AVAILABLE"))
                 .andExpect(jsonPath("$.message").value(
                         "Clôturez la journée avant de générer ses rapports."));
+
+        mockMvc.perform(get("/api/admin/delivery-days/{date}/reports/general.image", SERVICE_DATE)
+                        .with(admin()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void imageExportsUseReadableNamesAndEnforceTheSameClosedReportAccess() throws Exception {
+        installScenario(true);
+
+        MvcResult clientPhoto = mockMvc.perform(get("/api/client/reports/{date}.image", SERVICE_DATE)
+                        .with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("rado-report-2026-09-02.png")))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andReturn();
+        var clientImage = ImageIO.read(new ByteArrayInputStream(
+                clientPhoto.getResponse().getContentAsByteArray()));
+        assertThat(clientImage).isNotNull();
+        assertThat(clientImage.getWidth()).isGreaterThan(clientImage.getHeight());
+
+        mockMvc.perform(get("/api/admin/delivery-days/{date}/reports/clients/{accountId}.image",
+                        SERVICE_DATE, CLIENT_ONE_ID).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("rado-report-2026-09-02.png")));
+
+        mockMvc.perform(get("/api/admin/delivery-days/{date}/reports/general.image", SERVICE_DATE)
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("Content-Disposition"));
+
+        mockMvc.perform(get("/api/admin/delivery-days/{date}/reports/clients/{accountId}.image",
+                        SERVICE_DATE, CLIENT_TWO_ID).with(client(CLIENT_ONE_ID)))
+                .andExpect(status().isForbidden());
+
+        UUID withoutPackages = UUID.fromString("91000000-0000-0000-0000-000000000098");
+        insertAccount(withoutPackages, "no-photo", "Sans colis", "CLIENT");
+        mockMvc.perform(get("/api/client/reports/{date}.image", SERVICE_DATE)
+                        .with(client(withoutPackages)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/client/reports/{date}.image", SERVICE_DATE))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -134,7 +181,7 @@ class DailyReportApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
                 .andExpect(header().string("Content-Disposition",
-                        org.hamcrest.Matchers.containsString("rapport-general.pdf")))
+                        org.hamcrest.Matchers.containsString("general-2026-09-02.pdf")))
                 .andReturn();
         byte[] pdf = pdfResponse.getResponse().getContentAsByteArray();
         assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
@@ -158,7 +205,7 @@ class DailyReportApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(AdminDailyReportController.XLSX_MEDIA_TYPE))
                 .andExpect(header().string("Content-Disposition",
-                        org.hamcrest.Matchers.containsString("rapport-general.xlsx")))
+                        org.hamcrest.Matchers.containsString("general-2026-09-02.xlsx")))
                 .andReturn();
         byte[] xlsx = xlsxResponse.getResponse().getContentAsByteArray();
         assertThat(xlsx[0]).isEqualTo((byte) 'P');
@@ -193,6 +240,8 @@ class DailyReportApiIntegrationTest {
                         "/api/admin/delivery-days/{date}/reports/clients/{accountId}.pdf",
                         SERVICE_DATE, CLIENT_ONE_ID).with(admin()))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("rado-report-2026-09-02.pdf")))
                 .andReturn();
         try (PDDocument document = Loader.loadPDF(pdfResponse.getResponse().getContentAsByteArray())) {
             String extracted = new PDFTextStripper().getText(document).replaceAll("\\s+", " ");
@@ -321,7 +370,7 @@ class DailyReportApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
                 .andExpect(header().string("Content-Disposition",
-                        org.hamcrest.Matchers.containsString("rapport-client.pdf")));
+                        org.hamcrest.Matchers.containsString("rado-report-2026-09-02.pdf")));
 
         mockMvc.perform(get("/api/client/reports/{date}.xlsx", SERVICE_DATE)
                         .with(client(CLIENT_ONE_ID)))
