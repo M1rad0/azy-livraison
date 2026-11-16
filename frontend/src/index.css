@@ -82,18 +82,31 @@ a:focus-visible {
 }
 
 .confirm-dialog-backdrop {
+  --confirm-dialog-gutter: 1.25rem;
   position: fixed;
   z-index: 5000;
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 1.25rem;
+  padding: var(--confirm-dialog-gutter);
   background: rgba(6, 31, 53, 0.68);
   backdrop-filter: blur(5px);
 }
 
 .confirm-dialog {
+  /* Portaled forms keep their admin palette outside the page container. */
+  --admin-navy: #092b47;
+  --admin-ink-soft: #657889;
+  --admin-line: #dce5ec;
+  --admin-orange: #f45b0b;
+  --admin-blue-soft: #eaf2f8;
+  --admin-orange-soft: #fff1e8;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(100%, 31rem);
+  min-width: 0;
+  max-height: calc(100vh - 2 * var(--confirm-dialog-gutter));
+  max-height: calc(100dvh - 2 * var(--confirm-dialog-gutter));
   overflow: hidden;
   color: var(--ink);
   background: var(--paper);
@@ -104,7 +117,7 @@ a:focus-visible {
 
 .confirm-dialog > header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: .8rem;
   padding: 1rem 1.1rem;
@@ -122,9 +135,14 @@ a:focus-visible {
 }
 
 .confirm-dialog > header svg { width: 1.1rem; height: 1.1rem; }
-.confirm-dialog h2 { margin: 0; font-size: 1.05rem; }
+.confirm-dialog h2 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
 .confirm-dialog > header > button { display: grid; width: 2rem; height: 2rem; padding: 0; place-items: center; color: var(--ink-soft); background: transparent; border: 0; border-radius: .6rem; cursor: pointer; }
-.confirm-dialog__content { padding: 1.1rem; color: var(--ink-soft); line-height: 1.55; }
+.confirm-dialog__content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 1.1rem; color: var(--ink-soft); line-height: 1.55; overflow-wrap: anywhere; }
 .confirm-dialog__content p { margin: 0; }
-.confirm-dialog > footer { display: flex; justify-content: flex-end; gap: .65rem; padding: .9rem 1.1rem 1.1rem; }
+.confirm-dialog > footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .65rem; padding: .9rem 1.1rem 1.1rem; border-top: 1px solid var(--line); }
+@media (max-width: 480px) {
+  .confirm-dialog-backdrop { --confirm-dialog-gutter: .75rem; }
+  .confirm-dialog { border-radius: 1rem; }
+  .confirm-dialog > footer > .ui-button { flex: 1 1 100%; }
+}
 .button--danger { color: #fff; background: #b64038; border-color: #b64038; }

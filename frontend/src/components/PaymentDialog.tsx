@@ -2,6 +2,9 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Banknote, CalendarClock, Save, WalletCards, X } from 'lucide-react'
 import type { ClientPaymentDirection, CreatePaymentInput, PaymentDestination } from '../api/admin'
 import { PaymentProofField } from './PaymentProofField'
+import { PhoneInput } from './PhoneInput'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../phone'
+import { normalizePayoutOperator, PAYOUT_OPERATOR_ERROR, PAYOUT_OPERATORS } from '../payoutOperators'
 import './PaymentDialog.css'
 
 interface PaymentDialogProps {
@@ -42,7 +45,7 @@ export function PaymentDialog({
   const [amount, setAmount] = useState(String(Math.max(0, defaultAmountAriary)))
   const [paymentMethod, setPaymentMethod] = useState(defaultDestination?.operator ?? 'Espèces')
   const [confirmedAt, setConfirmedAt] = useState(localDateTimeValue)
-  const [operator, setOperator] = useState(defaultDestination?.operator ?? '')
+  const [operator, setOperator] = useState(normalizePayoutOperator(defaultDestination?.operator ?? ''))
   const [accountHolder, setAccountHolder] = useState(defaultDestination?.accountHolder ?? '')
   const [number, setNumber] = useState(defaultDestination?.number ?? '')
   const [transactionReference, setTransactionReference] = useState('')
@@ -80,17 +83,26 @@ export function PaymentDialog({
       setLocalError('Indiquez la méthode de versement.')
       return
     }
-    if (destinationStarted && (!operator.trim() || !accountHolder.trim() || !number.trim())) {
+    const payoutOperator = normalizePayoutOperator(operator)
+    if (destinationStarted && !payoutOperator) {
+      setLocalError(PAYOUT_OPERATOR_ERROR)
+      return
+    }
+    if (destinationStarted && (!accountHolder.trim() || !number.trim())) {
       setLocalError('Complétez les trois informations de destination ou laissez-les toutes vides.')
+      return
+    }
+    if (destinationStarted && !isValidPhoneNumber(number)) {
+      setLocalError(PHONE_NUMBER_ERROR)
       return
     }
     onConfirm({
       amountAriary: parsedAmount,
       paymentMethod: paymentMethod.trim(),
       destination: destinationStarted ? {
-        operator: operator.trim(),
+        operator: payoutOperator,
         accountHolder: accountHolder.trim(),
-        number: number.trim(),
+        number: normalizePhoneNumber(number),
       } : null,
       transactionReference: transactionReference.trim() || null,
       note: note.trim() || null,
@@ -133,9 +145,9 @@ export function PaymentDialog({
           <fieldset className="payment-dialog__destination">
             <legend>Destination utilisée <small>facultatif pour les espèces</small></legend>
             <div className="payment-dialog__grid payment-dialog__grid--three">
-              <label><span>Opérateur</span><input maxLength={80} value={operator} onChange={(event) => setOperator(event.target.value)} /></label>
+              <label><span>Opérateur</span><select value={operator} onChange={(event) => setOperator(event.target.value)}><option value="">Choisir un opérateur</option>{PAYOUT_OPERATORS.map((payoutOperator) => <option key={payoutOperator} value={payoutOperator}>{payoutOperator}</option>)}</select></label>
               <label><span>Titulaire</span><input maxLength={150} value={accountHolder} onChange={(event) => setAccountHolder(event.target.value)} /></label>
-              <label><span>Numéro</span><input maxLength={100} inputMode="tel" value={number} onChange={(event) => setNumber(event.target.value)} /></label>
+              <label><span>Numéro</span><PhoneInput value={number} onChange={(event) => setNumber(event.target.value)} /></label>
             </div>
           </fieldset>
           <label className="payment-dialog__note"><span>Note <small>facultatif</small></span><textarea rows={3} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} /></label>

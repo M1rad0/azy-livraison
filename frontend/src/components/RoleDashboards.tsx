@@ -10,8 +10,8 @@ interface DashboardProps {
   session: AuthSession
 }
 
-export function ClientDashboard({ session }: DashboardProps) {
-  return <ClientPortal accessToken={session.accessToken} />
+export function ClientDashboard({ session, welcome = false, onWelcomeDismiss }: DashboardProps & { welcome?: boolean; onWelcomeDismiss?: () => void }) {
+  return <ClientPortal accessToken={session.accessToken} welcome={welcome} onWelcomeDismiss={onWelcomeDismiss} />
 }
 
 export function AdminDashboard({ session }: DashboardProps) {

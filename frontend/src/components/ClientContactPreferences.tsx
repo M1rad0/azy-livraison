@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowDown,
-  ArrowUp,
   Phone,
-  Plus,
   Save,
-  Trash2,
   WalletCards,
 } from 'lucide-react'
 import {
@@ -17,6 +13,9 @@ import {
 } from '../api/client'
 import './ClientContactPreferences.css'
 import { ClientPayoutDestinationsEditor } from './ClientPayoutDestinationsEditor'
+import { ClientContactNumbersEditor } from './ClientContactNumbersEditor'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../phone'
+import { normalizePayoutOperator, PAYOUT_OPERATOR_ERROR } from '../payoutOperators'
 
 interface DraftContact extends ClientContactNumberInput {
   key: string
@@ -34,14 +33,6 @@ function draftKey(prefix: string) {
 
 function normalizePriorities<T extends { priority: number }>(items: T[]): T[] {
   return items.map((item, index) => ({ ...item, priority: index + 1 }))
-}
-
-function move<T extends { priority: number }>(items: T[], index: number, direction: -1 | 1): T[] {
-  const destination = index + direction
-  if (destination < 0 || destination >= items.length) return items
-  const next = [...items]
-  ;[next[index], next[destination]] = [next[destination], next[index]]
-  return normalizePriorities(next)
 }
 
 function contactsFrom(profile: ClientProfile): DraftContact[] {
@@ -97,7 +88,7 @@ export function ClientContactPreferences({
 
   function validateNumbers(items: Array<{ number: string }>, label: string): string | undefined {
     if (items.some((item) => !item.number.trim())) return `Chaque ${label} doit contenir un numéro.`
-    const normalized = items.map((item) => item.number.replace(/\s+/g, '').toLocaleLowerCase('fr'))
+    const normalized = items.map((item) => normalizePhoneNumber(item.number).toLocaleLowerCase('fr'))
     if (new Set(normalized).size !== normalized.length) return `Un même numéro ne peut pas apparaître deux fois dans les ${label}s.`
     return undefined
   }
@@ -127,6 +118,10 @@ export function ClientContactPreferences({
       setError(validation)
       return
     }
+    if (contacts.some((item) => !isValidPhoneNumber(item.number))) {
+      setError(PHONE_NUMBER_ERROR)
+      return
+    }
     setBusy('contacts')
     onBusyChange?.(true)
     setError(undefined)
@@ -135,7 +130,7 @@ export function ClientContactPreferences({
       const saved = await updateClientContactNumbers(profile.version, normalizePriorities(contacts).map(({ key: _key, ...item }) => ({
         ...item,
         label: item.label?.trim() || null,
-        number: item.number.trim(),
+        number: normalizePhoneNumber(item.number),
       })), accessToken)
       setContacts(contactsFrom(saved))
       setContactsDirty(false)
@@ -160,6 +155,14 @@ export function ClientContactPreferences({
       setError('Indiquez l’opérateur et le titulaire de chaque numéro de versement.')
       return
     }
+    if (payouts.some((item) => !normalizePayoutOperator(item.operator))) {
+      setError(PAYOUT_OPERATOR_ERROR)
+      return
+    }
+    if (payouts.some((item) => !isValidPhoneNumber(item.number))) {
+      setError(PHONE_NUMBER_ERROR)
+      return
+    }
     setBusy('payouts')
     onBusyChange?.(true)
     setError(undefined)
@@ -167,9 +170,9 @@ export function ClientContactPreferences({
     try {
       const saved = await updateClientPayoutDestinations(profile.version, normalizePriorities(payouts).map(({ key: _key, ...item }) => ({
         ...item,
-        operator: item.operator.trim(),
+        operator: normalizePayoutOperator(item.operator),
         accountHolder: item.accountHolder.trim(),
-        number: item.number.trim(),
+        number: normalizePhoneNumber(item.number),
       })), accessToken)
       setPayouts(payoutsFrom(saved))
       setPayoutsDirty(false)
@@ -190,25 +193,7 @@ export function ClientContactPreferences({
           <span aria-hidden="true"><Phone /></span>
           <div><p className="eyebrow">Pour vous joindre</p><h2 id="client-contacts-title">Numéros de contact</h2><p>La priorité 1 est utilisée en premier. Les numéros suivants servent d’alternatives, dans l’ordre.</p></div>
         </header>
-        <div className="client-priority-list">
-          {contacts.map((contact, index) => (
-            <article key={contact.key}>
-              <span className="client-priority-rank">Priorité {index + 1}</span>
-              <label className="client-field"><span>Libellé</span><input value={contact.label ?? ''} maxLength={80} placeholder="Ex. Boutique" disabled={contactsLocked} onChange={(event) => editContacts((current) => current.map((item) => item.key === contact.key ? { ...item, label: event.target.value } : item))} /></label>
-              <label className="client-field"><span>Numéro</span><input value={contact.number} maxLength={50} inputMode="tel" disabled={contactsLocked} onChange={(event) => editContacts((current) => current.map((item) => item.key === contact.key ? { ...item, number: event.target.value } : item))} /></label>
-              <label className="client-priority-active"><input type="checkbox" checked={contact.active} disabled={contactsLocked} onChange={(event) => editContacts((current) => current.map((item) => item.key === contact.key ? { ...item, active: event.target.checked } : item))} /><span>Actif</span></label>
-              <div className="client-priority-actions">
-                <button type="button" disabled={contactsLocked || index === 0} aria-label={`Monter ${contact.number || `le contact ${index + 1}`}`} onClick={() => editContacts((current) => move(current, index, -1))}><ArrowUp aria-hidden="true" /></button>
-                <button type="button" disabled={contactsLocked || index === contacts.length - 1} aria-label={`Descendre ${contact.number || `le contact ${index + 1}`}`} onClick={() => editContacts((current) => move(current, index, 1))}><ArrowDown aria-hidden="true" /></button>
-                <button type="button" className="is-danger" disabled={contactsLocked} aria-label={`Supprimer ${contact.number || `le contact ${index + 1}`}`} onClick={() => editContacts((current) => normalizePriorities(current.filter((item) => item.key !== contact.key)))}><Trash2 aria-hidden="true" /></button>
-              </div>
-            </article>
-          ))}
-        </div>
-        <footer>
-          <button className="button button--secondary" type="button" disabled={contactsLocked} onClick={() => editContacts((current) => [...current, { key: draftKey('contact'), label: '', number: '', priority: current.length + 1, active: true }])}><Plus aria-hidden="true" />Ajouter un numéro</button>
-          <button className="button" type="button" disabled={contactsLocked} onClick={() => void saveContacts()}><Save aria-hidden="true" />{busy === 'contacts' ? 'Enregistrement…' : 'Enregistrer les contacts'}</button>
-        </footer>
+        <ClientContactNumbersEditor items={contacts} disabled={contactsLocked} onChange={(items) => editContacts(() => items)} saveAction={<button className="button" type="button" disabled={contactsLocked} onClick={() => void saveContacts()}><Save aria-hidden="true" />{busy === 'contacts' ? 'Enregistrement…' : 'Enregistrer les contacts'}</button>} />
       </section>}
 
       {section === 'payouts' && <section className="client-surface client-priority-card client-priority-card--payouts" aria-labelledby="client-payouts-title" aria-busy={busy === 'payouts'}>

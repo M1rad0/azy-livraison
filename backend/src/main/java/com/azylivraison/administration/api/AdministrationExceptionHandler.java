@@ -4,6 +4,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.azylivraison.account.service.InvalidClientProfileException;
+import com.azylivraison.account.service.InvalidPayoutOperatorException;
 import com.azylivraison.administration.service.AdministrationConflictException;
 import com.azylivraison.administration.service.AdministrationNotFoundException;
 import com.azylivraison.pricing.service.PricingConfigurationException;
@@ -77,5 +78,11 @@ public class AdministrationExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(AdministrationErrorResponse.of(
                 "ADMIN_DATA_CONFLICT",
                 "Ces informations ne peuvent pas être enregistrées dans leur état actuel."));
+    }
+
+    @ExceptionHandler(InvalidPayoutOperatorException.class)
+    public ResponseEntity<AdministrationErrorResponse> handleInvalidPayoutOperator(InvalidPayoutOperatorException exception) {
+        return ResponseEntity.unprocessableEntity().body(AdministrationErrorResponse.of(
+                "PAYOUT_OPERATOR_INVALID", exception.getMessage()));
     }
 }

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quoteDeliveryPrice } from '../api/client'
 import { endOfOneHourWindow } from '../deliveryWindows'
 import { ClientPackageDialog, emptyClientPackage } from './ClientPackageDialog'
+import { PHONE_NUMBER_ERROR } from '../phone'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -21,6 +22,14 @@ vi.mock('./LocationPicker', () => ({
 }))
 
 describe('ClientPackageDialog', () => {
+  it('refuse un contact incomplet avant l’enregistrement du colis', () => {
+    const onSave = vi.fn()
+    render(<ClientPackageDialog accessToken="token" initialValue={{ ...emptyClientPackage('p'), recipientName: 'Miora', contact: '034' }} packageNumber={1} onSave={onSave} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le colis' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(PHONE_NUMBER_ERROR)
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
   afterEach(() => {
     cleanup()
     vi.clearAllMocks()

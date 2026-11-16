@@ -35,6 +35,8 @@ import {
 import { optimizePlan, type OptimizationResult } from '../api/optimization'
 import { PlanMapPreview } from './PlanMapPreview'
 import { LocationPicker } from './LocationPicker'
+import { PhoneInput } from './PhoneInput'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../phone'
 import { OptimizationResults } from './OptimizationResults'
 import { WorkspaceDraftBar } from './WorkspaceDraftBar'
 import { validationFieldLabel, validationPathTab, WorkspaceTabs, type WorkspaceTab } from './WorkspaceTabs'
@@ -258,11 +260,16 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   }
 
   async function handleValidation() {
+    if (plan.packages.some((item) => item.phone?.trim() && !isValidPhoneNumber(item.phone))) {
+      setValidationMessage(PHONE_NUMBER_ERROR)
+      setActiveTab('deliveries')
+      return
+    }
     setValidating(true)
     setValidationErrors([])
     setValidationMessage(undefined)
     try {
-      const response = await validatePlan(plan, accessToken)
+      const response = await validatePlan({ ...plan, packages: plan.packages.map((item) => ({ ...item, phone: item.phone ? normalizePhoneNumber(item.phone) : item.phone })) }, accessToken)
       if (response.plan?.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY') replacePlan(response.plan)
       setValidationMessage('Le plan est valide et prêt pour la génération du résultat.')
     } catch (error) {
@@ -279,11 +286,16 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
   }
 
   async function handleGeneration() {
+    if (plan.packages.some((item) => item.phone?.trim() && !isValidPhoneNumber(item.phone))) {
+      setValidationMessage(PHONE_NUMBER_ERROR)
+      setActiveTab('deliveries')
+      return
+    }
     setGenerating(true)
     setValidationErrors([])
     setValidationMessage(undefined)
     try {
-      const validation = await validatePlan(plan, accessToken)
+      const validation = await validatePlan({ ...plan, packages: plan.packages.map((item) => ({ ...item, phone: item.phone ? normalizePhoneNumber(item.phone) : item.phone })) }, accessToken)
       const normalizedPlan = validation.plan?.pattern === 'SINGLE_PICKUP_MULTI_DELIVERY' ? validation.plan : plan
       setPlan(normalizedPlan)
       setOptimizationResult(await optimizePlan(normalizedPlan, accessToken))
@@ -425,7 +437,7 @@ export function PlanningWorkspace({ accessToken }: PlanningWorkspaceProps) {
                       <InputField label="Identifiant"><input value={item.id} onChange={(event) => updatePackage(index, { id: event.target.value })} /></InputField>
                       <InputField label="Libellé"><input value={item.label} onChange={(event) => updatePackage(index, { label: event.target.value })} /></InputField>
                       <InputField label="Poids (kg)"><input type="number" min="0.01" step="0.01" value={item.weightKg} onChange={(event) => updatePackage(index, { weightKg: Number(event.target.value) })} /></InputField>
-                      <InputField label="Téléphone"><input value={item.phone ?? ''} onChange={(event) => updatePackage(index, { phone: event.target.value })} /></InputField>
+                      <InputField label="Téléphone"><PhoneInput value={item.phone ?? ''} onChange={(event) => updatePackage(index, { phone: event.target.value })} /></InputField>
                       <div className="editable-card__full-field">
                         <span>Destination</span>
                         <LocationPicker

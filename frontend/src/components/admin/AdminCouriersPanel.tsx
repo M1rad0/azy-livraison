@@ -26,6 +26,9 @@ import {
 } from '../../api/admin'
 import type { Location } from '../../api/csvImports'
 import { LocationPicker } from '../LocationPicker'
+import { PhoneInput } from '../PhoneInput'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../../phone'
+import { normalizePayoutOperator, PAYOUT_OPERATOR_ERROR, PAYOUT_OPERATORS } from '../../payoutOperators'
 import { asConfirmedLocation, asPickerLocation, errorMessage, locationLabel, vehicleLabel } from './adminHelpers'
 
 interface AdminCouriersPanelProps {
@@ -79,7 +82,7 @@ function courierDraft(courier: Courier): CourierDraft {
   return {
     name: courier.name,
     phoneNumber: courier.phoneNumber ?? courier.contact ?? '',
-    payoutOperator: courier.payoutDestination?.operator ?? '',
+    payoutOperator: normalizePayoutOperator(courier.payoutDestination?.operator ?? ''),
     payoutAccountHolder: courier.payoutDestination?.accountHolder ?? '',
     payoutNumber: courier.payoutDestination?.number ?? '',
     active: courier.active,
@@ -168,19 +171,29 @@ function CourierEditor({
     const hasPayoutValue = Boolean(
       draft.payoutOperator.trim() || draft.payoutAccountHolder.trim() || draft.payoutNumber.trim(),
     )
-    if (hasPayoutValue && (!draft.payoutOperator.trim() || !draft.payoutAccountHolder.trim() || !draft.payoutNumber.trim())) {
+    const payoutOperator = normalizePayoutOperator(draft.payoutOperator)
+    if (hasPayoutValue && !payoutOperator) {
+      setMessage(PAYOUT_OPERATOR_ERROR)
+      return
+    }
+    if (hasPayoutValue && (!draft.payoutAccountHolder.trim() || !draft.payoutNumber.trim())) {
       setMessage('Renseignez l’opérateur, le titulaire et le numéro de versement, ou laissez les trois champs vides.')
+      return
+    }
+    if ((draft.phoneNumber.trim() && !isValidPhoneNumber(draft.phoneNumber))
+      || (hasPayoutValue && !isValidPhoneNumber(draft.payoutNumber))) {
+      setMessage(PHONE_NUMBER_ERROR)
       return
     }
 
     const input: CourierInput = {
       name: draft.name.trim(),
-      contact: draft.phoneNumber.trim() || undefined,
-      phoneNumber: draft.phoneNumber.trim() || undefined,
+      contact: normalizePhoneNumber(draft.phoneNumber) || undefined,
+      phoneNumber: normalizePhoneNumber(draft.phoneNumber) || undefined,
       payoutDestination: hasPayoutValue ? {
-        operator: draft.payoutOperator.trim(),
+        operator: payoutOperator,
         accountHolder: draft.payoutAccountHolder.trim(),
-        number: draft.payoutNumber.trim(),
+        number: normalizePhoneNumber(draft.payoutNumber),
       } : null,
       active: draft.active,
       vehicleType: draft.vehicleType,
@@ -224,7 +237,7 @@ function CourierEditor({
         <form onSubmit={(event) => void submit(event)}>
           <div className="admin-form-grid">
             <label><span>Nom du livreur</span><input required maxLength={150} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Ex. Tiana" /></label>
-            <label><span>Numéro de téléphone</span><input maxLength={50} inputMode="tel" value={draft.phoneNumber} onChange={(event) => setDraft({ ...draft, phoneNumber: event.target.value })} placeholder="Ex. 034 00 000 00" /></label>
+            <label><span>Numéro de téléphone</span><PhoneInput value={draft.phoneNumber} onChange={(event) => setDraft({ ...draft, phoneNumber: event.target.value })} /></label>
             <label><span>Type de véhicule</span><select value={draft.vehicleType} onChange={(event) => setDraft({ ...draft, vehicleType: event.target.value as VehicleType })}><option value="MOTO">Moto</option><option value="BICYCLE">Vélo</option></select></label>
             <label><span>Heure de départ habituelle</span><input required type="time" value={draft.defaultDepartureTime} onChange={(event) => setDraft({ ...draft, defaultDepartureTime: event.target.value })} /></label>
             <label>
@@ -239,9 +252,9 @@ function CourierEditor({
           <section className="admin-courier-payout-fields">
             <header><WalletCards aria-hidden="true" /><div><strong>Numéro de versement</strong><small>Facultatif · utilisé pour les transferts de caisse</small></div></header>
             <div className="admin-form-grid">
-              <label><span>Opérateur</span><input maxLength={80} value={draft.payoutOperator} onChange={(event) => setDraft({ ...draft, payoutOperator: event.target.value })} placeholder="Ex. MVola" /></label>
+              <label><span>Opérateur</span><select value={draft.payoutOperator} onChange={(event) => setDraft({ ...draft, payoutOperator: event.target.value })}><option value="">Choisir un opérateur</option>{PAYOUT_OPERATORS.map((operator) => <option key={operator} value={operator}>{operator}</option>)}</select></label>
               <label><span>Titulaire</span><input maxLength={150} value={draft.payoutAccountHolder} onChange={(event) => setDraft({ ...draft, payoutAccountHolder: event.target.value })} /></label>
-              <label><span>Numéro</span><input maxLength={100} inputMode="tel" value={draft.payoutNumber} onChange={(event) => setDraft({ ...draft, payoutNumber: event.target.value })} /></label>
+              <label><span>Numéro</span><PhoneInput value={draft.payoutNumber} onChange={(event) => setDraft({ ...draft, payoutNumber: event.target.value })} /></label>
             </div>
           </section>
           {courier && (

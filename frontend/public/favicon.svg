@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>AZY Livraison</title>
+  <rect width="64" height="64" rx="15" fill="#0b2943" />
+  <g fill="#f45b0b" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 12 49 22v20L32 52 15 42V22Z" />
+    <path d="m15 22 17 10 17-10M32 32v20M24 17l17 10v10" fill="none" />
+  </g>
+</svg>

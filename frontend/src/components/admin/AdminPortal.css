@@ -696,7 +696,10 @@
 }
 
 .admin-package-table {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 
 .admin-package-row {
@@ -724,12 +727,13 @@
   padding: 0.65rem 0.7rem;
   color: #536a7d;
   font-size: 0.69rem;
+  overflow-wrap: anywhere;
 }
 
 .admin-package-row > span > span,
 .admin-package-row > span > strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .admin-package-row > .admin-package-recipient {
@@ -768,6 +772,7 @@
 
 .admin-package-row small {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.2rem;
   color: var(--admin-orange);
@@ -1475,9 +1480,21 @@
 .admin-client-closure__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; padding-top: .55rem; border-top: 1px solid rgba(13,49,74,.08); }
 .admin-client-closure__compensation { min-width: 0; padding-top: .15rem; }
 .admin-client-closure__compensation > .admin-compensation { box-shadow: none; }
-.admin-client-closures > .admin-day-close-card { margin-top: 0; }
+/* These are card footers, not the page footer styled by .app-shell. */
+.admin-portal footer.admin-day-close-card,
+.admin-portal .admin-express-card > footer {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
 
-.admin-day-close-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .8rem; padding: 1rem; background: var(--admin-orange-soft); border: 1px solid #ffd3b8; border-radius: 1rem; }
+.admin-portal footer.admin-day-close-card { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; background: var(--admin-orange-soft); border: 1px solid #ffd3b8; border-radius: 1rem; }
+.admin-day-close-card > div { flex: 1; min-width: 0; }
+.admin-day-close-card > button { flex: 0 0 auto; }
 .admin-day-close-card h3, .admin-reports h3 { margin: 0; font-size: 1.05rem; }
 .admin-day-close-card p:not(.admin-eyebrow), .admin-reports header p:not(.admin-eyebrow) { margin: .25rem 0 0; color: var(--admin-ink-soft); font-size: .7rem; }
 
@@ -1721,8 +1738,9 @@
   padding-top: .75rem;
   border-top: 1px solid var(--admin-line);
 }
-.admin-express-card > footer { display: flex; align-items: center; gap: .65rem; padding: .8rem .95rem; border-top: 1px solid var(--admin-line); }
-.admin-express-card > footer > span { display: grid; margin-right: auto; }
+.admin-portal .admin-express-card > footer { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: .65rem; padding: .8rem .95rem; border-top: 1px solid var(--admin-line); }
+.admin-express-card > footer > span { display: grid; flex: 1 1 10rem; min-width: 0; gap: .15rem; margin-right: auto; overflow-wrap: anywhere; }
+.admin-express-card > footer > svg { flex: 0 0 auto; width: 1rem; height: 1rem; color: var(--admin-ink-soft); }
 
 .admin-pricing-targets { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .7rem; margin: .9rem 0 1.1rem; }
 .admin-pricing-targets > label { display: grid; min-width: min(100%, 21rem); gap: .32rem; }
@@ -1807,7 +1825,8 @@
   .admin-pricing-rule--slot,
   .admin-pricing-rule--compact { grid-template-columns: minmax(0, 1fr); }
   .admin-pricing-rule > .admin-icon-button { justify-self: end; }
-  .admin-day-statusbar, .admin-day-close-card { align-items: stretch; flex-direction: column; }
+  .admin-day-statusbar, .admin-portal footer.admin-day-close-card { align-items: stretch; flex-direction: column; }
+  .admin-portal .admin-express-card > footer > span { flex-basis: calc(100% - 1.65rem); }
   .admin-day-statusbar > div:first-child { align-items: flex-start; flex-direction: column; }
   .admin-day-progress { width: 100%; }
   .admin-day-stats, .admin-report-totals { grid-template-columns: repeat(2, 1fr); }

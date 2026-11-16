@@ -8,11 +8,14 @@ import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
 import com.azylivraison.account.api.UpdateClientPayoutDestinationsRequest.Item;
+import com.azylivraison.account.api.UpdateClientContactNumbersRequest;
+import com.azylivraison.account.api.DefaultPickupRequest;
 import com.azylivraison.account.domain.DefaultPickupLocation;
 import com.azylivraison.account.repository.AccountRepository;
 import com.azylivraison.account.repository.ClientProfileRepository;
 import com.azylivraison.account.service.ClientProfileService;
 import com.azylivraison.account.service.InvalidClientProfileException;
+import com.azylivraison.account.service.InvalidPayoutOperatorException;
 import com.azylivraison.administration.api.AdminClientRequest;
 import com.azylivraison.administration.api.AdminClientResponse;
 import com.zaxxer.hikari.HikariDataSource;
@@ -80,6 +83,75 @@ class AdminClientServiceTest {
                 .containsExactlyElementsOf(created.payoutDestinations());
         assertThat(tx(service::findAll)).singleElement().extracting(AdminClientResponse::payoutDestinations)
                 .isEqualTo(created.payoutDestinations());
+    }
+
+    @Test void adminCreationAndUpdatesAcceptOnlyCanonicalMobileMoneyOperators() {
+        assertThatThrownBy(() -> create(List.of(new Item(null, "Banque", "Soa", "0321415216", 1, true))))
+                .isInstanceOf(InvalidPayoutOperatorException.class);
+        assertThat(accounts.findClients()).isEmpty();
+
+        var created = create(List.of(new Item(null, "ORANGE_MONEY", "Soa", "0321415216", 1, true)));
+        assertThat(created.payoutDestinations().getFirst().operator()).isEqualTo("Orange Money");
+        var updated = tx(() -> service.update(created.accountId(), request(created.version(),
+                List.of(new Item(null, "airtel-money", "Soa", "0331415216", 1, true)))));
+        assertThat(updated.payoutDestinations().getFirst().operator()).isEqualTo("Airtel Money");
+
+        assertThatThrownBy(() -> tx(() -> service.update(created.accountId(), request(updated.version(),
+                List.of(new Item(null, "Autre", "Soa", "0331415216", 1, true))))))
+                .isInstanceOf(InvalidPayoutOperatorException.class);
+        assertThat(tx(service::findAll).getFirst().payoutDestinations()).isEqualTo(updated.payoutDestinations());
+    }
+
+    @Test void createsACompleteClientWithContactsPickupPermissionsAndAnInactiveAccount() {
+        var contacts = List.of(
+                new UpdateClientContactNumbersRequest.Item(null, " Secondaire ", " 032 11 111 11 ", 1, false),
+                new UpdateClientContactNumbersRequest.Item(null, " Principal ", " 034 22 222 22 ", 2, true));
+        var request = new AdminClientRequest("boutique-soa", " Boutique Soa ", "034 00 000 00", false, true,
+                null, null, List.of(payout("034 22 222 22", 1)), contacts,
+                new DefaultPickupRequest(" Boutique ", " Analakely ", -18.9, 47.5), false);
+        var result = tx(() -> service.create(request));
+
+        assertThat(result.temporaryPassword()).startsWith("Azy-");
+        assertThat(result.client().enabled()).isFalse();
+        assertThat(result.client().expressDeliveryEnabled()).isTrue();
+        assertThat(result.client().phone()).isEqualTo("034 22 222 22");
+        assertThat(result.client().contactNumbers()).hasSize(2);
+        assertThat(result.client().contactNumbers().getFirst().active()).isFalse();
+        assertThat(result.client().defaultPickup()).isEqualTo(
+                new AdminClientResponse.DefaultPickupResponse("Boutique", "Analakely", -18.9, 47.5));
+    }
+
+    @Test void updatesAllCoordinatesWithOneVersionAndAllowsExplicitPickupRemoval() {
+        var created = create(List.of(payout("034 11 111 11", 1)));
+        UUID contactId = created.contactNumbers().getFirst().id();
+        var request = new AdminClientRequest("boutique-soa", "Nouveau nom", "034 00 000 00", true, true,
+                null, created.version(), null,
+                List.of(new UpdateClientContactNumbersRequest.Item(contactId, "Boutique", "032 99 999 99", 1, true)),
+                new DefaultPickupRequest("Retrait", "Analakely", -18.9, 47.5), false);
+        var updated = tx(() -> service.update(created.accountId(), request));
+
+        assertThat(updated.version()).isEqualTo(created.version() + 1);
+        assertThat(updated.contactNumbers().getFirst().id()).isEqualTo(contactId);
+        assertThat(updated.phone()).isEqualTo("032 99 999 99");
+        assertThat(updated.payoutDestinations()).isEqualTo(created.payoutDestinations());
+        var withoutPickup = new AdminClientRequest("boutique-soa", "Nouveau nom", updated.phone(), true, true,
+                null, updated.version(), null, null, null, true);
+        var cleared = tx(() -> service.update(created.accountId(), withoutPickup));
+        assertThat(cleared.defaultPickup()).isNull();
+        assertThat(cleared.contactNumbers()).isEqualTo(updated.contactNumbers());
+    }
+
+    @Test void rejectsInvalidContactsAndPartialPickupBeforeCreatingAnyAccount() {
+        var duplicate = List.of(
+                new UpdateClientContactNumbersRequest.Item(null, "Principal", "034 11", 1, true),
+                new UpdateClientContactNumbersRequest.Item(null, "Autre", "03411", 2, true));
+        var request = new AdminClientRequest("boutique-soa", "Soa", "034 00", true, false,
+                null, null, null, duplicate, null, null);
+        assertThatThrownBy(() -> tx(() -> service.create(request))).isInstanceOf(InvalidClientProfileException.class);
+        var missingLongitude = new AdminClientRequest("boutique-soa", "Soa", "034 00", true, false,
+                null, null, null, null, new DefaultPickupRequest("Retrait", "Analakely", -18.9, null), false);
+        assertThatThrownBy(() -> tx(() -> service.create(missingLongitude))).isInstanceOf(InvalidClientProfileException.class);
+        assertThat(accounts.findClients()).isEmpty();
     }
 
     @Test void updatingPayoutsUsesTheExistingVersionAndPreservesPickupAndContacts() {

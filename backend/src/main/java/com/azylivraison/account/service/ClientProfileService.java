@@ -1,9 +1,6 @@
 package com.azylivraison.account.service;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 import com.azylivraison.account.api.DefaultPickupRequest;
 import com.azylivraison.account.api.UpdateClientContactNumbersRequest;
@@ -61,7 +58,7 @@ public class ClientProfileService {
             long expectedVersion,
             List<UpdateClientContactNumbersRequest.Item> requestedItems) {
         Account account = clientAccount(username);
-        List<ClientContactNumber> contacts = normalizeContacts(requestedItems);
+        List<ClientContactNumber> contacts = ClientContactNumberNormalizer.normalize(requestedItems);
         if (contacts.stream().noneMatch(ClientContactNumber::active)) {
             throw new InvalidClientProfileException("Conservez au moins un numéro de contact actif.");
         }
@@ -124,34 +121,6 @@ public class ClientProfileService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private List<ClientContactNumber> normalizeContacts(
-            List<UpdateClientContactNumbersRequest.Item> requestedItems) {
-        requireOrderedPriorities(requestedItems.stream().map(UpdateClientContactNumbersRequest.Item::priority).toList());
-        Set<UUID> ids = new HashSet<>();
-        Set<String> numbers = new HashSet<>();
-        return requestedItems.stream().map(item -> {
-            UUID id = item.id() == null ? UUID.randomUUID() : item.id();
-            if (!ids.add(id)) {
-                throw new InvalidClientProfileException("Un numéro de contact est présent plusieurs fois.");
-            }
-            String number = item.number().trim();
-            if (!numbers.add(number)) {
-                throw new InvalidClientProfileException("Deux contacts utilisent le même numéro.");
-            }
-            return new ClientContactNumber(
-                    id, trimToNull(item.label()), number, item.priority(), item.active());
-        }).toList();
-    }
-
-    private void requireOrderedPriorities(List<Integer> priorities) {
-        for (int index = 0; index < priorities.size(); index++) {
-            if (priorities.get(index) == null || priorities.get(index) != index + 1) {
-                throw new InvalidClientProfileException(
-                        "Les priorités doivent être uniques et ordonnées de 1 à " + priorities.size() + ".");
-            }
-        }
     }
 
     public record ProfileSnapshot(Account account, ClientProfile profile) {

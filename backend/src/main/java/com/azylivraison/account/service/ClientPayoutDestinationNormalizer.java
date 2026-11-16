@@ -29,7 +29,7 @@ public final class ClientPayoutDestinationNormalizer {
             if (!ids.add(id)) {
                 throw new InvalidClientProfileException("Une destination de versement est présente plusieurs fois.");
             }
-            String operator = item.operator().trim();
+            String operator = PayoutOperatorNormalizer.normalize(item.operator());
             String number = item.number().trim();
             String identity = operator.toLowerCase(Locale.ROOT) + "\u0000" + number;
             if (!destinations.add(identity)) {

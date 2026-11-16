@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -33,6 +34,9 @@ class AdministrationApiIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void exposesTheOperationalDefaults() throws Exception {
@@ -285,6 +289,41 @@ class AdministrationApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[?(@.field == 'departureLocation.latitude')]").exists())
                 .andExpect(jsonPath("$.errors[?(@.field == 'departureLocation.longitude')]").exists());
+    }
+
+    @Test
+    void restrictsNewCourierPayoutOperatorsButKeepsHistoricalDestinationsReadable() throws Exception {
+        String createBody = """
+                {"name":"Livreur test opérateur","vehicleType":"MOTO",
+                 "defaultDepartureTime":"06:30:00",
+                 "departureLocation":{"label":"Alasora","latitude":-18.953,"longitude":47.568},
+                 "payoutDestination":{"operator":"%s","accountHolder":"Soa","number":"0381415216"}}
+                """;
+        String updateBody = createBody.replace("\"vehicleType\"", "\"active\":true,\"vehicleType\"")
+                .replace("\"payoutDestination\"", "\"version\":0,\"payoutDestination\"");
+        mockMvc.perform(post("/api/admin/couriers").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(createBody.formatted("Banque")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PAYOUT_OPERATOR_INVALID"));
+        MvcResult created = mockMvc.perform(post("/api/admin/couriers").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(createBody.formatted("AIRTEL_MONEY")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.payoutDestination.operator").value("Airtel Money"))
+                .andReturn();
+        String id = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+        mockMvc.perform(put("/api/admin/couriers/{id}", id).with(admin())
+                        .contentType(MediaType.APPLICATION_JSON).content(updateBody.formatted("Autre")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PAYOUT_OPERATOR_INVALID"));
+        mockMvc.perform(get("/api/admin/couriers/{id}", id).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(0))
+                .andExpect(jsonPath("$.payoutDestination.operator").value("Airtel Money"));
+
+        jdbc.update("UPDATE courier_profile SET payout_operator = 'Banque' WHERE id = ?", java.util.UUID.fromString(id));
+        mockMvc.perform(get("/api/admin/couriers/{id}", id).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payoutDestination.operator").value("Banque"));
     }
 
     @Test

@@ -83,6 +83,19 @@ public class ClientProfileRepository {
                 """, accountId, expectedVersion) == 1;
     }
 
+    public boolean updateAdminPreferences(UUID accountId, boolean expressEnabled,
+            DefaultPickupLocation pickup, long expectedVersion) {
+        return jdbcTemplate.update("""
+                UPDATE client_profile
+                SET express_delivery_enabled = ?, default_pickup_label = ?, default_pickup_query = ?,
+                    default_pickup_latitude = ?, default_pickup_longitude = ?,
+                    version = version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE account_id = ? AND version = ?
+                """, expressEnabled, pickup == null ? null : pickup.label(),
+                pickup == null ? null : pickup.query(), pickup == null ? null : pickup.latitude(),
+                pickup == null ? null : pickup.longitude(), accountId, expectedVersion) == 1;
+    }
+
     public void replaceContactNumbers(UUID accountId, List<ClientContactNumber> contacts) {
         jdbcTemplate.update("DELETE FROM client_contact_number WHERE account_id = ?", accountId);
         for (ClientContactNumber contact : contacts) {

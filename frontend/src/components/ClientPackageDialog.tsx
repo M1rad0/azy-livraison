@@ -7,6 +7,8 @@ import { formatPricingDistanceSummary } from '../api/pricing'
 import { endOfOneHourWindow } from '../deliveryWindows'
 import { LocationPicker } from './LocationPicker'
 import { Button } from './Button'
+import { PhoneInput } from './PhoneInput'
+import { isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../phone'
 
 export interface ClientPackageDraft {
   localId: string
@@ -176,6 +178,10 @@ export function ClientPackageDialog({
       setError('Indiquez un contact pour la livraison.')
       return
     }
+    if (!isValidPhoneNumber(value.contact)) {
+      setError(PHONE_NUMBER_ERROR)
+      return
+    }
     if (!value.destination.label?.trim()) {
       setError('Indiquez un libellé ou un repère pour la livraison.')
       return
@@ -220,7 +226,7 @@ export function ClientPackageDialog({
       importWarning: undefined,
       importResolvedPlace: undefined,
       recipientName: value.recipientName.trim(),
-      contact: value.contact.trim(),
+      contact: normalizePhoneNumber(value.contact),
       destination: {
         ...value.destination,
         label: value.destination.label.trim(),
@@ -260,11 +266,9 @@ export function ClientPackageDialog({
             </label>
             <label className="client-field">
               <span>Contact client</span>
-              <input
+              <PhoneInput
                 value={value.contact}
-                maxLength={100}
-                inputMode="tel"
-                placeholder="Ex. 034 00 000 00"
+                required
                 onChange={(event) => setValue({ ...value, contact: event.target.value })}
               />
             </label>
