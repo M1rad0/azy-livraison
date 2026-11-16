@@ -61,6 +61,27 @@ class DailyWorkflowApiIntegrationTest {
     }
 
     @Test
+    void financeListsExposeBoundedPagesAndRejectInvalidRangesAtTheHttpBoundary() throws Exception {
+        for (String path : List.of("/api/admin/cash-ledger/movements", "/api/admin/cash-ledger/obligations",
+                "/api/admin/cash-briefings/transfers")) {
+            mockMvc.perform(get(path).with(admin())).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items").isArray())
+                    .andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(20))
+                    .andExpect(jsonPath("$.totalElements").isNumber()).andExpect(jsonPath("$.totalPages").isNumber());
+            mockMvc.perform(get(path).with(admin()).param("page", "-1")).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("size", "101")).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("size", "0")).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("from", "2026-11-16").param("to", "2026-11-15"))
+                    .andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(admin()).param("q", "a".repeat(201))).andExpect(status().isUnprocessableEntity());
+            mockMvc.perform(get(path).with(client(CLIENT_ID))).andExpect(status().isForbidden());
+        }
+        mockMvc.perform(get("/api/admin/cash-ledger").with(admin()).param("includeHistory", "false"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.accounts").isArray())
+                .andExpect(jsonPath("$.movements").isEmpty()).andExpect(jsonPath("$.obligations").isEmpty());
+    }
+
+    @Test
     void plannedCashPayoutsRejectNonIntegerMoneyAtTheRealHttpBoundary() throws Exception {
         long previousBatches = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class);
         long previousMovements = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement", Long.class);
@@ -115,12 +136,14 @@ class DailyWorkflowApiIntegrationTest {
                                     objectMapper.writeValueAsString(number))))
                     .andExpect(status().is(number.length() > 100 ? 400 : 422));
         }
-        for (String numberJson : List.of("null", "\"032 11 111 11\"")) {
-            mockMvc.perform(post("/api/admin/cash-briefings/manual")
-                            .with(admin()).contentType(MediaType.APPLICATION_JSON)
-                            .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, numberJson)))
-                    .andExpect(status().isConflict()); // Valid input reaches the missing-dispatch guard.
-        }
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "null")))
+                .andExpect(status().isConflict()); // Omitting a custom destination remains valid.
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(missingPlan, CLIENT_ID, PLANNED_COURIER_ID, "\"032 11 111 11\"")))
+                .andExpect(status().isUnprocessableEntity()); // New custom destinations require holder and operator.
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM cash_briefing_batch", Long.class))
                 .isEqualTo(previousBatches);
     }
@@ -132,7 +155,8 @@ class DailyWorkflowApiIntegrationTest {
         String body = """
                 {"planId":"%s","idempotencyKey":"http-payout-holder","expectedLedgerRevision":0,
                  "transfers":[{"sellerAccountId":"%s","courierAccountId":"%s","amountAriary":1500,
-                 "sellerPayoutNumber":"0321111111","sellerPayoutAccountHolder":%s}]}
+                  "sellerPayoutNumber":"0321111111","sellerPayoutAccountHolder":%s,
+                  "sellerPayoutOperator":"Orange Money"}]}
                 """;
         for (String holder : List.of("", " ", "X".repeat(151), "Jean\nRabe")) {
             mockMvc.perform(post("/api/admin/cash-briefings/manual")
@@ -145,6 +169,11 @@ class DailyWorkflowApiIntegrationTest {
         mockMvc.perform(post("/api/admin/cash-briefings/manual")
                         .with(admin()).contentType(MediaType.APPLICATION_JSON).content(valid))
                 .andExpect(status().isConflict()); // Valid input reaches the missing-dispatch guard.
+        mockMvc.perform(post("/api/admin/cash-briefings/manual")
+                        .with(admin()).contentType(MediaType.APPLICATION_JSON)
+                        .content(valid.replace("Orange Money", "Banque")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PAYOUT_OPERATOR_INVALID"));
         String conflicting = valid.replace("\"sellerPayoutNumber\":", "\"sellerPayoutDestinationId\":\""
                 + UUID.randomUUID() + "\",\"sellerPayoutNumber\":");
         mockMvc.perform(post("/api/admin/cash-briefings/manual")

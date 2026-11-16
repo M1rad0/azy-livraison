@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ArrowLeftRight, Download, History, RefreshCw, Search, SlidersHorizontal, TriangleAlert, WalletCards, XCircle } from 'lucide-react'
 import {
-  adjustCashAccount, createCashTransfer, downloadCashMovementProof, getCashLedger, voidCashMovement,
+  adjustCashAccount, createCashTransfer, downloadCashMovementProof, getCashLedger, listCashMovements, listCashObligations, voidCashMovement,
   type CashAccount, type CashLedger, type CashMovement, type CashTransferInput,
 } from '../../api/cashLedger'
 import { Button } from '../Button'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { PaymentProofField } from '../PaymentProofField'
+import { normalizePhoneNumber } from '../../phone'
 import { CashBriefingFinancePanel } from './CashBriefingFinancePanel'
+import { FinanceListFilters, FinanceListPagination, useFinanceList } from './FinanceListControls'
 import { errorMessage, formatAriary, formatDate, formatDateTime } from './adminHelpers'
 import './AdminCashLedgerPanel.css'
 
 const typeLabel = { AZY: 'Caisse AZY', COURIER: 'Caisse livreur', SELLER: 'Compte vendeur' }
 const key = () => crypto.randomUUID()
-const searchable = (account: CashAccount) => `${account.name} ${account.payoutNumber ?? ''} ${typeLabel[account.type]}`.toLocaleLowerCase('fr')
+const searchable = (account: CashAccount) => `${account.name} ${account.payoutNumber ?? ''} ${normalizePhoneNumber(account.payoutNumber ?? '')} ${typeLabel[account.type]}`.toLocaleLowerCase('fr')
 const paymentLabel: Record<string, string> = { ESPECES: 'Espèces', MVOLA: 'MVola', ORANGE_MONEY: 'Orange Money', AIRTEL_MONEY: 'Airtel Money', VIREMENT: 'Virement bancaire', AUTRE: 'Autre' }
 const movementLabel: Record<string, string> = { TRANSFER: 'Transfert', ADJUSTMENT: 'Régularisation', COLLECTION: 'Encaissement de colis', SELLER_OBLIGATION: 'Solde du rapport vendeur', REVERSAL: 'Contre-écriture' }
 
@@ -181,26 +183,26 @@ export function AdminCashLedgerPanel({ accessToken }: { accessToken: string }) {
   const [error, setError] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [query, setQuery] = useState('')
-  const [historyQuery, setHistoryQuery] = useState('')
   const [transfer, setTransfer] = useState<{ from?: string }>()
   const [correction, setCorrection] = useState<Correction>()
   const [downloading, setDownloading] = useState<string>()
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(undefined)
-    try { const value = await getCashLedger(accessToken, signal); if (!signal?.aborted) setLedger(value) }
+    try { const value = await getCashLedger(accessToken, signal, false); if (!signal?.aborted) setLedger(value) }
     catch (failure) { if ((failure as { name?: string }).name !== 'AbortError') setError(errorMessage(failure)) }
     finally { if (!signal?.aborted) setLoading(false) }
   }, [accessToken])
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [load])
+  const loadMovements = useCallback((filters: Parameters<typeof listCashMovements>[1], signal: AbortSignal) => listCashMovements(accessToken, filters, signal), [accessToken, ledger])
+  const loadObligations = useCallback((filters: Parameters<typeof listCashObligations>[1], signal: AbortSignal) => listCashObligations(accessToken, filters, signal), [accessToken, ledger])
+  const movementList = useFinanceList(loadMovements, view === 'HISTORY' && Boolean(ledger))
+  const obligationList = useFinanceList(loadObligations, view === 'SELLERS' && Boolean(ledger))
   const accounts = ledger?.accounts ?? []
   const visible = accounts.filter((account) => searchable(account).includes(query.trim().toLocaleLowerCase('fr')))
   const names = useMemo(() => new Map(accounts.map((account) => [account.key, account.name])), [accounts])
   const accountName = (accountKey?: string | null) => accountKey ? names.get(accountKey) ?? accountKey : 'Régularisation'
-  const movements = [...(ledger?.movements ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).filter((movement) => (
-    `${accountName(movement.fromKey)} ${accountName(movement.toKey)} ${movement.reference ?? ''} ${movement.note ?? ''} ${movement.paymentMethod ?? ''}`
-      .toLocaleLowerCase('fr').includes(historyQuery.trim().toLocaleLowerCase('fr'))
-  ))
-  const obligations = (ledger?.obligations ?? []).filter((obligation) => obligation.active !== false && searchable(accounts.find((account) => account.entityId === obligation.sellerAccountId && account.type === 'SELLER') ?? { name: '', type: 'SELLER', key: '', entityId: null, balanceAriary: 0, reservedAriary: 0, availableAriary: 0 }).includes(query.trim().toLocaleLowerCase('fr')))
+  const movements = movementList.items
+  const obligations = obligationList.items
   async function saveTransfer(input: CashTransferInput, proof: File | null) {
     await createCashTransfer(input, proof, accessToken); setNotice('Transfert confirmé.'); await load()
   }
@@ -234,7 +236,7 @@ export function AdminCashLedgerPanel({ accessToken }: { accessToken: string }) {
     <div className="admin-finance-tabs" role="tablist" aria-label="Suivi financier">
       {([['CASH', 'Caisses'], ['SELLERS', 'Vendeurs'], ['PAYOUTS', 'Versements'], ['HISTORY', 'Mouvements']] as const).map(([id, label]) => <button key={id} id={`cash-tab-${id}`} type="button" role="tab" aria-selected={view === id} aria-controls="cash-finance-content" className={view === id ? 'is-active' : undefined} onClick={() => setView(id)}>{label}</button>)}
     </div>
-    <div className="cash-ledger-toolbar">{(view === 'CASH' || view === 'SELLERS') && <label><Search aria-hidden="true" /><span className="sr-only">Rechercher une caisse ou une personne</span><input type="search" placeholder="Nom, livreur, vendeur ou numéro…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>}<Button tone="admin" disabled={!ledger || loading} onClick={() => { setNotice(undefined); setTransfer({}) }}><ArrowLeftRight aria-hidden="true" />Nouveau transfert</Button><Button tone="admin" variant="secondary" disabled={!ledger || loading} onClick={() => setCorrection({ kind: 'ADJUST' })}>Régularisation</Button><Button tone="admin" variant="ghost" disabled={loading} aria-label="Actualiser les caisses" onClick={() => void load()}><RefreshCw className={loading ? 'admin-spin' : undefined} aria-hidden="true" /></Button></div>
+    <div className="cash-ledger-toolbar">{(view === 'CASH' || view === 'SELLERS') && <label><Search aria-hidden="true" /><span className="sr-only">Rechercher une caisse ou une personne</span><input type="search" placeholder="Nom, livreur, vendeur ou numéro…" value={query} onChange={(event) => { setQuery(event.target.value); obligationList.change({ q: event.target.value }) }} /></label>}<Button tone="admin" disabled={!ledger || loading} onClick={() => { setNotice(undefined); setTransfer({}) }}><ArrowLeftRight aria-hidden="true" />Nouveau transfert</Button><Button tone="admin" variant="secondary" disabled={!ledger || loading} onClick={() => setCorrection({ kind: 'ADJUST' })}>Régularisation</Button><Button tone="admin" variant="ghost" disabled={loading} aria-label="Actualiser les caisses" onClick={() => void load()}><RefreshCw className={loading ? 'admin-spin' : undefined} aria-hidden="true" /></Button></div>
     {error && <div className="admin-callout admin-callout--error" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Opération impossible</strong><span>{error}</span></div></div>}
     {notice && <p className="cash-ledger-notice" role="status">{notice}</p>}
     <div id="cash-finance-content" role="tabpanel" aria-labelledby={`cash-tab-${view}`}>
@@ -242,9 +244,16 @@ export function AdminCashLedgerPanel({ accessToken }: { accessToken: string }) {
       {view === 'CASH' && <section aria-labelledby="physical-cash-title"><h3 id="physical-cash-title">Argent détenu <small>AZY et livreurs · espèces et mobile money</small></h3><div className="cash-ledger-accounts">{visible.filter((account) => account.type !== 'SELLER').map(card)}</div>{!visible.some((account) => account.type !== 'SELLER') && <p className="cash-ledger-empty">Aucune caisse correspondant à la recherche.</p>}</section>}
       {view === 'SELLERS' && <section aria-labelledby="seller-cash-title"><h3 id="seller-cash-title">Comptes vendeurs</h3><p className="cash-ledger-help">Solde positif : montant à verser au vendeur. Solde négatif : montant à récupérer auprès du vendeur.</p><div className="cash-ledger-accounts">{visible.filter((account) => account.type === 'SELLER').map(card)}</div>{!visible.some((account) => account.type === 'SELLER') && <p className="cash-ledger-empty">Aucun vendeur correspondant à la recherche.</p>}</section>}
       {view === 'PAYOUTS' && <CashBriefingFinancePanel accessToken={accessToken} ledgerRevision={ledger.revision} onChanged={() => void load()} />}
-      {view === 'SELLERS' && <section aria-labelledby="cash-obligations-title"><h3 id="cash-obligations-title">Règlements par compte rendu</h3><div className="cash-ledger-obligations">{obligations.map((obligation) => <article key={obligation.id}><div><strong>{accountName(`SELLER:${obligation.sellerAccountId}`)}</strong><small>Rapport du {formatDate(obligation.serviceDate)}</small></div><div><small>Montant dû</small><strong>{formatAriary(obligation.amountDueAriary)}</strong></div><div><small>Réglé</small><strong>{formatAriary(obligation.paidAriary)}</strong></div><div><small>Reste à régler</small><strong>{formatAriary(obligation.remainingAriary)}</strong></div></article>)}{obligations.length === 0 && <p className="cash-ledger-empty">Aucun rapport correspondant.</p>}</div></section>}
+      {view === 'SELLERS' && <section aria-labelledby="cash-obligations-title" aria-busy={obligationList.loading}><h3 id="cash-obligations-title">Règlements par compte rendu</h3>
+        <FinanceListFilters filters={obligationList.filters} onChange={obligationList.change} />
+        {obligationList.error && <p role="alert" className="admin-form-error">{obligationList.error}{!obligationList.invalidRange && <Button tone="admin" variant="ghost" size="small" onClick={obligationList.refresh}>Réessayer</Button>}</p>}
+        <div className="cash-ledger-obligations">{obligations.map((obligation) => <article key={obligation.id}><div><strong>{accountName(`SELLER:${obligation.sellerAccountId}`)}</strong><small>Rapport du {formatDate(obligation.serviceDate)}</small></div><div><small>Montant dû</small><strong>{formatAriary(obligation.amountDueAriary)}</strong></div><div><small>Réglé</small><strong>{formatAriary(obligation.paidAriary)}</strong></div><div><small>Reste à régler</small><strong>{formatAriary(obligation.remainingAriary)}</strong></div></article>)}{!obligationList.loading && !obligationList.error && obligations.length === 0 && <p className="cash-ledger-empty">Aucun rapport correspondant.</p>}</div>
+        <FinanceListPagination label="Pagination des règlements par compte rendu" filters={obligationList.filters} onChange={obligationList.change} data={obligationList.error ? undefined : obligationList.data} disabled={obligationList.loading || Boolean(obligationList.error)} loading={obligationList.loading && !obligationList.invalidRange} />
+      </section>}
       {view === 'HISTORY' && <section aria-labelledby="cash-history-title">
-        <div className="cash-ledger-history-heading"><h3 id="cash-history-title"><History aria-hidden="true" />Historique des mouvements</h3><label><span className="sr-only">Rechercher un mouvement</span><input type="search" placeholder="Nom, référence ou motif…" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} /></label></div>
+        <div className="cash-ledger-history-heading"><h3 id="cash-history-title"><History aria-hidden="true" />Historique des mouvements</h3></div>
+        <FinanceListFilters filters={movementList.filters} onChange={movementList.change} searchLabel="Rechercher un mouvement" placeholder="Nom, référence ou motif…" />
+        {movementList.error && <p role="alert" className="admin-form-error">{movementList.error}{!movementList.invalidRange && <Button tone="admin" variant="ghost" size="small" onClick={movementList.refresh}>Réessayer</Button>}</p>}
         <div className="cash-ledger-history">{movements.map((movement) => (
           <article key={movement.id} className={movement.status === 'VOIDED' ? 'is-voided' : undefined}>
             <div>
@@ -260,7 +269,8 @@ export function AdminCashLedgerPanel({ accessToken }: { accessToken: string }) {
               {movement.status === 'CONFIRMED' && !movement.reversalOf && ['TRANSFER', 'ADJUSTMENT'].includes(movement.kind) && <Button tone="admin" variant="ghost" size="small" aria-label={`Annuler le mouvement ${movement.id}`} onClick={() => setCorrection({ kind: 'VOID', movement })}><XCircle aria-hidden="true" />Annuler</Button>}
             </div>
           </article>
-        ))}{movements.length === 0 && <p className="cash-ledger-empty">Aucun mouvement à afficher.</p>}</div>
+        ))}{!movementList.loading && !movementList.error && movements.length === 0 && <p className="cash-ledger-empty">Aucun mouvement à afficher.</p>}</div>
+        <FinanceListPagination label="Pagination des mouvements" filters={movementList.filters} onChange={movementList.change} data={movementList.error ? undefined : movementList.data} disabled={movementList.loading || Boolean(movementList.error)} loading={movementList.loading && !movementList.invalidRange} />
       </section>}
     </>}
     </div>

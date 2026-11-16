@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getCashBriefingPlanning, prepareCashBriefing, saveManualCashBriefing } from './cashBriefing'
+import { getCashBriefingPlanning, listCashBriefingTransfers, prepareCashBriefing, saveManualCashBriefing } from './cashBriefing'
 
 describe('cash payout planning API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -20,6 +20,13 @@ describe('cash payout planning API', () => {
     await saveManualCashBriefing(input, 'token')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/cash-briefings/manual', expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }))
   })
+  it('paginates transfers rather than batches with dates, query, and cancellation', async () => {
+    const page = { items: [], totalElements: 0, totalPages: 0, page: 1, size: 20 }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => page }); vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    expect(await listCashBriefingTransfers('token', { page: 1, size: 20, from: '2026-11-01', to: '2026-11-15', q: ' Jean ' }, controller.signal)).toEqual(page)
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/admin/cash-briefings/transfers?page=1&size=20&from=2026-11-01&to=2026-11-15&q=Jean', expect.objectContaining({ signal: controller.signal, headers: expect.objectContaining({ Authorization: 'Bearer token' }) }))
+  })
 
   it('sends the selected profile destination without replacing account details', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'new-batch' }) })
@@ -32,7 +39,7 @@ describe('cash payout planning API', () => {
   it('sends both custom number and real holder for an individual planned transfer', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'new-batch' }) })
     vi.stubGlobal('fetch', fetchMock)
-    const input = { planId: 'plan', idempotencyKey: 'key', expectedLedgerRevision: 4, transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 5000, sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Titulaire vérifié' }] }
+    const input = { planId: 'plan', idempotencyKey: 'key', expectedLedgerRevision: 4, transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 5000, sellerPayoutOperator: 'Orange Money', sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Titulaire vérifié' }] }
     await saveManualCashBriefing(input, 'token')
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/admin/cash-briefings/manual', expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }))
   })

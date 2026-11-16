@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -76,9 +77,14 @@ public class CashLedgerRepository {
     }
 
     public Snapshot snapshot() {
+        return snapshot(true);
+    }
+
+    public Snapshot snapshot(boolean includeHistory) {
         Instant activatedAt = jdbc.queryForObject(
                 "SELECT activated_at FROM cash_ledger_state WHERE id = 1", (rs, n) -> rs.getTimestamp(1).toInstant());
-        return new Snapshot(activatedAt, revision(), accounts(), movements(), obligations());
+        return new Snapshot(activatedAt, revision(), accounts(),
+                includeHistory ? movements() : List.of(), includeHistory ? obligations() : List.of());
     }
 
     public List<Account> accounts() {
@@ -116,6 +122,37 @@ public class CashLedgerRepository {
                 LEFT JOIN cash_ledger_movement v ON v.reversal_of = m.id
                 ORDER BY m.created_at DESC, m.id
                 """, (rs, n) -> movement(rs));
+    }
+
+    public CashPage<Movement> movements(CashListQuery query) {
+        StringBuilder where = new StringBuilder(" WHERE 1 = 1");
+        List<Object> args = new ArrayList<>();
+        if (query.from() != null) { where.append(" AND m.created_at >= ?"); args.add(query.fromTimestamp()); }
+        if (query.to() != null) { where.append(" AND m.created_at < ?"); args.add(query.untilTimestamp()); }
+        if (query.hasSearch()) {
+            where.append("""
+                     AND (LOWER(COALESCE(m.transaction_reference, '')) LIKE ? ESCAPE '!'
+                       OR LOWER(COALESCE(m.note, '')) LIKE ? ESCAPE '!'
+                       OR LOWER(COALESCE(m.payment_method, '')) LIKE ? ESCAPE '!'
+                       OR LOWER(COALESCE(m.from_key, '')) LIKE ? ESCAPE '!'
+                       OR LOWER(COALESCE(m.to_key, '')) LIKE ? ESCAPE '!'
+                       OR EXISTS (SELECT 1 FROM cash_ledger_account a
+                           LEFT JOIN courier_profile c ON a.account_type = 'COURIER' AND c.id = a.entity_id
+                           LEFT JOIN app_account s ON a.account_type = 'SELLER' AND s.id = a.entity_id
+                           WHERE a.account_key IN (m.from_key, m.to_key)
+                             AND LOWER(COALESCE(c.name, s.display_name, 'AZY')) LIKE ? ESCAPE '!'))
+                    """);
+            for (int i = 0; i < 6; i++) args.add(query.searchPattern());
+        }
+        long total = jdbc.queryForObject("SELECT COUNT(*) FROM cash_ledger_movement m" + where,
+                Long.class, args.toArray());
+        args.add(query.size()); args.add(query.offset());
+        List<Movement> items = jdbc.query("""
+                SELECT m.*, v.note AS void_reason, v.created_at AS voided_at
+                FROM cash_ledger_movement m LEFT JOIN cash_ledger_movement v ON v.reversal_of = m.id
+                """ + where + " ORDER BY m.created_at DESC, m.id DESC LIMIT ? OFFSET ?",
+                (rs, n) -> movement(rs), args.toArray());
+        return new CashPage<>(items, total, query);
     }
 
     public Optional<Movement> movement(UUID id) {
@@ -256,13 +293,40 @@ public class CashLedgerRepository {
                 SELECT o.*, COALESCE((SELECT SUM(a.signed_amount_ariary) FROM cash_ledger_allocation a
                     WHERE a.obligation_id = o.id), 0) AS paid FROM cash_ledger_obligation o
                 ORDER BY o.service_date, o.created_at, o.id
-                """, (rs, n) -> {
-                    long amount = rs.getLong("recognized_amount_ariary");
-                    long paid = rs.getBigDecimal("paid").longValueExact();
-                    return new Obligation(rs.getObject("id", UUID.class), rs.getObject("report_id", UUID.class),
-                            rs.getObject("seller_account_id", UUID.class), rs.getObject("service_date", LocalDate.class),
-                            amount, paid, Math.subtractExact(amount, paid), rs.getBoolean("active"));
-                });
+                """, (rs, n) -> obligation(rs));
+    }
+
+    public CashPage<Obligation> obligations(CashListQuery query) {
+        StringBuilder where = new StringBuilder(" WHERE o.active = TRUE");
+        List<Object> args = new ArrayList<>();
+        if (query.from() != null) { where.append(" AND o.service_date >= ?"); args.add(query.from()); }
+        if (query.to() != null) { where.append(" AND o.service_date <= ?"); args.add(query.to()); }
+        if (query.hasSearch()) {
+            where.append("""
+                     AND (EXISTS (SELECT 1 FROM app_account a WHERE a.id = o.seller_account_id
+                                AND LOWER(COALESCE(a.display_name, a.username)) LIKE ? ESCAPE '!')
+                       OR EXISTS (SELECT 1 FROM client_payout_destination p WHERE p.account_id = o.seller_account_id
+                                AND p.active = TRUE AND %s LIKE ? ESCAPE '!'))
+                    """.formatted(CashListQuery.phoneSearchExpression("p.number")));
+            args.add(query.searchPattern()); args.add(query.phoneSearchPattern());
+        }
+        long total = jdbc.queryForObject("SELECT COUNT(*) FROM cash_ledger_obligation o" + where,
+                Long.class, args.toArray());
+        args.add(query.size()); args.add(query.offset());
+        List<Obligation> items = jdbc.query("""
+                SELECT o.*, COALESCE((SELECT SUM(a.signed_amount_ariary) FROM cash_ledger_allocation a
+                    WHERE a.obligation_id = o.id), 0) AS paid FROM cash_ledger_obligation o
+                """ + where + " ORDER BY o.service_date DESC, o.created_at DESC, o.id DESC LIMIT ? OFFSET ?",
+                (rs, n) -> obligation(rs), args.toArray());
+        return new CashPage<>(items, total, query);
+    }
+
+    private Obligation obligation(ResultSet rs) throws SQLException {
+        long amount = rs.getLong("recognized_amount_ariary");
+        long paid = rs.getBigDecimal("paid").longValueExact();
+        return new Obligation(rs.getObject("id", UUID.class), rs.getObject("report_id", UUID.class),
+                rs.getObject("seller_account_id", UUID.class), rs.getObject("service_date", LocalDate.class),
+                amount, paid, Math.subtractExact(amount, paid), rs.getBoolean("active"));
     }
 
     void allocate(UUID movementId, UUID obligationId, long amount) {

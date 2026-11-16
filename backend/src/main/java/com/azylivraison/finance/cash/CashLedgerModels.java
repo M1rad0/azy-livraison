@@ -25,6 +25,13 @@ public final class CashLedgerModels {
     public record Snapshot(Instant activatedAt, long revision, List<Account> accounts,
             List<Movement> movements, List<Obligation> obligations) { }
 
+    public record CashPage<T>(List<T> items, long totalElements, int page, int size, long totalPages) {
+        public CashPage(List<T> items, long totalElements, CashListQuery query) {
+            this(List.copyOf(items), totalElements, query.page(), query.size(),
+                    totalElements / query.size() + (totalElements % query.size() == 0 ? 0 : 1));
+        }
+    }
+
     public record TransferRequest(String idempotencyKey, String fromKey, String toKey,
             long amountAriary, String paymentMethod, String reference, String note, Long expectedRevision) { }
 

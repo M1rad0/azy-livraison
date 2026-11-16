@@ -28,12 +28,19 @@ public final class CashBriefingModels {
     public record ManualTransfer(@NotNull UUID sellerAccountId, @NotNull UUID courierAccountId,
             @Positive @JsonDeserialize(using = WholeAriaryDeserializer.class) long amountAriary,
             @Size(max = 100) String sellerPayoutNumber, UUID sellerPayoutDestinationId,
-            @Size(max = 150) String sellerPayoutAccountHolder) {
+            @Size(max = 150) String sellerPayoutAccountHolder,
+            @Size(max = 80) String sellerPayoutOperator) {
         public ManualTransfer(UUID sellerAccountId, UUID courierAccountId, long amountAriary) {
-            this(sellerAccountId, courierAccountId, amountAriary, null, null, null);
+            this(sellerAccountId, courierAccountId, amountAriary, null, null, null, null);
         }
         public ManualTransfer(UUID sellerAccountId, UUID courierAccountId, long amountAriary, String sellerPayoutNumber) {
-            this(sellerAccountId, courierAccountId, amountAriary, sellerPayoutNumber, null, null);
+            this(sellerAccountId, courierAccountId, amountAriary, sellerPayoutNumber, null, null, null);
+        }
+        /** Compatibility constructor for requests persisted before custom operators were introduced. */
+        public ManualTransfer(UUID sellerAccountId, UUID courierAccountId, long amountAriary,
+                String sellerPayoutNumber, UUID sellerPayoutDestinationId, String sellerPayoutAccountHolder) {
+            this(sellerAccountId, courierAccountId, amountAriary, sellerPayoutNumber,
+                    sellerPayoutDestinationId, sellerPayoutAccountHolder, null);
         }
     }
     public record ManualRequest(@NotNull UUID planId, @NotBlank @Size(max = 100) String idempotencyKey,
@@ -62,6 +69,8 @@ public final class CashBriefingModels {
     public record Batch(UUID id, UUID planId, LocalDate serviceDate, String status, long ledgerRevision,
             Instant expiresAt, String algorithm, List<Transfer> transfers, List<Balance> balances, String message,
             String mode) {}
+    public record BriefingTransferRow(UUID batchId, LocalDate serviceDate, String batchStatus,
+            long ledgerRevision, String batchMessage, Transfer transfer) {}
     public record PlanningSeller(UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
             long balanceAriary, long plannedAriary, long availableAriary,
             List<ClientPayoutDestination> payoutDestinations) {

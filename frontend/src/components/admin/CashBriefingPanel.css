@@ -35,7 +35,8 @@
 .cash-planning-rows { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 1rem; }
 .cash-planning-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(7rem, .7fr) auto; gap: .85rem; align-items: end; padding: 1rem; background: #f8fafb; border-radius: .8rem; }
 .cash-planning-row > label, .cash-planning-destination label { min-width: 0; display: grid; gap: .5rem; font-size: .8rem; font-weight: 500; color: #526171; }
-.cash-planning-row > label > input, .cash-planning-destination input { width: 100%; min-width: 0; box-sizing: border-box; height: 2.8rem; padding: .7rem .8rem; border: 1px solid #dce2e8; border-radius: .65rem; font: inherit; color: #172c40; background: #fff; }
+.cash-planning-row > label > input, .cash-planning-destination input, .cash-planning-destination select { width: 100%; min-width: 0; box-sizing: border-box; height: 2.8rem; padding: .7rem .8rem; border: 1px solid #dce2e8; border-radius: .65rem; font: inherit; color: #172c40; background: #fff; }
+.cash-planning-destination select:not(:disabled) { cursor: pointer; }
 .cash-planning-destination { grid-column: 1 / -1; min-width: 0; padding-top: 1rem; border-top: 1px solid #e3e8ed; }
 .cash-planning-destination > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem 1rem; font-size: .8rem; color: #526171; }
 .cash-planning-destination__navigation { display: flex; min-width: 0; align-items: center; gap: .6rem; }
@@ -43,7 +44,7 @@
 .cash-planning-destination__navigation .ui-button { flex: 0 0 auto; width: 2rem; min-height: 2rem; padding: .35rem; }
 .cash-planning-destination__navigation svg { width: 1rem; height: 1rem; }
 .cash-planning-destination__operator { display: block; margin-top: .75rem; font-size: .75rem; color: #687684; }
-.cash-planning-destination__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; margin-top: .75rem; }
+.cash-planning-destination__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .85rem; margin-top: .75rem; }
 .cash-planning-destination input[readonly] { background: #eef2f5; border-color: #e1e6eb; }
 .cash-planning-destination > p { margin: .65rem 0 0; font-size: .75rem; }
 .cash-planning-row > button { min-height: 2.8rem; }

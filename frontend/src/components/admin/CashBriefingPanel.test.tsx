@@ -1,14 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { confirmCashBriefingTransfer, getCashBriefingPlanning, listCashBriefings, prepareCashBriefing, releaseCashBriefing, revalidateCashBriefing, saveManualCashBriefing, type CashBriefingBatch, type CashBriefingPlanning } from '../../api/cashBriefing'
+import { confirmCashBriefingTransfer, getCashBriefingPlanning, listCashBriefingTransfers, prepareCashBriefing, releaseCashBriefing, revalidateCashBriefing, saveManualCashBriefing, type CashBriefingBatch, type CashBriefingPlanning } from '../../api/cashBriefing'
 import { CashBriefingPanel } from './CashBriefingPanel'
 import { CashBriefingFinancePanel } from './CashBriefingFinancePanel'
 
-vi.mock('../../api/cashBriefing', () => ({ getCashBriefingPlanning: vi.fn(), saveManualCashBriefing: vi.fn(), listCashBriefings: vi.fn(), prepareCashBriefing: vi.fn(), releaseCashBriefing: vi.fn(), revalidateCashBriefing: vi.fn(), confirmCashBriefingTransfer: vi.fn() }))
+vi.mock('../../api/cashBriefing', () => ({ getCashBriefingPlanning: vi.fn(), saveManualCashBriefing: vi.fn(), listCashBriefingTransfers: vi.fn(), prepareCashBriefing: vi.fn(), releaseCashBriefing: vi.fn(), revalidateCashBriefing: vi.fn(), confirmCashBriefingTransfer: vi.fn() }))
 const destination = { id: 'destination', operator: 'MVola', accountHolder: 'Soa Rakoto', number: '034 00 000 00', priority: 1, active: true }
 const alternative = { id: 'alternative', operator: 'Orange Money', accountHolder: 'Soa Rabe', number: '032 11 111 11', priority: 2, active: true }
 function batch(status: CashBriefingBatch['status'] = 'ACTIVE'): CashBriefingBatch {
   return { id: 'batch', planId: 'plan', serviceDate: '2026-11-15', status, ledgerRevision: 7, expiresAt: '2026-11-15T21:00:00Z', algorithm: 'exact', message: status === 'STALE' ? 'Les caisses ont changé.' : 'À confirmer dans Finance.', balances: [], transfers: [{ id: 'transfer', sellerAccountId: 'seller', sellerName: 'Boutique Soa', sellerPayoutNumber: destination.number, sellerPayoutDestinationId: destination.id, sellerPayoutAccountHolder: destination.accountHolder, sellerPayoutOperator: destination.operator, courierAccountId: 'courier', courierName: 'Baptiste', amountAriary: 25000, status: 'PENDING' }] }
+}
+function financePage(status: CashBriefingBatch['status'] = 'ACTIVE') {
+  const value = batch(status)
+  return { items: [{ batchId: value.id, serviceDate: value.serviceDate, batchStatus: value.status, ledgerRevision: value.ledgerRevision, batchMessage: value.message, transfer: value.transfers[0] }], totalElements: 1, page: 0, size: 20, totalPages: 1 }
 }
 function planning(current?: CashBriefingBatch): CashBriefingPlanning {
   return { planId: 'plan', serviceDate: '2026-11-15', ledgerRevision: 7, batch: current, sellers: [{ sellerAccountId: 'seller', sellerName: 'Boutique Soa', sellerPayoutNumber: destination.number, payoutDestinations: [destination], balanceAriary: 25000, plannedAriary: current ? 25000 : 0, availableAriary: 25000 }, { sellerAccountId: 'zero', sellerName: 'Vendeur sans solde', balanceAriary: 0, plannedAriary: 0, availableAriary: 0 }], couriers: [{ courierAccountId: 'courier', courierName: 'Baptiste', balanceAriary: 30000, reservedElsewhereAriary: 0, capacityAriary: 30000, plannedAriary: current ? 25000 : 0, remainingAriary: current ? 5000 : 30000 }] }
@@ -27,7 +31,7 @@ async function addManual(amount = '12000') {
 describe('payout planning and shared cash proposals', () => {
   beforeEach(() => {
     vi.mocked(getCashBriefingPlanning).mockResolvedValue(planning())
-    vi.mocked(listCashBriefings).mockResolvedValue([])
+    vi.mocked(listCashBriefingTransfers).mockResolvedValue({ items: [], totalElements: 0, page: 0, size: 20, totalPages: 0 })
     vi.mocked(saveManualCashBriefing).mockResolvedValue(batch())
     vi.mocked(prepareCashBriefing).mockResolvedValue(batch())
     vi.mocked(revalidateCashBriefing).mockResolvedValue(batch())
@@ -115,26 +119,31 @@ describe('payout planning and shared cash proposals', () => {
     saved.transfers[0].sellerPayoutNumberOverride = true
     saved.transfers[0].sellerPayoutDestinationId = null
     saved.transfers[0].sellerPayoutAccountHolder = 'Titulaire spécifique'
+    saved.transfers[0].sellerPayoutOperator = 'Airtel Money'
     vi.mocked(getCashBriefingPlanning).mockResolvedValueOnce(initial).mockResolvedValue(planning(saved))
     render(<CashBriefingPanel accessToken="token" planId="plan" />)
     await addManual()
     const number = screen.getByRole('textbox', { name: 'Numéro du versement 1' })
-    expect(number).toHaveValue('034 00 000 00')
+    expect(number).toHaveValue('0340000000')
     expect(number).toHaveAttribute('readonly')
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue(destination.accountHolder)
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveAttribute('readonly')
     fireEvent.click(screen.getByRole('button', { name: 'Numéro suivant du versement 1' }))
     expect(screen.getByText('Personnalisé')).toBeInTheDocument()
+    const operator = screen.getByRole('combobox', { name: 'Opérateur du versement 1' })
+    expect(operator).toHaveValue('MVola')
+    expect(within(operator).getAllByRole('option').map((option) => option.textContent)).toEqual(['Choisir un opérateur', 'MVola', 'Orange Money', 'Airtel Money'])
+    fireEvent.change(operator, { target: { value: 'Airtel Money' } })
     expect(number).not.toHaveAttribute('readonly')
     fireEvent.change(number, { target: { value: '034 99 999 99' } })
     expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Titulaire du versement 1' }), { target: { value: 'Titulaire spécifique' } })
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
     await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
-      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Titulaire spécifique' }],
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutOperator: 'Airtel Money', sellerPayoutNumber: '0349999999', sellerPayoutAccountHolder: 'Titulaire spécifique' }],
     }), 'token'))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled())
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 99 999 99')
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('0349999999')
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue('Titulaire spécifique')
     expect(initial.sellers[0].sellerPayoutNumber).toBe('034 00 000 00')
   })
@@ -148,10 +157,10 @@ describe('payout planning and shared cash proposals', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Numéro du versement 1' }), { target: { value: '034 99 999 99' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'Titulaire du versement 1' }), { target: { value: 'Nom personnalisé' } })
     fireEvent.click(screen.getByRole('button', { name: 'Numéro précédent du versement 1' }))
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 00 000 00')
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('0340000000')
     expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveAttribute('readonly')
     fireEvent.click(screen.getByRole('button', { name: 'Numéro suivant du versement 1' }))
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 99 999 99')
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('0349999999')
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue('Nom personnalisé')
     fireEvent.click(screen.getByRole('button', { name: 'Numéro précédent du versement 1' }))
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
@@ -177,7 +186,7 @@ describe('payout planning and shared cash proposals', () => {
     expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
     await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
-      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Titulaire personnalisé' }],
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutOperator: 'MVola', sellerPayoutNumber: '0349999999', sellerPayoutAccountHolder: 'Titulaire personnalisé' }],
     }), 'token'))
   })
 
@@ -189,11 +198,33 @@ describe('payout planning and shared cash proposals', () => {
     current.transfers[0].sellerPayoutAccountHolder = 'Titulaire enregistré'
     vi.mocked(getCashBriefingPlanning).mockResolvedValue(planning(current))
     render(<CashBriefingPanel accessToken="token" planId="plan" />)
-    expect(await screen.findByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 99 999 99')
+    expect(await screen.findByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('0349999999')
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '10000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
     await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
-      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 10000, sellerPayoutNumber: '034 99 999 99', sellerPayoutAccountHolder: 'Titulaire enregistré' }],
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 10000, sellerPayoutOperator: 'MVola', sellerPayoutNumber: '0349999999', sellerPayoutAccountHolder: 'Titulaire enregistré' }],
+    }), 'token'))
+  })
+
+  it('requires a supported operator before resaving an older custom pending transfer', async () => {
+    const current = batch('STALE')
+    current.transfers[0].sellerPayoutNumberOverride = true
+    current.transfers[0].sellerPayoutDestinationId = null
+    current.transfers[0].sellerPayoutNumber = '034 99 999 99'
+    current.transfers[0].sellerPayoutAccountHolder = 'Ancien titulaire'
+    current.transfers[0].sellerPayoutOperator = 'Banque'
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(planning(current))
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    const operator = await screen.findByRole('combobox', { name: 'Opérateur du versement 1' })
+    expect(operator).toHaveValue('')
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '10000' } })
+    expect(screen.getByText(/Choisissez MVola, Orange Money ou Airtel Money/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled()
+    fireEvent.change(operator, { target: { value: 'Orange Money' } })
+    expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
+    await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 10000, sellerPayoutOperator: 'Orange Money', sellerPayoutNumber: '0349999999', sellerPayoutAccountHolder: 'Ancien titulaire' }],
     }), 'token'))
   })
 
@@ -205,7 +236,7 @@ describe('payout planning and shared cash proposals', () => {
     await addManual()
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue(destination.accountHolder)
     fireEvent.click(screen.getByRole('button', { name: 'Numéro suivant du versement 1' }))
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number)
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number.replaceAll(' ', ''))
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue(alternative.accountHolder)
     expect(screen.getByText('Orange Money')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveAttribute('readonly')
@@ -213,6 +244,25 @@ describe('payout planning and shared cash proposals', () => {
     await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
       transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutDestinationId: alternative.id }],
     }), 'token'))
+  })
+
+  it('ignores an older bank destination and defaults to the first supported mobile operator', async () => {
+    const state = planning()
+    const legacyBank = { id: 'bank', operator: 'Banque', accountHolder: 'Soa Banque', number: 'COMPTE-001', priority: 1, active: true }
+    state.sellers[0].payoutDestinations = [legacyBank, alternative]
+    vi.mocked(getCashBriefingPlanning).mockResolvedValue(state)
+    render(<CashBriefingPanel accessToken="token" planId="plan" />)
+    await addManual()
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number.replaceAll(' ', ''))
+    expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue(alternative.accountHolder)
+    expect(screen.getByText('Orange Money')).toBeInTheDocument()
+    expect(screen.queryByText('Banque')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Numéro précédent du versement 1' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
+    await waitFor(() => expect(saveManualCashBriefing).toHaveBeenCalledWith(expect.objectContaining({
+      transfers: [{ sellerAccountId: 'seller', courierAccountId: 'courier', amountAriary: 12000, sellerPayoutDestinationId: alternative.id }],
+    }), 'token'))
+    expect(legacyBank.operator).toBe('Banque')
   })
 
   it('restores the selected account destination by id even after its priority changes', async () => {
@@ -224,7 +274,7 @@ describe('payout planning and shared cash proposals', () => {
     state.sellers[0].payoutDestinations = [{ ...alternative, priority: 1 }, { ...destination, priority: 2 }]
     vi.mocked(getCashBriefingPlanning).mockResolvedValue(state)
     render(<CashBriefingPanel accessToken="token" planId="plan" />)
-    expect(await screen.findByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number)
+    expect(await screen.findByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number.replaceAll(' ', ''))
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue(alternative.accountHolder)
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '10000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les versements' }))
@@ -241,14 +291,14 @@ describe('payout planning and shared cash proposals', () => {
     vi.mocked(getCashBriefingPlanning).mockResolvedValue(planning(current))
     render(<CashBriefingPanel accessToken="token" planId="plan" />)
     expect(await screen.findByText('Numéro indisponible')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('034 88 888 88')
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('0348888888')
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue('Ancien titulaire')
     expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveAttribute('readonly')
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '10000' } })
     expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeDisabled()
     expect(saveManualCashBriefing).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Numéro précédent du versement 1' }))
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(destination.number)
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(destination.number.replaceAll(' ', ''))
     expect(screen.getByRole('button', { name: 'Enregistrer les versements' })).toBeEnabled()
   })
 
@@ -293,7 +343,7 @@ describe('payout planning and shared cash proposals', () => {
     const seller = screen.getByRole('combobox', { name: 'Vendeur du versement 1' })
     fireEvent.change(seller, { target: { value: 'Autre' } })
     fireEvent.mouseDown(screen.getByRole('option', { name: /Autre boutique/ }))
-    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number)
+    expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue(alternative.number.replaceAll(' ', ''))
     expect(screen.getByRole('textbox', { name: 'Titulaire du versement 1' })).toHaveValue(alternative.accountHolder)
     fireEvent.click(screen.getByRole('button', { name: 'Numéro suivant du versement 1' }))
     expect(screen.getByRole('textbox', { name: 'Numéro du versement 1' })).toHaveValue('')
@@ -401,7 +451,7 @@ describe('payout planning and shared cash proposals', () => {
   })
 
   it('confirms a real transfer only in Finance after an explicit confirmation', async () => {
-    vi.mocked(listCashBriefings).mockResolvedValue([batch()])
+    vi.mocked(listCashBriefingTransfers).mockResolvedValue(financePage())
     const onChanged = vi.fn()
     render(<CashBriefingFinancePanel accessToken="token" onChanged={onChanged} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Confirmer le versement' }))
@@ -416,7 +466,7 @@ describe('payout planning and shared cash proposals', () => {
   })
 
   it('disables finance confirmation for stale cash and offers revalidation', async () => {
-    vi.mocked(listCashBriefings).mockResolvedValue([batch('STALE')])
+    vi.mocked(listCashBriefingTransfers).mockResolvedValue(financePage('STALE'))
     render(<CashBriefingFinancePanel accessToken="token" />)
     expect(await screen.findByRole('button', { name: 'Confirmer le versement' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Revalider' }))

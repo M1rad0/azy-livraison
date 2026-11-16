@@ -3,6 +3,7 @@ package com.azylivraison.finance.api;
 import java.util.Comparator;
 import java.util.List;
 
+import com.azylivraison.account.service.InvalidPayoutOperatorException;
 import com.azylivraison.finance.service.FinanceConflictException;
 import com.azylivraison.finance.service.FinanceInputException;
 import com.azylivraison.finance.service.FinanceNotFoundException;
@@ -38,6 +39,12 @@ public class FinanceExceptionHandler {
     ResponseEntity<FinanceErrorResponse> invalid(FinanceInputException exception) {
         return ResponseEntity.unprocessableEntity()
                 .body(FinanceErrorResponse.of("FINANCE_INVALID", exception.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidPayoutOperatorException.class)
+    ResponseEntity<FinanceErrorResponse> invalidPayoutOperator(InvalidPayoutOperatorException exception) {
+        return ResponseEntity.unprocessableEntity()
+                .body(FinanceErrorResponse.of("PAYOUT_OPERATOR_INVALID", exception.getMessage()));
     }
 
     @ExceptionHandler(ProofStorageException.class)

@@ -130,7 +130,7 @@ describe('AdminFinancePanel', () => {
       if (url.endsWith('/client-closures')) return Promise.resolve(jsonResponse(closures(true)))
       if (url.endsWith('/finance/clients/client-closed')) return Promise.resolve(jsonResponse(managedFinance))
       if (url.includes('/cash-briefings')) return Promise.resolve(jsonResponse([]))
-      if (url.endsWith('/cash-ledger')) return Promise.resolve(jsonResponse({ activatedAt: '2026-11-15T04:00:00Z', revision: 0, accounts: [], movements: [], obligations: [] }))
+      if (url.includes('/cash-ledger')) return Promise.resolve(jsonResponse({ activatedAt: '2026-11-15T04:00:00Z', revision: 0, accounts: [], movements: [], obligations: [] }))
       return Promise.resolve(jsonResponse(day))
     })
     vi.stubGlobal('fetch', fetchMock)

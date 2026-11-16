@@ -4,23 +4,29 @@ import { getCashBriefingPlanning, prepareCashBriefing, revalidateCashBriefing, s
 import { Button } from '../Button'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { CourierCombobox } from './CourierCombobox'
+import { PhoneInput } from '../PhoneInput'
+import { isPhonePayoutOperator, isValidPhoneNumber, normalizePhoneNumber, PHONE_NUMBER_ERROR } from '../../phone'
+import { PAYOUT_OPERATORS, PAYOUT_OPERATOR_ERROR, normalizePayoutOperator } from '../../payoutOperators'
 import { errorMessage, formatAriary } from './adminHelpers'
 import './CashBriefingPanel.css'
 
 type DraftTransfer = {
   key: string; sellerAccountId: string; courierAccountId: string; amount: string
-  destination: string; customNumber: string; customHolder: string
+  destination: string; customOperator: string; customNumber: string; customHolder: string
   savedNumber?: string | null; savedHolder?: string | null; savedOperator?: string | null
 }
 type PlanningSeller = CashBriefingPlanning['sellers'][number]
 const CUSTOM_DESTINATION = 'custom'
-const activeDestinations = (seller?: PlanningSeller) => [...(seller?.payoutDestinations ?? [])].filter((item) => item.active).sort((a, b) => a.priority - b.priority)
+const activeDestinations = (seller?: PlanningSeller) => [...(seller?.payoutDestinations ?? [])]
+  .filter((item) => item.active && Boolean(normalizePayoutOperator(item.operator)))
+  .sort((a, b) => a.priority - b.priority)
 const defaultDestination = (seller?: PlanningSeller) => activeDestinations(seller)[0]?.id ?? CUSTOM_DESTINATION
 type Confirmation = 'refresh' | 'automatic'
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr')
 const editable = (batch: CashBriefingBatch | null | undefined, sellers: CashBriefingPlanning['sellers']): DraftTransfer[] => batch?.transfers.filter((transfer) => transfer.status === 'PENDING').map((transfer) => ({
   key: transfer.id, sellerAccountId: transfer.sellerAccountId, courierAccountId: transfer.courierAccountId, amount: String(transfer.amountAriary),
   destination: transfer.sellerPayoutNumberOverride ? CUSTOM_DESTINATION : transfer.sellerPayoutDestinationId ?? defaultDestination(sellers.find((seller) => seller.sellerAccountId === transfer.sellerAccountId)),
+  customOperator: transfer.sellerPayoutNumberOverride ? normalizePayoutOperator(transfer.sellerPayoutOperator ?? '') : 'MVola',
   customNumber: transfer.sellerPayoutNumberOverride ? transfer.sellerPayoutNumber ?? '' : '',
   customHolder: transfer.sellerPayoutNumberOverride ? transfer.sellerPayoutAccountHolder ?? '' : '',
   savedNumber: transfer.sellerPayoutNumber, savedHolder: transfer.sellerPayoutAccountHolder, savedOperator: transfer.sellerPayoutOperator,
@@ -93,9 +99,11 @@ export function CashBriefingPanel({ accessToken, planId, onBatchChange, onDirtyC
       if (!planning.sellers.some((seller) => seller.sellerAccountId === row.sellerAccountId) || !planning.couriers.some((courier) => courier.courierAccountId === row.courierAccountId)) return 'Choisissez un vendeur et un livreur actif pour chaque versement.'
       const selected = activeDestinations(planning.sellers.find((seller) => seller.sellerAccountId === row.sellerAccountId)).find((item) => item.id === row.destination)
       if (row.destination !== CUSTOM_DESTINATION && !selected) return 'Un numéro du compte n’est plus disponible. Choisissez un autre numéro de versement.'
+      if (row.destination === CUSTOM_DESTINATION && !normalizePayoutOperator(row.customOperator)) return PAYOUT_OPERATOR_ERROR
       const number = row.destination === CUSTOM_DESTINATION ? row.customNumber : selected?.number ?? ''
       if (!number.trim()) return 'Renseignez un numéro de versement pour chaque versement prévu.'
       if (number.trim().length > 100 || /[\u0000-\u001f\u007f]/.test(number)) return 'Le numéro de versement contient des caractères non valides.'
+      if (row.destination === CUSTOM_DESTINATION && !isValidPhoneNumber(number)) return PHONE_NUMBER_ERROR
       if (row.destination === CUSTOM_DESTINATION && !row.customHolder.trim()) return 'Renseignez le titulaire de chaque numéro de versement personnalisé.'
       if (row.destination === CUSTOM_DESTINATION && (row.customHolder.trim().length > 150 || /[\u0000-\u001f\u007f]/.test(row.customHolder))) return 'Le titulaire du versement contient des caractères non valides.'
       if (!Number.isSafeInteger(Number(row.amount)) || Number(row.amount) <= 0) return 'Chaque montant doit être un nombre entier supérieur à zéro.'
@@ -109,7 +117,7 @@ export function CashBriefingPanel({ accessToken, planId, onBatchChange, onDirtyC
 
   async function save() {
     if (!planning || validation) return
-    const input = { planId, expectedLedgerRevision: planning.ledgerRevision, expectedBatchId: batch?.id ?? null, transfers: draft.map((row) => ({ sellerAccountId: row.sellerAccountId, courierAccountId: row.courierAccountId, amountAriary: Number(row.amount), ...(row.destination === CUSTOM_DESTINATION ? { sellerPayoutNumber: row.customNumber.trim(), sellerPayoutAccountHolder: row.customHolder.trim() } : { sellerPayoutDestinationId: row.destination }) })) }
+    const input = { planId, expectedLedgerRevision: planning.ledgerRevision, expectedBatchId: batch?.id ?? null, transfers: draft.map((row) => ({ sellerAccountId: row.sellerAccountId, courierAccountId: row.courierAccountId, amountAriary: Number(row.amount), ...(row.destination === CUSTOM_DESTINATION ? { sellerPayoutOperator: normalizePayoutOperator(row.customOperator), sellerPayoutNumber: normalizePhoneNumber(row.customNumber), sellerPayoutAccountHolder: row.customHolder.trim() } : { sellerPayoutDestinationId: row.destination }) })) }
     const signature = JSON.stringify(input)
     if (saveAttempt.current?.signature !== signature) saveAttempt.current = { signature, key: crypto.randomUUID() }
     setBusy(true); setMessage(undefined); setNotice(undefined)
@@ -173,7 +181,7 @@ export function CashBriefingPanel({ accessToken, planId, onBatchChange, onDirtyC
         return <article key={courier.courierAccountId}><h5>{courier.courierName}</h5><dl><div><dt>Disponible</dt><dd>{formatAriary(courier.capacityAriary)}</dd></div><div><dt>Prévu ici</dt><dd>{formatAriary(planned)}</dd></div><div><dt>Restant</dt><dd className={courier.capacityAriary < planned ? 'cash-planning-negative' : undefined}>{formatAriary(courier.capacityAriary - planned)}</dd></div></dl>{courier.reservedElsewhereAriary > 0 && <small>{formatAriary(courier.reservedElsewhereAriary)} déjà réservé ailleurs</small>}</article>
       })}{planning.couriers.length === 0 && <p>Aucun livreur actif dans ce dispatch.</p>}</div></section>
       <section className="cash-planning-section" aria-labelledby="cash-planning-transfers">
-        <div className="cash-planning-heading"><div><h4 id="cash-planning-transfers">Répartition des versements</h4><p>Ces prévisions seront reprises dans les briefings. Les versements réels restent à confirmer dans Finance.</p></div><Button tone="admin" variant="secondary" disabled={locked || planning.couriers.length === 0 || payableSellers.length === 0} onClick={() => { setDraft((rows) => [...rows, { key: crypto.randomUUID(), sellerAccountId: '', courierAccountId: '', amount: '', destination: CUSTOM_DESTINATION, customNumber: '', customHolder: '' }]); setDirty(true) }}><Plus aria-hidden="true" />Ajouter un versement</Button></div>
+        <div className="cash-planning-heading"><div><h4 id="cash-planning-transfers">Répartition des versements</h4><p>Ces prévisions seront reprises dans les briefings. Les versements réels restent à confirmer dans Finance.</p></div><Button tone="admin" variant="secondary" disabled={locked || planning.couriers.length === 0 || payableSellers.length === 0} onClick={() => { setDraft((rows) => [...rows, { key: crypto.randomUUID(), sellerAccountId: '', courierAccountId: '', amount: '', destination: CUSTOM_DESTINATION, customOperator: 'MVola', customNumber: '', customHolder: '' }]); setDirty(true) }}><Plus aria-hidden="true" />Ajouter un versement</Button></div>
         {draft.length === 0 && <p className="cash-planning-empty">Aucun versement prévu. Ajoutez-en un ou lancez la répartition automatique.</p>}
         <fieldset className="cash-planning-rows" disabled={locked}>{draft.map((row, index) => {
           const seller = planning.sellers.find((item) => item.sellerAccountId === row.sellerAccountId)
@@ -184,7 +192,7 @@ export function CashBriefingPanel({ accessToken, planId, onBatchChange, onDirtyC
           const selected = destinations.find((item) => item.id === row.destination)
           const custom = row.destination === CUSTOM_DESTINATION
           return <div className="cash-planning-row" key={row.key}>
-          <label>Vendeur<CourierCombobox couriers={payableSellers.map((seller) => ({ id: seller.sellerAccountId, name: seller.sellerName, contact: seller.sellerPayoutNumber, active: true }))} value={row.sellerAccountId} ariaLabel={`Vendeur du versement ${index + 1}`} placeholder="Rechercher un vendeur" optionsAriaLabel="Vendeurs disponibles" emptyMessage="Aucun vendeur ne correspond à cette recherche." clearAriaLabel="Effacer le vendeur choisi" onChange={(sellerAccountId) => update(row.key, { sellerAccountId, destination: defaultDestination(planning.sellers.find((item) => item.sellerAccountId === sellerAccountId)), customNumber: '', customHolder: '', savedNumber: undefined, savedHolder: undefined, savedOperator: undefined })} /></label>
+          <label>Vendeur<CourierCombobox couriers={payableSellers.map((seller) => ({ id: seller.sellerAccountId, name: seller.sellerName, contact: seller.sellerPayoutNumber, active: true }))} value={row.sellerAccountId} ariaLabel={`Vendeur du versement ${index + 1}`} placeholder="Rechercher un vendeur" optionsAriaLabel="Vendeurs disponibles" emptyMessage="Aucun vendeur ne correspond à cette recherche." clearAriaLabel="Effacer le vendeur choisi" onChange={(sellerAccountId) => update(row.key, { sellerAccountId, destination: defaultDestination(planning.sellers.find((item) => item.sellerAccountId === sellerAccountId)), customOperator: 'MVola', customNumber: '', customHolder: '', savedNumber: undefined, savedHolder: undefined, savedOperator: undefined })} /></label>
           <label>Livreur<CourierCombobox couriers={planning.couriers.map((courier) => ({ id: courier.courierAccountId, name: courier.courierName, contact: `Disponible : ${formatAriary(courier.capacityAriary)}`, active: true }))} value={row.courierAccountId} ariaLabel={`Livreur du versement ${index + 1}`} onChange={(courierAccountId) => update(row.key, { courierAccountId })} /></label>
           <label>Montant (Ar)<input aria-label={`Montant du versement ${index + 1}`} type="number" min="1" step="1" inputMode="numeric" value={row.amount} onChange={(event) => update(row.key, { amount: event.target.value })} /></label>
           <Button tone="admin" variant="ghost" aria-label={`Retirer le versement ${index + 1}`} onClick={() => { setDraft((rows) => rows.filter((item) => item.key !== row.key)); setDirty(true) }}><Trash2 aria-hidden="true" /></Button>
@@ -196,10 +204,13 @@ export function CashBriefingPanel({ accessToken, planId, onBatchChange, onDirtyC
             </div></header>
             {!custom && (selected?.operator || row.savedOperator) && <small className="cash-planning-destination__operator">{selected?.operator ?? row.savedOperator}</small>}
             <div className="cash-planning-destination__fields">
-              <label>Numéro de versement<input type="tel" inputMode="tel" autoComplete="off" maxLength={100} readOnly={!custom} aria-label={`Numéro du versement ${index + 1}`} value={custom ? row.customNumber : selected?.number ?? row.savedNumber ?? ''} onChange={custom ? (event) => update(row.key, { customNumber: event.target.value }) : undefined} /></label>
+              {custom && <label>Opérateur<select aria-label={`Opérateur du versement ${index + 1}`} value={row.customOperator} onChange={(event) => update(row.key, { customOperator: event.target.value })}><option value="">Choisir un opérateur</option>{PAYOUT_OPERATORS.map((operator) => <option key={operator} value={operator}>{operator}</option>)}</select></label>}
+              <label>Numéro de versement{custom || isPhonePayoutOperator(selected?.operator ?? row.savedOperator ?? '')
+                ? <PhoneInput autoComplete="off" readOnly={!custom} aria-label={`Numéro du versement ${index + 1}`} value={custom ? row.customNumber : selected?.number ?? row.savedNumber ?? ''} onChange={custom ? (event) => update(row.key, { customNumber: event.target.value }) : undefined} />
+                : <input readOnly aria-label={`Numéro du versement ${index + 1}`} value={selected?.number ?? row.savedNumber ?? ''} />}</label>
               <label>Titulaire<input maxLength={150} autoComplete="off" readOnly={!custom} aria-label={`Titulaire du versement ${index + 1}`} value={custom ? row.customHolder : selected?.accountHolder ?? row.savedHolder ?? ''} onChange={custom ? (event) => update(row.key, { customHolder: event.target.value }) : undefined} /></label>
             </div>
-            {unavailable && <p className="cash-planning-negative">Ce numéro du compte n’est plus actif. Choisissez un autre numéro.</p>}
+            {unavailable && <p className="cash-planning-negative">Ce numéro du compte n’est plus disponible. Choisissez un autre numéro.</p>}
             {custom && <p>Ces coordonnées ne sont utilisées que pour ce versement et ne modifient pas le compte vendeur.</p>}
           </section>}
         </div>})}</fieldset>

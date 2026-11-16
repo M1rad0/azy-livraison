@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import com.azylivraison.account.domain.Account;
 import com.azylivraison.account.repository.AccountRepository;
+import com.azylivraison.account.service.PayoutOperatorNormalizer;
 import com.azylivraison.dailyworkflow.service.DailyWorkflowConflictException;
 import com.azylivraison.delivery.domain.DeliveryPackageOutcome;
 import com.azylivraison.delivery.domain.ExpressFuelCalculation;
@@ -729,7 +730,7 @@ public class FinancialSettlementService {
     private PaymentDestination normalizeDestination(PaymentDestination destination) {
         if (destination == null) return null;
         return new PaymentDestination(
-                required(destination.operator(), 80, "Indiquez l'opérateur du versement."),
+                PayoutOperatorNormalizer.normalize(destination.operator()),
                 required(destination.accountHolder(), 150, "Indiquez le titulaire du compte."),
                 required(destination.number(), 100, "Indiquez le numéro de versement."));
     }

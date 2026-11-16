@@ -1,5 +1,6 @@
 import { AdminApiError } from './admin'
 import type { ClientPayoutDestination } from './client'
+import { cashListQuery, type CashListFilters, type CashPage } from './cashLedger'
 
 export interface CashBriefingTransfer {
   id: string; sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null
@@ -17,6 +18,14 @@ export interface CashBriefingBatch {
   transfers: CashBriefingTransfer[]
   balances: { courierAccountId: string; courierName: string; balanceAriary: number; availableAriary: number; reservedAriary: number }[]
 }
+export interface CashBriefingTransferRow {
+  batchId: string
+  serviceDate: string
+  batchStatus: CashBriefingBatch['status']
+  ledgerRevision: number
+  batchMessage: string
+  transfer: CashBriefingTransfer
+}
 export interface CashBriefingPlanning {
   planId: string; serviceDate: string; ledgerRevision: number; batch?: CashBriefingBatch | null
   sellers: { sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; payoutDestinations?: ClientPayoutDestination[]; balanceAriary: number; plannedAriary: number; availableAriary: number }[]
@@ -24,7 +33,7 @@ export interface CashBriefingPlanning {
 }
 export interface ManualCashBriefingInput {
   planId: string; idempotencyKey: string; expectedLedgerRevision: number; expectedBatchId?: string | null
-  transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number; sellerPayoutDestinationId?: string; sellerPayoutNumber?: string; sellerPayoutAccountHolder?: string }[]
+  transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number; sellerPayoutDestinationId?: string; sellerPayoutOperator?: string; sellerPayoutNumber?: string; sellerPayoutAccountHolder?: string }[]
 }
 const BASE = `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/admin/cash-briefings`
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -37,6 +46,7 @@ async function request<T>(path: string, token: string, init: RequestInit = {}): 
 }
 const post = (data?: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data ?? {}) })
 export const listCashBriefings = (token: string, planId?: string, signal?: AbortSignal) => request<CashBriefingBatch[]>(planId ? `?planId=${encodeURIComponent(planId)}` : '', token, { signal })
+export const listCashBriefingTransfers = (token: string, filters: CashListFilters, signal?: AbortSignal) => request<CashPage<CashBriefingTransferRow>>(`/transfers?${cashListQuery(filters)}`, token, { signal })
 export const getCashBriefingPlanning = (planId: string, token: string, signal?: AbortSignal) => request<CashBriefingPlanning>(`/planning?planId=${encodeURIComponent(planId)}`, token, { signal })
 export const saveManualCashBriefing = (input: ManualCashBriefingInput, token: string) => request<CashBriefingBatch>('/manual', token, post(input))
 export const prepareCashBriefing = (planId: string, token: string, idempotencyKey: string = crypto.randomUUID(), replacement?: { replaceExisting: true; expectedLedgerRevision: number; expectedBatchId: string | null }) => request<CashBriefingBatch>('/prepare', token, post({ planId, idempotencyKey, ...replacement }))

@@ -1,9 +1,13 @@
 package com.azylivraison.finance.cash.briefing;
 
 import java.util.List;
+import java.time.LocalDate;
 import java.util.UUID;
+import com.azylivraison.finance.cash.CashLedgerModels.CashPage;
+import com.azylivraison.finance.cash.CashListQuery;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +20,13 @@ public class CashBriefingController {
     private final CashBriefingService service;
     public CashBriefingController(CashBriefingService service) { this.service = service; }
     @GetMapping public List<Batch> list(@RequestParam(required = false) UUID planId) { return service.list(planId); }
+    @GetMapping("/transfers") public CashPage<BriefingTransferRow> transfers(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String q, @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return service.transfers(new CashListQuery(from, to, q, page, size));
+    }
     @GetMapping("/planning") public Planning planning(@RequestParam UUID planId) { return service.planning(planId); }
     @PostMapping("/manual") public Batch manual(@Valid @RequestBody ManualRequest request, @AuthenticationPrincipal Jwt jwt) {
         return service.manual(request, UUID.fromString(jwt.getClaimAsString("accountId")));

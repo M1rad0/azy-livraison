@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { adjustCashAccount, createCashTransfer, getCashLedger, voidCashMovement, type CashLedger } from '../../api/cashLedger'
+import { adjustCashAccount, createCashTransfer, getCashLedger, listCashMovements, listCashObligations, voidCashMovement, type CashLedger } from '../../api/cashLedger'
 import { AdminCashLedgerPanel } from './AdminCashLedgerPanel'
 
-vi.mock('../../api/cashLedger', async (original) => ({ ...await original<typeof import('../../api/cashLedger')>(), getCashLedger: vi.fn(), createCashTransfer: vi.fn(), adjustCashAccount: vi.fn(), voidCashMovement: vi.fn() }))
+vi.mock('../../api/cashLedger', async (original) => ({ ...await original<typeof import('../../api/cashLedger')>(), getCashLedger: vi.fn(), listCashMovements: vi.fn(), listCashObligations: vi.fn(), createCashTransfer: vi.fn(), adjustCashAccount: vi.fn(), voidCashMovement: vi.fn() }))
 vi.mock('./CashBriefingFinancePanel', () => ({ CashBriefingFinancePanel: () => <section aria-label="Versements des briefings" /> }))
 const ledger: CashLedger = {
   activatedAt: '2026-11-15T04:00:00Z', revision: 7,
@@ -27,7 +27,12 @@ function selectAccount(label: string, name: string) {
   fireEvent.click(within(input.parentElement!).getByRole('option', { name: new RegExp(name) }))
 }
 describe('AdminCashLedgerPanel', () => {
-  beforeEach(() => { getLedger.mockResolvedValue(structuredClone(ledger)); vi.mocked(createCashTransfer).mockResolvedValue(undefined); vi.mocked(adjustCashAccount).mockResolvedValue(undefined); vi.mocked(voidCashMovement).mockResolvedValue(undefined) })
+  beforeEach(() => {
+    getLedger.mockResolvedValue(structuredClone(ledger))
+    vi.mocked(listCashMovements).mockReset().mockResolvedValue({ items: ledger.movements, page: 0, size: 20, totalElements: 2, totalPages: 1 })
+    vi.mocked(listCashObligations).mockReset().mockResolvedValue({ items: ledger.obligations, page: 0, size: 20, totalElements: 1, totalPages: 1 })
+    vi.mocked(createCashTransfer).mockResolvedValue(undefined); vi.mocked(adjustCashAccount).mockResolvedValue(undefined); vi.mocked(voidCashMovement).mockResolvedValue(undefined)
+  })
   afterEach(() => { cleanup(); vi.clearAllMocks(); document.body.style.overflow = '' })
   it('distingue argent détenu, réservations, créances vendeurs et avances des livreurs', async () => {
     render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
@@ -41,6 +46,9 @@ describe('AdminCashLedgerPanel', () => {
     expect(screen.getByText('AZY doit cette somme au vendeur.')).toBeInTheDocument()
   })
   it('filtre les personnes sans afficher un grand menu déroulant', async () => {
+    const historical = structuredClone(ledger)
+    historical.accounts[1].payoutNumber = '+261 34 00 111 22'
+    getLedger.mockResolvedValue(historical)
     render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
     fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher une caisse ou une personne' }), { target: { value: '0340011122' } })
     expect(screen.getByRole('heading', { name: 'Jean' })).toBeInTheDocument()
@@ -54,6 +62,22 @@ describe('AdminCashLedgerPanel', () => {
     fireEvent.change(screen.getByLabelText('Montant en ariary'), { target: { value: '1000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer le transfert' }))
     await waitFor(() => expect(createCashTransfer).toHaveBeenCalledWith(expect.objectContaining({ fromKey: 'COURIER:c1', toKey: 'COURIER:c2', amountAriary: 1000, paymentMethod: 'MVOLA', expectedRevision: 7, idempotencyKey: expect.any(String) }), null, 'token'))
+  })
+  it('ouvre le transfert hors de la page et restaure le défilement et le focus après fermeture', async () => {
+    const { container } = render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
+    const trigger = screen.getByRole('button', { name: 'Nouveau transfert' })
+    trigger.focus(); fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: 'Nouveau transfert' })
+    expect(container).not.toContainElement(dialog)
+    expect(dialog.parentElement?.parentElement).toBe(document.body)
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(within(dialog).getByRole('combobox', { name: 'Départ — caisse ou personne' })).toHaveFocus()
+    expect(within(dialog).getByRole('button', { name: 'Confirmer le transfert' }).parentElement?.tagName).toBe('FOOTER')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(document.body.style.overflow).toBe('')
+    expect(trigger).toHaveFocus()
+    expect(createCashTransfer).not.toHaveBeenCalled()
   })
   it('avertit un découvert mais autorise son enregistrement', async () => {
     render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
@@ -103,7 +127,7 @@ describe('AdminCashLedgerPanel', () => {
     render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
     fireEvent.click(screen.getByRole('tab', { name: 'Mouvements' }))
     expect(screen.queryByRole('button', { name: 'Annuler le mouvement collect1' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Annuler le mouvement transfer1' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler le mouvement transfer1' }))
     fireEvent.change(screen.getByLabelText('Motif obligatoire'), { target: { value: 'Saisie erronée' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer l’annulation' }))
     await waitFor(() => expect(voidCashMovement).toHaveBeenCalledWith('transfer1', 'Saisie erronée', 7, 'token'))
@@ -124,5 +148,34 @@ describe('AdminCashLedgerPanel', () => {
     expect(screen.getByLabelText('Versements des briefings')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Argent détenu/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/Historique clients|Historique livreurs|démarré à zéro/)).not.toBeInTheDocument()
+  })
+  it('charge les mouvements par page et réinitialise la page lors des recherches et filtres de dates', async () => {
+    vi.mocked(listCashMovements).mockImplementation(async (_token, filters) => ({ items: [ledger.movements[filters.page % 2]], totalElements: 45, page: filters.page, size: filters.size, totalPages: 3 }))
+    render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
+    expect(getLedger).toHaveBeenCalledWith('token', expect.any(AbortSignal), false)
+    expect(listCashMovements).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('tab', { name: 'Mouvements' }))
+    expect(await screen.findByText('1–20 sur 45')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Page précédente' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Page suivante' }))
+    expect(await screen.findByText('21–40 sur 45')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-11-01' } })
+    await waitFor(() => expect(listCashMovements).toHaveBeenLastCalledWith('token', expect.objectContaining({ page: 0, from: '2026-11-01' }), expect.any(AbortSignal)))
+    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-11-15' } })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher un mouvement' }), { target: { value: 'Jean' } })
+    await waitFor(() => expect(listCashMovements).toHaveBeenLastCalledWith('token', expect.objectContaining({ page: 0, from: '2026-11-01', to: '2026-11-15', q: 'Jean' }), expect.any(AbortSignal)))
+    expect(screen.queryByText('1–2 sur 2')).not.toBeInTheDocument()
+  })
+  it('filtre les règlements par date sans recalculer ni masquer les soldes vendeurs', async () => {
+    vi.mocked(listCashObligations).mockResolvedValue({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+    render(<AdminCashLedgerPanel accessToken="token" />); await loaded()
+    fireEvent.click(screen.getByRole('tab', { name: 'Vendeurs' }))
+    expect(await screen.findByText('Aucun rapport correspondant.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-11-01' } })
+    await waitFor(() => expect(listCashObligations).toHaveBeenLastCalledWith('token', expect.objectContaining({ from: '2026-11-01' }), expect.any(AbortSignal)))
+    expect(screen.getByRole('heading', { name: 'Boutique Soa' }).closest('article')).toHaveTextContent('25')
+    expect(screen.getByText('AZY doit cette somme au vendeur.')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher une caisse ou une personne' }), { target: { value: 'Soa' } })
+    await waitFor(() => expect(listCashObligations).toHaveBeenLastCalledWith('token', expect.objectContaining({ q: 'Soa', page: 0 }), expect.any(AbortSignal)))
   })
 })

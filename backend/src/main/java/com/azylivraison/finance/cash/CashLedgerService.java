@@ -43,9 +43,18 @@ public class CashLedgerService {
     public void lock() { repository.lock(); repository.ensureAccounts(); }
     public long revision() { return repository.revision(); }
     @Transactional public Snapshot getSnapshot() {
-        lock(); repository.cleanupReservations(); return repository.snapshot();
+        return getSnapshot(true);
+    }
+    @Transactional public Snapshot getSnapshot(boolean includeHistory) {
+        lock(); repository.cleanupReservations(); return repository.snapshot(includeHistory);
     }
     @Transactional public Snapshot snapshot() { return getSnapshot(); }
+
+    @Transactional(readOnly = true)
+    public CashPage<Movement> movements(CashListQuery query) { return repository.movements(query); }
+
+    @Transactional(readOnly = true)
+    public CashPage<Obligation> obligations(CashListQuery query) { return repository.obligations(query); }
 
     @Transactional
     public Movement confirmTransfer(TransferRequest request, UUID actor, MultipartFile proof) {

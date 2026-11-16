@@ -1,9 +1,11 @@
 package com.azylivraison.finance.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +15,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.azylivraison.account.repository.AccountRepository;
+import com.azylivraison.account.service.InvalidPayoutOperatorException;
+import com.azylivraison.finance.domain.FinanceModels.PaymentDestination;
 import com.azylivraison.finance.domain.FinanceModels.ClientDailySettlement;
 import com.azylivraison.finance.domain.FinanceModels.ClientPayment;
 import com.azylivraison.finance.domain.FinanceModels.ClientPaymentDirection;
@@ -27,6 +31,21 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 class FinancialSettlementPaymentTest {
+
+    @Test
+    void rejectsUnsupportedNewLegacyPaymentDestinationsBeforeAnyFinancialWrite() {
+        FinanceRepository repository = mock(FinanceRepository.class);
+        PaymentProofStorage proofs = mock(PaymentProofStorage.class);
+        FinancialSettlementService service = new FinancialSettlementService(repository,
+                mock(DailyReportService.class), mock(AccountRepository.class), proofs,
+                mock(CourierStatementPdfRenderer.class), mock(CourierStatementXlsxRenderer.class));
+
+        assertThatThrownBy(() -> service.createClientPayment(UUID.randomUUID(), ClientPaymentDirection.AZY_TO_CLIENT,
+                1000, "Virement", new PaymentDestination("Banque", "Soa", "0381415216"),
+                null, null, null, UUID.randomUUID(), null))
+                .isInstanceOf(InvalidPayoutOperatorException.class);
+        verifyNoInteractions(repository, proofs);
+    }
 
     @Test
     void acceptsEitherSignedDirectionAndKeepsThePaymentAttachedToItsSettlement() {

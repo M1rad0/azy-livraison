@@ -47,6 +47,27 @@ export interface CashLedger {
   movements: CashMovement[]
   obligations: CashObligation[]
 }
+export interface CashPage<T> {
+  items: T[]
+  totalElements: number
+  page: number
+  size: number
+  totalPages: number
+}
+export interface CashListFilters {
+  page: number
+  size: number
+  from: string
+  to: string
+  q: string
+}
+export function cashListQuery(filters: CashListFilters) {
+  const query = new URLSearchParams({ page: String(filters.page), size: String(filters.size) })
+  if (filters.from) query.set('from', filters.from)
+  if (filters.to) query.set('to', filters.to)
+  if (filters.q.trim()) query.set('q', filters.q.trim())
+  return query.toString()
+}
 export interface CashTransferInput {
   idempotencyKey: string
   fromKey: string
@@ -81,8 +102,16 @@ function post(body: unknown): RequestInit {
   return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
 }
 
-export async function getCashLedger(token: string, signal?: AbortSignal): Promise<CashLedger> {
-  return (await checkedResponse('', token, { signal })).json() as Promise<CashLedger>
+export async function getCashLedger(token: string, signal?: AbortSignal, includeHistory = true): Promise<CashLedger> {
+  return (await checkedResponse(includeHistory ? '' : '?includeHistory=false', token, { signal })).json() as Promise<CashLedger>
+}
+
+export async function listCashMovements(token: string, filters: CashListFilters, signal?: AbortSignal): Promise<CashPage<CashMovement>> {
+  return (await checkedResponse(`/movements?${cashListQuery(filters)}`, token, { signal })).json() as Promise<CashPage<CashMovement>>
+}
+
+export async function listCashObligations(token: string, filters: CashListFilters, signal?: AbortSignal): Promise<CashPage<CashObligation>> {
+  return (await checkedResponse(`/obligations?${cashListQuery(filters)}`, token, { signal })).json() as Promise<CashPage<CashObligation>>
 }
 
 export async function createCashTransfer(input: CashTransferInput, proof: File | null, token: string) {

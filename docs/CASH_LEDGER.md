@@ -25,6 +25,22 @@ Les transferts manuels sont possibles entre tous les comptes distincts, y compri
 
 Une annulation conserve le mouvement et crée une contre-écriture motivée, y compris pour les affectations aux rapports. Les clés d'idempotence évitent les doubles enregistrements ; une clé réutilisée pour un autre contenu est refusée. Les écritures et réservations sont sérialisées par un verrou financier et une révision.
 
+## Consulter les listes financières
+
+Les règlements par compte rendu, les mouvements de caisse et les versements des briefings ont chacun leur pagination et leur filtre « Du / Au ». Les deux dates sont incluses ; une borne vide laisse la période ouverte. Les règlements et les briefings utilisent la date d’activité ; les mouvements utilisent la date réelle d’enregistrement, selon le fuseau `Indian/Antananarivo`.
+
+La recherche et le filtrage précèdent la pagination côté serveur. Modifier la recherche, une date ou le nombre de lignes ramène à la première page. Les caisses, soldes et réservations restent globaux : ils ne sont jamais recalculés sur la seule page ou période affichée.
+
+Les versements de briefing confirmés restent consultables après la fin d’un lot. Les anciennes propositions non confirmées qui ont été remplacées, libérées ou invalidées ne sont pas présentées comme des versements encore à faire. Consulter une page ne confirme aucun paiement.
+
+Les API paginées acceptent `page` (à partir de 0), `size` (20 par défaut, de 1 à 100), `from`, `to` et `q` :
+
+- `GET /api/admin/cash-ledger/obligations`
+- `GET /api/admin/cash-ledger/movements`
+- `GET /api/admin/cash-briefings/transfers`
+
+Leur réponse contient `items`, `totalElements`, `page`, `size` et `totalPages`. L’interface demande les soldes avec `GET /api/admin/cash-ledger?includeHistory=false` pour éviter de charger l’historique complet en parallèle. L’ancien instantané reste disponible sans ce paramètre pour les consommateurs existants.
+
 ## Préparer les versements avant le briefing
 
 Le parcours est **Dispatch → Versements → Briefing**. L'étape Versements affiche les soldes globaux des vendeurs et les caisses des livreurs sélectionnés pour la journée. Le disponible tient compte des réservations des autres plans ; les sommes déjà prévues dans le plan courant ne sont pas comptées deux fois.
@@ -33,7 +49,9 @@ Les versements peuvent être saisis manuellement (vendeur, livreur, montant) ou 
 
 La liste et la sélection des vendeurs masquent les comptes sans solde disponible à verser. Les lignes déjà prévues restent accessibles pour correction si leur solde a changé. Les numéros de versement du compte vendeur sont administrables à la création et à la modification, avec les mêmes priorités que dans le profil client.
 
-Chaque versement propose par défaut la première destination active du compte vendeur. Des flèches permettent de parcourir les destinations actives par priorité, en lecture seule ; la dernière position « Personnalisé » permet de saisir un numéro et son titulaire pour ce seul versement, sans modifier le compte. Le choix d'une destination du compte reste lié à son identifiant, même si son ordre de priorité change.
+Chaque versement propose par défaut la première destination active compatible du compte vendeur. Des flèches permettent de parcourir ces destinations par priorité, en lecture seule ; la dernière position « Personnalisé » permet de saisir un opérateur, un numéro et son titulaire pour ce seul versement, sans modifier le compte. Le choix d'une destination du compte reste lié à son identifiant, même si son ordre de priorité change.
+
+Les opérateurs des nouvelles destinations de versement sont limités à **MVola**, **Orange Money** et **Airtel Money**, côté formulaire et API. Cette règle s'applique aux comptes clients et livreurs ainsi qu'aux coordonnées personnalisées des briefings. L'opérateur choisi est conservé avec le numéro et le titulaire. Les anciens historiques et les nouvelles tentatives d'enregistrement déjà prises en compte conservent leur compatibilité. Les moyens de paiement des mouvements de caisse, notamment les espèces et les virements, restent indépendants de cette liste.
 
 Le numéro, le titulaire et l'opérateur retenus sont conservés dans le briefing et l'historique. Une modification des coordonnées sélectionnées rend les prévisions liées au compte à revalider ; elle ne remplace pas les coordonnées personnalisées. Les migrations additives V26/V27 distinguent ces cas sans réécrire les versements confirmés. Un ancien titulaire inconnu reste non renseigné : le nom du vendeur n'est jamais présenté comme celui du titulaire par supposition. Les prévisions personnalisées sans titulaire doivent être complétées avant réutilisation.
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { adjustCashAccount, createCashTransfer, downloadCashMovementProof, getCashLedger, voidCashMovement } from './cashLedger'
+import { adjustCashAccount, createCashTransfer, downloadCashMovementProof, getCashLedger, listCashMovements, listCashObligations, voidCashMovement } from './cashLedger'
 
 const input = { idempotencyKey: 'attempt-1', fromKey: 'COURIER:c1', toKey: 'SELLER:s1', amountAriary: 25000, paymentMethod: 'MVOLA', expectedRevision: 4 }
 describe('API des caisses', () => {
@@ -16,6 +16,18 @@ describe('API des caisses', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock)
     await createCashTransfer(input, null, 'token')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/cash-ledger/transfers', expect.objectContaining({ method: 'POST', body: JSON.stringify(input), headers: expect.objectContaining({ 'Content-Type': 'application/json' }) }))
+  })
+  it('charge seulement les soldes puis filtre les pages côté serveur avec dates inclusives', async () => {
+    const page = { items: [], totalElements: 0, totalPages: 0, page: 2, size: 50 }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => page }); vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    await getCashLedger('token', controller.signal, false)
+    const filters = { page: 2, size: 50, from: '2026-11-01', to: '2026-11-15', q: '  Jean & Soa  ' }
+    expect(await listCashMovements('token', filters, controller.signal)).toEqual(page)
+    expect(await listCashObligations('token', { ...filters, from: '', to: '', q: ' ' }, controller.signal)).toEqual(page)
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/cash-ledger?includeHistory=false', expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/cash-ledger/movements?page=2&size=50&from=2026-11-01&to=2026-11-15&q=Jean+%26+Soa', expect.objectContaining({ signal: controller.signal }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/cash-ledger/obligations?page=2&size=50', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token' }) }))
   })
   it('joint le justificatif sans imposer un Content-Type au multipart', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock)
