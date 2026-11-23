@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getCashBriefingPlanning, listCashBriefingTransfers, prepareCashBriefing, saveManualCashBriefing } from './cashBriefing'
+import { confirmCashBriefingCourierTransfer, getCashBriefingPlanning, listCashBriefingTransfers, prepareCashBriefing, saveManualCashBriefing } from './cashBriefing'
 
 describe('cash payout planning API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -54,5 +54,25 @@ describe('cash payout planning API', () => {
   it('surfaces version conflicts instead of accepting a stale save', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: 'Les caisses ont changé.', code: 'STALE_LEDGER' }) }))
     await expect(saveManualCashBriefing({ planId: 'plan', idempotencyKey: 'key', expectedLedgerRevision: 1, expectedBatchId: null, transfers: [] }, 'token')).rejects.toMatchObject({ message: 'Les caisses ont changé.', status: 409, code: 'STALE_LEDGER' })
+  })
+
+  it('saves internal handovers and complete seller payouts in the same replacement', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'new-batch', workflowVersion: 2 }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const input = { planId: 'plan', idempotencyKey: 'key', expectedLedgerRevision: 4, transfers: [{ sellerAccountId: 'seller', courierAccountId: 'receiver', amountAriary: 25000 }], courierTransfers: [{ fromCourierAccountId: 'donor', toCourierAccountId: 'receiver', amountAriary: 10000 }] }
+    await saveManualCashBriefing(input, 'token')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/admin/cash-briefings/manual', expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }))
+  })
+
+  it('confirms a courier handover through its own endpoint with optional proof', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'batch' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const proof = new File(['receipt'], 'receipt.png', { type: 'image/png' })
+    const input = { paymentMethod: 'Espèces', expectedLedgerRevision: 4, note: 'Remis en main propre' }
+    await confirmCashBriefingCourierTransfer('transfer/id', input, proof, 'token')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/admin/cash-briefings/courier-transfers/transfer%2Fid/confirm', expect.objectContaining({ method: 'POST', body: expect.any(FormData) }))
+    const body = fetchMock.mock.calls[0][1].body as FormData
+    expect(body.get('proof')).toBe(proof)
+    expect((body.get('transfer') as Blob).type).toBe('application/json')
   })
 })

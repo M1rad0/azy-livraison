@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDispatchPlan, listAdminClients, type DispatchPlan, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft } from '../../api/manualDispatch'
@@ -43,6 +43,38 @@ describe('Briefing dispatch views and text', () => {
     vi.mocked(listCashBriefings).mockResolvedValue([])
   })
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+  it('shows money handovers to both couriers and invalidates messages when their instructions change', () => {
+    const batch = payoutBatch()
+    batch.courierTransfers = [{ id: 'cash-1', fromCourierAccountId: 'c2', fromCourierName: 'Jean',
+      toCourierAccountId: 'c1', toCourierName: 'Baptiste', amountAriary: 4000, status: 'PENDING', readyToConfirm: true }]
+    const { rerender } = render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={batch} />)
+    const handovers = screen.getByRole('region', { name: 'Transferts entre livreurs' })
+    expect(within(handovers).getByText('Jean → Baptiste')).toBeInTheDocument()
+    fireEvent.click(messageButton())
+    expect(screen.getByRole('region', { name: 'Transferts entre livreurs' })).toHaveTextContent('Recevoir de Jean')
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Recevoir 4000 Ar de Jean.')
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'FR ancien transfert' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Malagasy' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain("Mandray 4000 Ar avy amin'i Jean.")
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'MG ancien transfert' } })
+    const changed = { ...batch, courierTransfers: [{ ...batch.courierTransfers[0], amountAriary: 5000 }] }
+    rerender(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={changed} />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Générer le briefing' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('5000 Ar')
+    expect(screen.getByRole('textbox')).not.toHaveValue('MG ancien transfert')
+    fireEvent.click(screen.getByRole('tab', { name: 'Français' }))
+    expect(screen.getByRole('textbox')).not.toHaveValue('FR ancien transfert')
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer le briefing texte' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Livreur suivant' }))
+    expect(screen.getByRole('region', { name: 'Transferts entre livreurs' })).toHaveTextContent('Donner à Baptiste')
+    fireEvent.click(screen.getByRole('button', { name: 'Générer le briefing' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('Donner 5000 Ar à Baptiste.')
+    rerender(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={{ ...changed, courierTransfers: [{ ...changed.courierTransfers[0], status: 'CONFIRMED' }] }} />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Transferts entre livreurs' })).toHaveTextContent('Aucun transfert entre livreurs à faire.')
+  })
 
   it('invalidates both independently edited languages when the financial proposal changes', () => {
     const batch = payoutBatch()
@@ -104,9 +136,26 @@ describe('Briefing dispatch views and text', () => {
     expect(writeText).not.toHaveBeenCalled()
   })
 
+  it.each(['close', 'language'] as const)('does not copy old cash instructions after %s during financial verification', async (action) => {
+    const check = deferred<boolean>()
+    const validate = vi.fn().mockResolvedValueOnce(true).mockReturnValueOnce(check.promise)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    render(<DispatchBriefingView draft={finalized()} allowMessages cashBatch={payoutBatch()} validateCash={validate} />)
+    fireEvent.click(messageButton())
+    await screen.findByRole('textbox')
+    fireEvent.click(screen.getByRole('button', { name: 'Copier le texte' }))
+    if (action === 'close') fireEvent.click(screen.getByRole('button', { name: 'Fermer le briefing texte' }))
+    else fireEvent.click(screen.getByRole('tab', { name: 'Malagasy' }))
+    await act(async () => { check.resolve(true) })
+    expect(validate).toHaveBeenCalledTimes(2)
+    expect(writeText).not.toHaveBeenCalled()
+    if (action === 'language') expect(screen.getByRole('button', { name: 'Copier le texte' })).toBeEnabled()
+  })
+
   it('orders recoveries, exchanges and deliveries and groups the current assignments', () => {
     const { container } = render(<DispatchBriefingView draft={finalized()} allowMessages />)
-    expect([...container.querySelectorAll('.briefing-section > header h3')].map((item) => item.textContent)).toEqual(['Récupérations', 'Échanges', 'Colis à livrer', 'Versements à faire'])
+    expect([...container.querySelectorAll('.briefing-section > header h3')].map((item) => item.textContent)).toEqual(['Récupérations', 'Échanges', 'Colis à livrer', 'Transferts entre livreurs', 'Versements à faire'])
     expect(within(screen.getByRole('region', { name: 'Échanges' })).getByText('Baptiste → Jean')).toBeInTheDocument()
     const recovery = screen.getByRole('region', { name: 'Récupérations' })
     expect(within(recovery).getByText('2 colis', { exact: false })).toBeInTheDocument()

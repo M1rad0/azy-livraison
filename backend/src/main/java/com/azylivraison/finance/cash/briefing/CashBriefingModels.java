@@ -45,13 +45,30 @@ public final class CashBriefingModels {
     }
     public record ManualRequest(@NotNull UUID planId, @NotBlank @Size(max = 100) String idempotencyKey,
             @NotNull Long expectedLedgerRevision, UUID expectedBatchId,
-            @NotNull @Size(max = 1000) List<@Valid ManualTransfer> transfers) {}
+            @NotNull @Size(max = 1000) List<@Valid ManualTransfer> transfers,
+            @Size(max = 1000) List<@Valid ManualCourierTransfer> courierTransfers) {
+        public ManualRequest(UUID planId, String idempotencyKey, Long expectedLedgerRevision,
+                UUID expectedBatchId, List<ManualTransfer> transfers) {
+            this(planId, idempotencyKey, expectedLedgerRevision, expectedBatchId, transfers, null);
+        }
+    }
+    public record ManualCourierTransfer(@NotNull UUID fromCourierAccountId, @NotNull UUID toCourierAccountId,
+            @Positive @JsonDeserialize(using = WholeAriaryDeserializer.class) long amountAriary) {}
     public record ConfirmRequest(@NotBlank String paymentMethod, String reference, String note,
             @NotNull Long expectedLedgerRevision) {}
     public record Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
             UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId,
             boolean sellerPayoutNumberOverride, UUID sellerPayoutDestinationId,
-            String sellerPayoutAccountHolder, String sellerPayoutOperator) {
+            String sellerPayoutAccountHolder, String sellerPayoutOperator,
+            boolean readyToConfirm, String blockedReason) {
+        public Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
+                UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId,
+                boolean sellerPayoutNumberOverride, UUID sellerPayoutDestinationId,
+                String sellerPayoutAccountHolder, String sellerPayoutOperator) {
+            this(id, sellerAccountId, sellerName, sellerPayoutNumber, courierAccountId, courierName,
+                    amountAriary, status, movementId, sellerPayoutNumberOverride, sellerPayoutDestinationId,
+                    sellerPayoutAccountHolder, sellerPayoutOperator, false, null);
+        }
         public Transfer(UUID id, UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
                 UUID courierAccountId, String courierName, long amountAriary, String status, UUID movementId) {
             this(id, sellerAccountId, sellerName, sellerPayoutNumber, courierAccountId, courierName,
@@ -68,9 +85,25 @@ public final class CashBriefingModels {
             long availableAriary, long reservedAriary) {}
     public record Batch(UUID id, UUID planId, LocalDate serviceDate, String status, long ledgerRevision,
             Instant expiresAt, String algorithm, List<Transfer> transfers, List<Balance> balances, String message,
-            String mode) {}
+            String mode, List<CourierTransfer> courierTransfers, int workflowVersion) {
+        public Batch(UUID id, UUID planId, LocalDate serviceDate, String status, long ledgerRevision,
+                Instant expiresAt, String algorithm, List<Transfer> transfers, List<Balance> balances,
+                String message, String mode) {
+            this(id, planId, serviceDate, status, ledgerRevision, expiresAt, algorithm, transfers, balances,
+                    message, mode, List.of(), 1);
+        }
+    }
+    public record CourierTransfer(UUID id, UUID fromCourierAccountId, String fromCourierName,
+            UUID toCourierAccountId, String toCourierName, long amountAriary, String status,
+            UUID movementId, boolean readyToConfirm, String blockedReason) {}
     public record BriefingTransferRow(UUID batchId, LocalDate serviceDate, String batchStatus,
-            long ledgerRevision, String batchMessage, Transfer transfer) {}
+            long ledgerRevision, String batchMessage, Transfer transfer, String kind,
+            CourierTransfer courierTransfer) {
+        public BriefingTransferRow(UUID batchId, LocalDate serviceDate, String batchStatus,
+                long ledgerRevision, String batchMessage, Transfer transfer) {
+            this(batchId, serviceDate, batchStatus, ledgerRevision, batchMessage, transfer, "SELLER_PAYOUT", null);
+        }
+    }
     public record PlanningSeller(UUID sellerAccountId, String sellerName, String sellerPayoutNumber,
             long balanceAriary, long plannedAriary, long availableAriary,
             List<ClientPayoutDestination> payoutDestinations) {
@@ -80,7 +113,14 @@ public final class CashBriefingModels {
         }
     }
     public record PlanningCourier(UUID courierAccountId, String courierName, long balanceAriary,
-            long reservedElsewhereAriary, long capacityAriary, long plannedAriary, long remainingAriary) {}
+            long reservedElsewhereAriary, long capacityAriary, long plannedAriary, long remainingAriary,
+            long incomingAriary, long outgoingAriary) {
+        public PlanningCourier(UUID courierAccountId, String courierName, long balanceAriary,
+                long reservedElsewhereAriary, long capacityAriary, long plannedAriary, long remainingAriary) {
+            this(courierAccountId, courierName, balanceAriary, reservedElsewhereAriary, capacityAriary,
+                    plannedAriary, remainingAriary, 0, 0);
+        }
+    }
     public record Planning(UUID planId, LocalDate serviceDate, long ledgerRevision, Batch batch,
             List<PlanningSeller> sellers, List<PlanningCourier> couriers) {}
 

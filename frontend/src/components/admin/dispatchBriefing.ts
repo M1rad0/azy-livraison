@@ -221,6 +221,7 @@ export function generateCourierBriefing(
   sellerContacts?: Readonly<Record<string, string | null | undefined>>,
   language: BriefingLanguage = 'fr',
   payouts: ReadonlyArray<{ courierAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; sellerPayoutAccountHolder?: string | null; sellerPayoutOperator?: string | null; amountAriary: number; status: string }> = [],
+  courierTransfers: ReadonlyArray<{ fromCourierAccountId: string; fromCourierName: string; toCourierAccountId: string; toCourierName: string; amountAriary: number; status: string }> = [],
 ): string {
   const labels = BRIEFING_LABELS[language]
   const lines = [`${labels.header} ${displayDate(serviceDate)} — ${text(briefing.courier.name) || labels.courierUnknown}`, '', labels.pickups]
@@ -272,6 +273,26 @@ export function generateCourierBriefing(
     ].filter(Boolean)
     lines.push(`${index + 1}. ${details.join(' — ')}`)
   })
+  const cashInstructions = courierTransfers.filter((transfer) => transfer.status === 'PENDING'
+    && (transfer.fromCourierAccountId === briefing.courier.courierId || transfer.toCourierAccountId === briefing.courier.courierId))
+  if (cashInstructions.length) {
+    lines.push('', language === 'mg' ? 'Fifamindram-bola amin’ny livreurs :' : 'Transferts entre livreurs :')
+    // Receiving money comes first so the payer's instructions read in execution order.
+    for (const transfer of cashInstructions.filter((item) => item.toCourierAccountId === briefing.courier.courierId)) {
+      lines.push(language === 'mg'
+        ? `- Mandray ${transfer.amountAriary} Ar avy amin'i ${text(transfer.fromCourierName)}.`
+        : `- Recevoir ${transfer.amountAriary} Ar de ${text(transfer.fromCourierName)}.`)
+    }
+    for (const transfer of cashInstructions.filter((item) => item.fromCourierAccountId === briefing.courier.courierId)) {
+      lines.push(language === 'mg'
+        ? `- Manome ${transfer.amountAriary} Ar an'i ${text(transfer.toCourierName)}.`
+        : `- Donner ${transfer.amountAriary} Ar à ${text(transfer.toCourierName)}.`)
+    }
+    if (cashInstructions.some((item) => item.toCourierAccountId === briefing.courier.courierId)) {
+      lines.push(language === 'mg' ? 'Andraso aloha ny vola vao manao ny fandoavana miankina aminy.'
+        : 'Attendre les fonds avant les versements qui en dépendent.')
+    }
+  }
   const pending = payouts.filter((payout) => payout.courierAccountId === briefing.courier.courierId && payout.status === 'PENDING')
   if (pending.length) {
     lines.push('', language === 'mg' ? 'Vola halefa :' : 'Versements à faire :')

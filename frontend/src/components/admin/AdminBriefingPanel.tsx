@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, ArrowRightLeft, Banknote, Bike, CalendarDays, Check, ChevronLeft, ChevronRight, Copy, List, LoaderCircle, MapPin, MessageSquareText, PackageCheck, Phone, RefreshCw, TriangleAlert, Warehouse, X } from 'lucide-react'
 import { getDispatchPlan, listAdminClients, type DispatchPlanSummary } from '../../api/admin'
 import { getManualDraftForPlan, type ManualDispatchDraft, type ManualPackage } from '../../api/manualDispatch'
-import { listCashBriefings, type CashBriefingBatch, type CashBriefingTransfer } from '../../api/cashBriefing'
+import { listCashBriefings, type CashBriefingBatch, type CashBriefingCourierTransfer, type CashBriefingTransfer } from '../../api/cashBriefing'
 import { formatOneHourWindow } from '../../deliveryWindows'
 import { Button } from '../Button'
 import { CourierCombobox } from './CourierCombobox'
@@ -73,10 +73,26 @@ function PayoutList({ transfers, stale = false }: { transfers: CashBriefingTrans
   </li>)}</ul>
 }
 
+function CourierCashList({ transfers, courierId, stale = false }: { transfers: CashBriefingCourierTransfer[]; courierId?: string; stale?: boolean }) {
+  if (stale) return <p className="briefing-empty">Les transferts sont à revalider dans l’étape Versements.</p>
+  if (!transfers.length) return <p className="briefing-empty">Aucun transfert entre livreurs à faire.</p>
+  return <ul className="briefing-payouts">{transfers.map((transfer) => {
+    const receiving = courierId === transfer.toCourierAccountId
+    return <li key={transfer.id}>
+      <div><strong>{courierId ? `${receiving ? 'Recevoir de' : 'Donner à'} ${receiving ? transfer.fromCourierName : transfer.toCourierName}` : `${transfer.fromCourierName} → ${transfer.toCourierName}`}</strong>
+        <span>{receiving ? 'À recevoir avant les versements qui en dépendent' : 'Transfert de caisse entre livreurs'}</span>
+      </div><strong>{formatAriary(transfer.amountAriary)}</strong>
+    </li>
+  })}</ul>
+}
+
 function cashSignature(batch?: CashBriefingBatch) {
   return batch ? JSON.stringify([batch.id, batch.status, batch.ledgerRevision, batch.transfers.map((transfer) => [
     transfer.id, transfer.status, transfer.amountAriary, transfer.sellerPayoutNumber,
     transfer.sellerPayoutAccountHolder, transfer.sellerPayoutOperator, transfer.sellerPayoutDestinationId,
+    transfer.courierAccountId, transfer.courierName, transfer.sellerAccountId, transfer.sellerName,
+  ]), (batch.courierTransfers ?? []).map((transfer) => [transfer.id, transfer.status, transfer.amountAriary,
+    transfer.fromCourierAccountId, transfer.fromCourierName, transfer.toCourierAccountId, transfer.toCourierName,
   ])]) : ''
 }
 
@@ -131,6 +147,7 @@ function BriefingTextDialog({ courierName, text, language, onLanguageChange, onC
       try { valid = await beforeCopy() } catch { /* Never fall back to copying an unverified cash instruction. */ }
       if (!valid) { setCopyMessage('Les caisses ou la proposition ont changé. Fermez puis actualisez le briefing.'); setCopying(false); return }
     }
+    if (!textareaRef.current || currentLanguage.current !== language) { setCopying(false); return }
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(text)
@@ -197,8 +214,8 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
   function openValidatedText(briefing: CourierBriefing) {
     const id = briefing.courier.courierId
     setTexts((current) => current[id] === undefined ? { ...current, [id]: {
-      fr: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts, 'fr', cashBatch?.status === 'ACTIVE' ? cashBatch.transfers : []),
-      mg: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts, 'mg', cashBatch?.status === 'ACTIVE' ? cashBatch.transfers : []),
+      fr: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts, 'fr', cashBatch?.status === 'ACTIVE' ? cashBatch.transfers : [], cashBatch?.status === 'ACTIVE' ? cashBatch.courierTransfers : []),
+      mg: generateCourierBriefing(briefing, draft.serviceDate, sellerContacts, 'mg', cashBatch?.status === 'ACTIVE' ? cashBatch.transfers : [], cashBatch?.status === 'ACTIVE' ? cashBatch.courierTransfers : []),
     } } : current)
     setEditing(id)
   }
@@ -206,6 +223,7 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
   const deliveryCouriers = model.couriers.filter((item) => item.deliveries.length > 0)
   const payouts = cashBatch?.status === 'ACTIVE' ? cashBatch.transfers.filter((transfer) => transfer.status === 'PENDING') : []
   const payoutCouriers = couriers.filter((item) => payouts.some((transfer) => transfer.courierAccountId === item.courier.courierId))
+  const courierTransfers = cashBatch?.status === 'ACTIVE' ? (cashBatch.courierTransfers ?? []).filter((transfer) => transfer.status === 'PENDING') : []
 
   return <div className="briefing-content">
     {model.warnings.length > 0 && <div className="admin-callout admin-callout--warning" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Répartition à vérifier</strong><ul>{model.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div></div>}
@@ -225,7 +243,10 @@ export function DispatchBriefingView({ draft, allowMessages = false, sellerConta
       <BriefingSection number={2} title="Échanges" icon={<ArrowRightLeft aria-hidden="true" />}>{model.transfers.length ? <div className="briefing-exchange-grid">{model.transfers.map((transfer) => <article key={`${transfer.fromCourierId}:${transfer.toCourierId}`} className="briefing-exchange"><header><strong>{transfer.fromCourierName} → {transfer.toCourierName}</strong><small>{transfer.packages.length} colis à transmettre</small></header><PackageList packages={transfer.packages} /></article>)}</div> : <p className="briefing-empty">Aucun échange : chaque livreur conserve les colis qu’il récupère.</p>}</BriefingSection>
       <BriefingSection number={3} title="Colis à livrer" icon={<PackageCheck aria-hidden="true" />}><div className="briefing-courier-grid">{deliveryCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} /><PackageList packages={briefing.deliveries} financial /></article>)}</div>{deliveryCouriers.length === 0 && <p className="briefing-empty">Aucun colis affecté à la livraison.</p>}</BriefingSection>
     </>}
-    {allowMessages && <BriefingSection number={4} title="Versements à faire" icon={<Banknote aria-hidden="true" />}>
+    {allowMessages && <BriefingSection number={4} title="Transferts entre livreurs" icon={<ArrowRightLeft aria-hidden="true" />}>
+      <CourierCashList transfers={view === 'courier' && selected ? courierTransfers.filter((transfer) => transfer.fromCourierAccountId === selected.courier.courierId || transfer.toCourierAccountId === selected.courier.courierId) : courierTransfers} courierId={view === 'courier' ? selected?.courier.courierId : undefined} stale={cashBatch?.status === 'STALE'} />
+    </BriefingSection>}
+    {allowMessages && <BriefingSection number={5} title="Versements à faire" icon={<Banknote aria-hidden="true" />}>
       {view === 'courier' && selected ? <PayoutList transfers={payouts.filter((transfer) => transfer.courierAccountId === selected.courier.courierId)} stale={cashBatch?.status === 'STALE'} />
         : cashBatch?.status === 'STALE' ? <PayoutList transfers={[]} stale />
           : payoutCouriers.length ? <div className="briefing-courier-grid">{payoutCouriers.map((briefing) => <article key={briefing.courier.courierId} className="briefing-courier-card"><CourierHeading briefing={briefing} /><PayoutList transfers={payouts.filter((transfer) => transfer.courierAccountId === briefing.courier.courierId)} /></article>)}</div>

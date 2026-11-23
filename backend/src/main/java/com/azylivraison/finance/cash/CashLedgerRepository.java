@@ -55,8 +55,9 @@ public class CashLedgerRepository {
         jdbc.update("""
                 UPDATE cash_ledger_reservation r SET status = 'RELEASED'
                 WHERE r.status = 'ACTIVE' AND EXISTS (
-                    SELECT 1 FROM cash_briefing_transfer t JOIN cash_briefing_batch b ON b.id = t.batch_id
-                    WHERE t.id = r.proposal_id AND b.status <> 'ACTIVE')
+                    SELECT 1 FROM cash_briefing_batch b WHERE b.status <> 'ACTIVE' AND (
+                        b.id = r.proposal_id OR EXISTS (SELECT 1 FROM cash_briefing_transfer t
+                            WHERE t.batch_id = b.id AND t.id = r.proposal_id)))
                 """);
     }
 
