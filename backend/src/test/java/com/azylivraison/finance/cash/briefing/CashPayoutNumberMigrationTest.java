@@ -75,6 +75,8 @@ class CashPayoutNumberMigrationTest {
             assertThat(jdbc.queryForObject("SELECT movement_id FROM cash_briefing_transfer WHERE id = ?",
                     UUID.class, confirmed)).isEqualTo(movement);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_ledger_leg", Long.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT workflow_version FROM cash_briefing_batch WHERE id = ?", Integer.class, batch)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_briefing_courier_transfer", Long.class)).isZero();
         }
     }
 }

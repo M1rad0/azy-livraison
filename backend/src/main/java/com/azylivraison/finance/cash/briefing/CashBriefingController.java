@@ -45,4 +45,14 @@ public class CashBriefingController {
             @RequestPart(value = "proof", required = false) MultipartFile proof, @AuthenticationPrincipal Jwt jwt) {
         return service.confirm(id, request, UUID.fromString(jwt.getClaimAsString("accountId")), proof);
     }
+    @PostMapping(path = "/courier-transfers/{id}/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Batch confirmCourier(@PathVariable UUID id, @Valid @RequestBody ConfirmRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return service.confirmCourierTransfer(id, request, UUID.fromString(jwt.getClaimAsString("accountId")), null);
+    }
+    @PostMapping(path = "/courier-transfers/{id}/confirm", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Batch confirmCourierWithProof(@PathVariable UUID id, @Valid @RequestPart("transfer") ConfirmRequest request,
+            @RequestPart(value = "proof", required = false) MultipartFile proof, @AuthenticationPrincipal Jwt jwt) {
+        return service.confirmCourierTransfer(id, request, UUID.fromString(jwt.getClaimAsString("accountId")), proof);
+    }
 }
