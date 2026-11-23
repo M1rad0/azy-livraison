@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { confirmCashBriefingTransfer, listCashBriefingTransfers, revalidateCashBriefing, type CashBriefingBatch, type CashBriefingTransferRow } from '../../api/cashBriefing'
+import { confirmCashBriefingCourierTransfer, confirmCashBriefingTransfer, listCashBriefingTransfers, revalidateCashBriefing, type CashBriefingBatch, type CashBriefingTransferRow } from '../../api/cashBriefing'
 import { CashBriefingFinancePanel } from './CashBriefingFinancePanel'
 
-vi.mock('../../api/cashBriefing', () => ({ listCashBriefingTransfers: vi.fn(), revalidateCashBriefing: vi.fn(), confirmCashBriefingTransfer: vi.fn() }))
+vi.mock('../../api/cashBriefing', () => ({ listCashBriefingTransfers: vi.fn(), revalidateCashBriefing: vi.fn(), confirmCashBriefingTransfer: vi.fn(), confirmCashBriefingCourierTransfer: vi.fn() }))
 
 const batch = (): CashBriefingBatch => ({
   id: 'batch', planId: 'plan', serviceDate: '2026-11-15', status: 'ACTIVE', ledgerRevision: 4,
@@ -14,10 +14,79 @@ const batch = (): CashBriefingBatch => ({
 })
 const row = (source = batch()): CashBriefingTransferRow => ({ batchId: source.id, serviceDate: source.serviceDate, batchStatus: source.status, ledgerRevision: source.ledgerRevision, batchMessage: source.message, transfer: source.transfers[0] })
 const page = (source = batch()) => ({ items: [row(source)], totalElements: 1, page: 0, size: 20, totalPages: 1 })
+const cashRow = (): CashBriefingTransferRow => ({ batchId: 'batch', serviceDate: '2026-11-15', batchStatus: 'ACTIVE', ledgerRevision: 4,
+  batchMessage: '', kind: 'COURIER_TRANSFER', courierTransfer: { id: 'cash-transfer', fromCourierAccountId: 'other', fromCourierName: 'Jean',
+    toCourierAccountId: 'courier', toCourierName: 'Baptiste', amountAriary: 4000, status: 'PENDING', readyToConfirm: true } })
 
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('financial confirmation of a briefing payout', () => {
+  it('confirms a cash handover separately and only then unlocks its funded seller payout', async () => {
+    const initial = batch()
+    initial.transfers[0].readyToConfirm = false
+    initial.transfers[0].blockedReason = 'Confirmez les fonds à recevoir de Jean.'
+    vi.mocked(listCashBriefingTransfers).mockResolvedValue({ ...page(), items: [cashRow(), row(initial)], totalElements: 2 })
+    vi.mocked(confirmCashBriefingCourierTransfer).mockImplementation(async () => {
+      const funded = batch()
+      funded.ledgerRevision = 5
+      funded.transfers[0].readyToConfirm = true
+      const confirmed = cashRow()
+      if (confirmed.kind !== 'COURIER_TRANSFER') throw new Error('Courier row required')
+      confirmed.courierTransfer.status = 'CONFIRMED'
+      confirmed.ledgerRevision = 5
+      vi.mocked(listCashBriefingTransfers).mockResolvedValue({ ...page(funded), items: [confirmed, row(funded)], totalElements: 2 })
+      return funded
+    })
+    vi.mocked(confirmCashBriefingTransfer).mockResolvedValue({ ...batch(), status: 'COMPLETED' })
+    const onChanged = vi.fn()
+    render(<CashBriefingFinancePanel accessToken="token" onChanged={onChanged} />)
+    expect(await screen.findByText('Confirmez les fonds à recevoir de Jean.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer le versement' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(confirmCashBriefingTransfer).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer le transfert entre livreurs' }))
+    const dialog = screen.getByRole('dialog', { name: 'Confirmer le transfert entre livreurs' })
+    expect(within(dialog).getByText(/de Jean à Baptiste/)).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText('Moyen de transfert'), { target: { value: 'MVola' } })
+    fireEvent.change(within(dialog).getByLabelText('Référence du transfert (facultative)'), { target: { value: 'CASH-4000' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmer le transfert réel' }))
+    await waitFor(() => expect(confirmCashBriefingCourierTransfer).toHaveBeenCalledWith('cash-transfer', {
+      paymentMethod: 'MVola', reference: 'CASH-4000', note: undefined, expectedLedgerRevision: 4,
+    }, null, 'token'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmer le versement' })).toBeEnabled())
+    expect(onChanged).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer le versement' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmer le transfert réel' }))
+    await waitFor(() => expect(confirmCashBriefingTransfer).toHaveBeenCalledWith('transfer', expect.objectContaining({ expectedLedgerRevision: 5 }), null, 'token'))
+  })
+
+  it('blocks a courier handover while its source is waiting for actual funds', async () => {
+    const blocked = cashRow()
+    if (blocked.kind !== 'COURIER_TRANSFER') throw new Error('Courier row required')
+    blocked.courierTransfer.readyToConfirm = false
+    blocked.courierTransfer.blockedReason = 'Jean attend un transfert de Marie.'
+    vi.mocked(listCashBriefingTransfers).mockResolvedValue({ ...page(), items: [blocked] })
+    render(<CashBriefingFinancePanel accessToken="token" />)
+    expect(await screen.findByText('Jean attend un transfert de Marie.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmer le transfert entre livreurs' })).toBeDisabled()
+    expect(confirmCashBriefingCourierTransfer).not.toHaveBeenCalled()
+  })
+
+  it('keeps reversed handovers and seller payouts visible without offering another confirmation', async () => {
+    const payout = batch()
+    payout.transfers[0].status = 'VOIDED'
+    const handover = cashRow()
+    if (handover.kind !== 'COURIER_TRANSFER') throw new Error('Courier row required')
+    handover.courierTransfer.status = 'VOIDED'
+    vi.mocked(listCashBriefingTransfers).mockResolvedValue({ ...page(), items: [handover, row(payout)], totalElements: 2 })
+    render(<CashBriefingFinancePanel accessToken="token" />)
+    expect(await screen.findAllByText('Annulé')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Confirmer le transfert entre livreurs' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmer le versement' })).not.toBeInTheDocument()
+    expect(confirmCashBriefingCourierTransfer).not.toHaveBeenCalled()
+    expect(confirmCashBriefingTransfer).not.toHaveBeenCalled()
+  })
+
   it('shows the stored holder and number before confirming through the chosen operator', async () => {
     vi.mocked(listCashBriefingTransfers).mockResolvedValue(page())
     vi.mocked(confirmCashBriefingTransfer).mockResolvedValue({ ...batch(), status: 'COMPLETED' })

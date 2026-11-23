@@ -9,31 +9,43 @@ export interface CashBriefingTransfer {
   sellerPayoutAccountHolder?: string | null
   sellerPayoutOperator?: string | null
   courierAccountId: string; courierName: string; amountAriary: number
-  status: 'PENDING' | 'CONFIRMED' | 'REPLACED'; movementId?: string | null
+  status: 'PENDING' | 'CONFIRMED' | 'REPLACED' | 'VOIDED'; movementId?: string | null
+  readyToConfirm?: boolean; blockedReason?: string | null
+}
+export interface CashBriefingCourierTransfer {
+  id: string; fromCourierAccountId: string; fromCourierName: string
+  toCourierAccountId: string; toCourierName: string; amountAriary: number
+  status: 'PENDING' | 'CONFIRMED' | 'REPLACED' | 'VOIDED'; movementId?: string | null
+  readyToConfirm: boolean; blockedReason?: string | null
 }
 export interface CashBriefingBatch {
   id: string; planId: string; serviceDate: string
   status: 'ACTIVE' | 'STALE' | 'RELEASED' | 'EXPIRED' | 'COMPLETED' | 'PLAN_INVALID'
   ledgerRevision: number; expiresAt: string; algorithm: string; message: string; mode?: 'AUTO' | 'MANUAL'
   transfers: CashBriefingTransfer[]
+  courierTransfers?: CashBriefingCourierTransfer[]; workflowVersion?: number
   balances: { courierAccountId: string; courierName: string; balanceAriary: number; availableAriary: number; reservedAriary: number }[]
 }
-export interface CashBriefingTransferRow {
+interface CashBriefingTransferRowBase {
   batchId: string
   serviceDate: string
   batchStatus: CashBriefingBatch['status']
   ledgerRevision: number
   batchMessage: string
-  transfer: CashBriefingTransfer
 }
+export type CashBriefingTransferRow = CashBriefingTransferRowBase & (
+  | { kind?: 'SELLER_PAYOUT'; transfer: CashBriefingTransfer; courierTransfer?: null }
+  | { kind: 'COURIER_TRANSFER'; transfer?: null; courierTransfer: CashBriefingCourierTransfer }
+)
 export interface CashBriefingPlanning {
   planId: string; serviceDate: string; ledgerRevision: number; batch?: CashBriefingBatch | null
   sellers: { sellerAccountId: string; sellerName: string; sellerPayoutNumber?: string | null; payoutDestinations?: ClientPayoutDestination[]; balanceAriary: number; plannedAriary: number; availableAriary: number }[]
-  couriers: { courierAccountId: string; courierName: string; balanceAriary: number; reservedElsewhereAriary: number; capacityAriary: number; plannedAriary: number; remainingAriary: number }[]
+  couriers: { courierAccountId: string; courierName: string; balanceAriary: number; reservedElsewhereAriary: number; capacityAriary: number; plannedAriary: number; remainingAriary: number; incomingAriary?: number; outgoingAriary?: number }[]
 }
 export interface ManualCashBriefingInput {
   planId: string; idempotencyKey: string; expectedLedgerRevision: number; expectedBatchId?: string | null
   transfers: { sellerAccountId: string; courierAccountId: string; amountAriary: number; sellerPayoutDestinationId?: string; sellerPayoutOperator?: string; sellerPayoutNumber?: string; sellerPayoutAccountHolder?: string }[]
+  courierTransfers?: { fromCourierAccountId: string; toCourierAccountId: string; amountAriary: number }[]
 }
 const BASE = `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/admin/cash-briefings`
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -52,7 +64,8 @@ export const saveManualCashBriefing = (input: ManualCashBriefingInput, token: st
 export const prepareCashBriefing = (planId: string, token: string, idempotencyKey: string = crypto.randomUUID(), replacement?: { replaceExisting: true; expectedLedgerRevision: number; expectedBatchId: string | null }) => request<CashBriefingBatch>('/prepare', token, post({ planId, idempotencyKey, ...replacement }))
 export const releaseCashBriefing = (id: string, token: string) => request<CashBriefingBatch>(`/${encodeURIComponent(id)}/release`, token, post())
 export const revalidateCashBriefing = (id: string, token: string) => request<CashBriefingBatch>(`/${encodeURIComponent(id)}/revalidate`, token, post())
-export function confirmCashBriefingTransfer(id: string, input: { paymentMethod: string; reference?: string; note?: string; expectedLedgerRevision: number }, proof: File | null, token: string) {
+interface CashBriefingConfirmation { paymentMethod: string; reference?: string; note?: string; expectedLedgerRevision: number }
+function confirmationRequest(input: CashBriefingConfirmation, proof: File | null): RequestInit {
   let init = post(input)
   if (proof) {
     const body = new FormData()
@@ -60,5 +73,7 @@ export function confirmCashBriefingTransfer(id: string, input: { paymentMethod: 
     body.append('proof', proof)
     init = { method: 'POST', body }
   }
-  return request<CashBriefingBatch>(`/transfers/${encodeURIComponent(id)}/confirm`, token, init)
+  return init
 }
+export const confirmCashBriefingTransfer = (id: string, input: CashBriefingConfirmation, proof: File | null, token: string) => request<CashBriefingBatch>(`/transfers/${encodeURIComponent(id)}/confirm`, token, confirmationRequest(input, proof))
+export const confirmCashBriefingCourierTransfer = (id: string, input: CashBriefingConfirmation, proof: File | null, token: string) => request<CashBriefingBatch>(`/courier-transfers/${encodeURIComponent(id)}/confirm`, token, confirmationRequest(input, proof))

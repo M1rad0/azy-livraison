@@ -14,6 +14,29 @@ function allocatedFixture(): ManualDispatchDraft {
 }
 
 describe('dispatch briefing model', () => {
+  it('briefs giver and receiver in both languages before the unique seller payment', () => {
+    const draft = allocatedFixture()
+    const [baptiste, jean, marie] = buildDispatchBriefing(draft).couriers
+    const handovers = [
+      { fromCourierAccountId: 'c2', fromCourierName: 'Jean', toCourierAccountId: 'c1', toCourierName: 'Baptiste', amountAriary: 4000, status: 'PENDING' },
+      { fromCourierAccountId: 'c3', fromCourierName: 'Marie', toCourierAccountId: 'c2', toCourierName: 'Jean', amountAriary: 1000, status: 'CONFIRMED' },
+    ]
+    const payouts = [{ courierAccountId: 'c1', sellerName: 'Boutique Soa', sellerPayoutNumber: '0381415216', amountAriary: 10000, status: 'PENDING' }]
+    const receiver = generateCourierBriefing(baptiste, draft.serviceDate, undefined, 'fr', payouts, handovers)
+    expect(receiver).toContain('Recevoir 4000 Ar de Jean.')
+    expect(receiver).toContain('Attendre les fonds avant les versements qui en dépendent.')
+    expect(receiver).toContain('Boutique Soa — MVola : 0381415216 — Titulaire : — — 10000 Ar')
+    expect(receiver.indexOf('Transferts entre livreurs :')).toBeLessThan(receiver.indexOf('Versements à faire :'))
+    const giver = generateCourierBriefing(jean, draft.serviceDate, undefined, 'fr', payouts, handovers)
+    expect(giver).toContain('Donner 4000 Ar à Baptiste.')
+    expect(giver).not.toContain('Versements à faire :')
+    expect(giver).not.toContain('1000 Ar')
+    expect(generateCourierBriefing(baptiste, draft.serviceDate, undefined, 'mg', payouts, handovers)).toContain("Mandray 4000 Ar avy amin'i Jean.")
+    expect(generateCourierBriefing(jean, draft.serviceDate, undefined, 'mg', payouts, handovers)).toContain("Manome 4000 Ar an'i Baptiste.")
+    expect(generateCourierBriefing(marie, draft.serviceDate, undefined, 'fr', payouts, handovers)).not.toContain('Transferts entre livreurs :')
+    expect(handovers[0].status).toBe('PENDING')
+  })
+
   it('appends only this courier pending payouts in both languages without validating them', () => {
     const draft = allocatedFixture()
     const courier = buildDispatchBriefing(draft).couriers[0]
